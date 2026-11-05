@@ -1,0 +1,631 @@
+diff --git a/experimental/clashapi/proxies.go b/experimental/clashapi/proxies.go
+index ab8d455..b8544fb 100644
+--- a/experimental/clashapi/proxies.go
++++ b/experimental/clashapi/proxies.go
+@@ -115,6 +115,9 @@ func proxyInfo(server *Server, detour adapter.Outbound) *badjson.JSONObject {
+ 	if fallback, isFallback := detour.(*group.Fallback); isFallback {
+ 		info.Put("groups", fallback.Groups())
+ 		info.Put("fixed", fallback.Fixed())
++		if stable := fallback.StableStatus(); stable != nil {
++			info.Put("stable", stable)
++		}
+ 	}
+ 	return &info
+ }
+diff --git a/option/group.go b/option/group.go
+index 637e484..b37da95 100644
+--- a/option/group.go
++++ b/option/group.go
+@@ -20,6 +20,11 @@ type URLTestOutboundOptions struct {
+ 
+ type FallbackOutboundOptions struct {
+ 	GroupCommonOption
++	Stable                    bool                   `json:"stable,omitempty"`
++	ConfirmURL                string                 `json:"confirm_url,omitempty"`
++	ConfirmExpectedStatus     string                 `json:"confirm_expected_status,omitempty"`
++	RecoveryInterval          badoption.Duration     `json:"recovery_interval,omitempty"`
++	RecoverySuccesses         uint                   `json:"recovery_successes,omitempty"`
+ 	Groups                    []FallbackGroupOptions `json:"groups,omitempty"`
+ 	URL                       string                 `json:"url,omitempty"`
+ 	Interval                  badoption.Duration     `json:"interval,omitempty"`
+diff --git a/protocol/group/fallback.go b/protocol/group/fallback.go
+index 4505153..5cc9863 100644
+--- a/protocol/group/fallback.go
++++ b/protocol/group/fallback.go
+@@ -59,10 +59,13 @@ type fallbackCandidate struct {
+ }
+ 
+ type fallbackHealth struct {
+-	outbound adapter.Outbound
+-	checked  bool
+-	alive    bool
+-	failures dialFailures
++	outbound          adapter.Outbound
++	checked           bool
++	alive             bool
++	failures          dialFailures
++	checkedAt         time.Time
++	recoverySuccesses uint
++	lastError         string
+ }
+ 
+ type fallbackCheckResult struct {
+@@ -104,6 +107,7 @@ type Fallback struct {
+ 	rebuildAccess                sync.Mutex
+ 	wake                         chan struct{}
+ 	cancel                       context.CancelFunc
++	stable                       *stableFallback
+ }
+ 
+ func NewFallback(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.FallbackOutboundOptions) (adapter.Outbound, error) {
+@@ -167,11 +171,16 @@ func NewFallback(ctx context.Context, router adapter.Router, logger log.ContextL
+ 	if err != nil {
+ 		return nil, E.Cause(err, "invalid fallback expected_status")
+ 	}
++	stable, err := newStableFallback(options)
++	if err != nil {
++		return nil, err
++	}
+ 	coordinator := service.PtrFromContext[urltest.Coordinator](ctx)
+ 	if coordinator == nil {
+ 		coordinator = urltest.NewCoordinator()
+ 	}
+ 	return &Fallback{
++		stable:                       stable,
+ 		Adapter:                      outbound.NewAdapter(C.TypeFallback, tag, []string{N.NetworkTCP, N.NetworkUDP}, dependencies),
+ 		ctx:                          ctx,
+ 		outbound:                     service.FromContext[adapter.OutboundManager](ctx),
+@@ -386,6 +395,9 @@ func (s *Fallback) usableLocked(candidate fallbackCandidate) bool {
+ // wins, and when nothing passed the health check the group still reports its
+ // highest priority member instead of reporting no selection at all.
+ func (s *Fallback) selectAvailableLocked() string {
++	if s.stable != nil {
++		return s.selectStableLocked()
++	}
+ 	if s.fixed != "" {
+ 		for _, candidate := range s.candidates {
+ 			if candidate.tag != s.fixed {
+@@ -508,7 +520,18 @@ func (s *Fallback) candidatesForNetwork(network string) []fallbackCandidate {
+ 	candidates := make([]fallbackCandidate, 0, len(pinned)+len(usable)+len(lastResort))
+ 	candidates = append(candidates, pinned...)
+ 	candidates = append(candidates, usable...)
+-	return append(candidates, lastResort...)
++	candidates = append(candidates, lastResort...)
++	if s.stable != nil {
++		// Recovery health alone must not move new traffic before the success threshold.
++		for i, candidate := range candidates {
++			if candidate.tag == s.selected && s.usableLocked(candidate) {
++				copy(candidates[1:i+1], candidates[:i])
++				candidates[0] = candidate
++				break
++			}
++		}
++	}
++	return candidates
+ }
+ 
+ func (s *Fallback) candidateActive(candidate fallbackCandidate) bool {
+@@ -721,7 +744,9 @@ func (s *Fallback) requestCheck() {
+ 
+ func (s *Fallback) loopCheck(ctx context.Context) {
+ 	s.checkOutbounds(ctx, 0)
+-	go s.startupRetry(ctx)
++	if s.stable == nil {
++		go s.startupRetry(ctx)
++	}
+ 	ticker := time.NewTicker(s.interval)
+ 	defer ticker.Stop()
+ 	for {
+@@ -790,6 +815,10 @@ func (s *Fallback) periodicCheck(ctx context.Context) {
+ }
+ 
+ func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
++	if s.stable != nil {
++		s.checkStable(ctx, maxAge)
++		return
++	}
+ 	s.access.RLock()
+ 	candidates := append([]fallbackCandidate(nil), s.candidates...)
+ 	s.access.RUnlock()
+@@ -797,6 +826,9 @@ func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
+ }
+ 
+ func (s *Fallback) URLTest(ctx context.Context) (map[string]uint16, error) {
++	if s.stable != nil {
++		return s.checkStable(ctx, 0), nil
++	}
+ 	s.access.RLock()
+ 	candidates := append([]fallbackCandidate(nil), s.candidates...)
+ 	s.access.RUnlock()
+diff --git a/protocol/group/fallback_stable.go b/protocol/group/fallback_stable.go
+new file mode 100644
+index 0000000..fb955be
+--- /dev/null
++++ b/protocol/group/fallback_stable.go
+@@ -0,0 +1,317 @@
++package group
++
++import (
++	"context"
++	"errors"
++	"net/url"
++	"sync"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/common/urltest"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/service"
++)
++
++// stableFallback adds policy to the native fallback; dials and handshakes still
++// use its existing bounded sequential attempts. No extra daemon or ticker.
++type stableFallback struct {
++	round            sync.Mutex
++	confirmURL       string
++	confirmStatus    urltest.ExpectedStatus
++	recoveryInterval time.Duration
++	returnAfter      uint
++	lastRecovery     time.Time             // protected by Fallback.access
++	events           []StableFallbackEvent // protected by Fallback.access, bounded to 64
++	networkReady     func() bool
++	noNetwork        bool
++	roundBudget      time.Duration // zero uses the production 30s bound
++}
++type StableFallbackEvent struct {
++	At     time.Time `json:"at"`
++	From   string    `json:"from"`
++	To     string    `json:"to"`
++	Reason string    `json:"reason"`
++}
++type StableFallbackMember struct {
++	Name              string    `json:"name"`
++	State             string    `json:"state"`
++	LastCheck         time.Time `json:"last_check,omitempty"`
++	RecoverySuccesses uint      `json:"recovery_successes"`
++}
++type StableFallbackStatus struct {
++	State        string                 `json:"state"`
++	Active       string                 `json:"active"`
++	Members      []StableFallbackMember `json:"members"`
++	Events       []StableFallbackEvent  `json:"events"`
++	NextRecovery *time.Time             `json:"next_recovery,omitempty"`
++}
++
++func newStableFallback(o option.FallbackOutboundOptions) (*stableFallback, error) {
++	if !o.Stable {
++		return nil, nil
++	}
++	confirm := o.ConfirmURL
++	if confirm == "" {
++		confirm = "https://www.cloudflare.com/cdn-cgi/trace"
++	}
++	u, err := url.Parse(confirm)
++	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || confirm == o.URL {
++		return nil, errors.New("fallback confirm_url must be a different HTTPS URL without credentials")
++	}
++	status := o.ConfirmExpectedStatus
++	if status == "" {
++		status = "200"
++	}
++	expected, err := urltest.ParseExpectedStatus(status)
++	if err != nil {
++		return nil, err
++	}
++	interval := time.Duration(o.RecoveryInterval)
++	if interval == 0 {
++		interval = time.Minute
++	}
++	if interval < time.Second {
++		return nil, errors.New("fallback recovery_interval must be at least 1s")
++	}
++	successes := o.RecoverySuccesses
++	if successes == 0 {
++		successes = 3
++	}
++	if successes > 10 {
++		return nil, errors.New("fallback recovery_successes must be between 1 and 10")
++	}
++	return &stableFallback{confirmURL: confirm, confirmStatus: expected, recoveryInterval: interval, returnAfter: successes}, nil
++}
++
++// Retain an active reserve while earlier candidates recover. Unchecked nodes
++// remain available for real connection attempts, but cannot displace it.
++func (s *Fallback) selectStableLocked() string {
++	if s.fixed != "" {
++		for _, c := range s.candidates {
++			if c.tag == s.fixed && s.usableLocked(c) {
++				return c.tag
++			}
++		}
++		s.clearFixedLocked()
++	}
++	active := -1
++	for i, c := range s.candidates {
++		if c.tag == s.selected && s.usableLocked(c) {
++			active = i
++			break
++		}
++	}
++	if active >= 0 {
++		for _, c := range s.candidates[:active] {
++			h := s.health[c.tag]
++			if h.checked && h.alive && h.recoverySuccesses >= s.stable.returnAfter {
++				return c.tag
++			}
++		}
++		return s.selected
++	}
++	for _, c := range s.candidates {
++		h := s.health[c.tag]
++		if h.checked && h.alive {
++			return c.tag
++		}
++	}
++	if len(s.candidates) > 0 {
++		return s.candidates[0].tag
++	}
++	return ""
++}
++
++func (s *Fallback) checkStable(ctx context.Context, maxAge time.Duration) map[string]uint16 {
++	result := make(map[string]uint16)
++	// Concurrent wake/provider/manual checks are coalesced, never queued into
++	// another full sweep. The existing loop will re-read current candidates.
++	if !s.stable.round.TryLock() {
++		return result
++	}
++	defer s.stable.round.Unlock()
++	if ctx.Err() != nil {
++		return result
++	}
++	ready := true
++	if s.stable.networkReady != nil {
++		ready = s.stable.networkReady()
++	} else if manager := service.FromContext[adapter.NetworkManager](s.ctx); manager != nil && manager.AutoDetectInterface() {
++		ready = manager.DefaultNetworkInterface() != nil
++	}
++	s.access.Lock()
++	s.stable.noNetwork = !ready
++	s.access.Unlock()
++	if !ready {
++		return result
++	}
++	// A large or completely dead subscription must not occupy the loop forever.
++	budget := s.stable.roundBudget
++	if budget == 0 {
++		budget = 30 * time.Second
++	}
++	ctx, cancel := context.WithTimeout(ctx, budget)
++	defer cancel()
++	s.access.RLock()
++	candidates := append([]fallbackCandidate(nil), s.candidates...)
++	selected := s.selected
++	recoveryDue := time.Since(s.stable.lastRecovery) >= s.stable.recoveryInterval
++	s.access.RUnlock()
++	if len(candidates) == 0 {
++		return result
++	}
++	// Reserve a fair share for both targets of every candidate. Otherwise a
++	// prefix of blackholed nodes consumes every bounded round forever. Leave
++	// 20% for scheduling/commit overhead; small groups retain their timeout.
++	probeTimeout := min(s.timeout, budget*4/5/time.Duration(2*len(candidates)))
++	active := 0
++	for i, c := range candidates {
++		if c.tag == selected {
++			active = i
++			break
++		}
++	}
++	// A candidate is committed only while its outbound identity still matches.
++	probe := func(c fallbackCandidate, recovering bool) bool {
++		if ctx.Err() != nil || !s.candidateActive(c) {
++			return false
++		}
++		age := maxAge
++		if recovering {
++			age = 0
++		} // each recovery success must be a fresh observation
++		delay, at, err := s.coordinator.Check(ctx, s.link, s.expectedStatus, MemberTag(c.outbound), c.outbound, probeTimeout, age)
++		if err != nil && ctx.Err() == nil {
++			delay, at, err = s.coordinator.Check(ctx, s.stable.confirmURL, s.stable.confirmStatus, MemberTag(c.outbound), c.outbound, probeTimeout, 0)
++		}
++		if ctx.Err() != nil {
++			return false
++		}
++		s.access.Lock()
++		h, ok := s.health[c.tag]
++		if !ok || h.outbound != c.outbound {
++			s.access.Unlock()
++			return false
++		}
++		h.checked = true
++		h.alive = err == nil
++		h.checkedAt = at
++		h.failures = dialFailures{}
++		if err == nil {
++			if recovering {
++				h.recoverySuccesses++
++			} else {
++				h.recoverySuccesses = 0
++			}
++			h.lastError = ""
++			s.history.StoreURLTestHistory(MemberTag(c.outbound), &adapter.URLTestHistory{Time: at, Delay: delay})
++			result[c.tag] = delay
++		} else {
++			h.recoverySuccesses = 0
++			h.lastError = "Both health targets failed"
++			s.history.DeleteURLTestHistory(MemberTag(c.outbound))
++		}
++		s.health[c.tag] = h
++		s.access.Unlock()
++		return err == nil
++	}
++	activeHealthy := probe(candidates[active], false)
++	if ctx.Err() != nil {
++		return result
++	}
++	if activeHealthy {
++		if active > 0 && recoveryDue {
++			s.access.Lock()
++			s.stable.lastRecovery = time.Now()
++			s.access.Unlock()
++			for _, c := range candidates[:active] {
++				if probe(c, true) {
++					break
++				} // restore highest recoverable priority, no sweep below it
++				if ctx.Err() != nil {
++					return result
++				}
++			}
++		}
++	} else {
++		s.access.Lock()
++		s.stable.lastRecovery = time.Now()
++		s.access.Unlock()
++		// If the active reserve dies, higher priorities may already have recovered.
++		order := append(append([]fallbackCandidate(nil), candidates[:active]...), candidates[active+1:]...)
++		for _, c := range order {
++			if probe(c, false) {
++				break
++			}
++			if ctx.Err() != nil {
++				return result
++			}
++		}
++	}
++	s.access.Lock()
++	old := s.selected
++	s.selected = s.selectAvailableLocked()
++	next := s.selected
++	if old != "" && next != old {
++		reason := "Confirmed health failure"
++		if activeHealthy {
++			reason = "Primary passed recovery threshold"
++		}
++		if len(s.stable.events) == 32 {
++			copy(s.stable.events, s.stable.events[1:])
++			s.stable.events = s.stable.events[:31]
++		}
++		// Tags are configuration names, not URLs; cap length to bound RAM usage.
++		short := func(v string) string {
++			if len(v) > 64 {
++				return v[:64]
++			}
++			return v
++		}
++		s.stable.events = append(s.stable.events, StableFallbackEvent{At: time.Now(), From: short(old), To: short(next), Reason: reason})
++	}
++	s.access.Unlock()
++	s.interruptSelection(old, next)
++	return result
++}
++
++func (s *Fallback) StableStatus() *StableFallbackStatus {
++	if s.stable == nil {
++		return nil
++	}
++	s.access.RLock()
++	defer s.access.RUnlock()
++	status := &StableFallbackStatus{Active: s.selected, State: "degraded", Events: append([]StableFallbackEvent(nil), s.stable.events...)}
++	for i, c := range s.candidates {
++		h := s.health[c.tag]
++		state := "standby"
++		if c.tag == s.selected {
++			if !h.checked {
++				state = "unknown"
++				status.State = "unknown"
++			} else if h.alive {
++				state = "active"
++				status.State = "backup"
++				if i == 0 {
++					status.State = "primary"
++				}
++			} else {
++				state = "unhealthy"
++			}
++		} else if h.checked && !h.alive {
++			state = "unhealthy"
++		} else if h.recoverySuccesses > 0 {
++			state = "recovering"
++		}
++		status.Members = append(status.Members, StableFallbackMember{Name: c.tag, State: state, LastCheck: h.checkedAt, RecoverySuccesses: h.recoverySuccesses})
++	}
++	if s.stable.noNetwork {
++		status.State = "no_network"
++	}
++	if status.State == "backup" {
++		next := s.stable.lastRecovery.Add(s.stable.recoveryInterval)
++		status.NextRecovery = &next
++	}
++	return status
++}
+diff --git a/protocol/group/fallback_stable_test.go b/protocol/group/fallback_stable_test.go
+new file mode 100644
+index 0000000..ddf52a5
+--- /dev/null
++++ b/protocol/group/fallback_stable_test.go
+@@ -0,0 +1,148 @@
++package group
++
++import (
++	"context"
++	"fmt"
++	"github.com/sagernet/sing-box/common/urltest"
++	"sync"
++	"testing"
++	"time"
++)
++
++func TestStableFallbackReachesReserveAfterSlowFailures(t *testing.T) {
++	good := newFallbackHealthTestOutbound("last", true)
++	s := stableTestGroup(t, good)
++	candidates := []fallbackCandidate{}
++	for i := 0; i < 3; i++ {
++		n := &fallbackBlockingOutbound{Adapter: newFallbackHealthTestOutbound(fmt.Sprint("slow", i), false).Adapter, started: make(chan struct{})}
++		candidates = append(candidates, fallbackCandidate{tag: n.Tag(), outbound: n})
++	}
++	candidates = append(candidates, fallbackCandidate{tag: good.Tag(), outbound: good})
++	s = newTestFallback(candidates...)
++	template := stableTestGroup(t, good)
++	s.stable = template.stable
++	s.expectedStatus = template.expectedStatus
++	s.timeout = 80 * time.Millisecond
++	s.stable.roundBudget = 240 * time.Millisecond
++	s.checkOutbounds(context.Background(), 0)
++	if selectedTag(s) != "last" {
++		t.Fatalf("healthy later reserve starved: selected=%s", selectedTag(s))
++	}
++}
++
++func stableTestGroup(t *testing.T, nodes ...*fallbackHealthTestOutbound) *Fallback {
++	t.Helper()
++	candidates := make([]fallbackCandidate, len(nodes))
++	for i, n := range nodes {
++		candidates[i] = fallbackCandidate{tag: n.Tag(), outbound: n}
++	}
++	s := newTestFallback(candidates...)
++	expected, err := urltest.ParseExpectedStatus("204")
++	if err != nil {
++		t.Fatal(err)
++	}
++	s.expectedStatus = expected
++	s.stable = &stableFallback{confirmURL: "http://confirm.test/", confirmStatus: expected, recoveryInterval: time.Minute, returnAfter: 3}
++	return s
++}
++
++func TestStableFallbackKeepsReserveQuiet(t *testing.T) {
++	a, b := newFallbackHealthTestOutbound("primary", true), newFallbackHealthTestOutbound("backup", true)
++	s := stableTestGroup(t, a, b)
++	for range 4 {
++		s.checkOutbounds(context.Background(), 0)
++	}
++	if b.dialCount != 0 || selectedTag(s) != "primary" {
++		t.Fatalf("reserve was touched: %d, selected=%s", b.dialCount, selectedTag(s))
++	}
++	if a.dialCount != 4 {
++		t.Fatalf("primary checks=%d", a.dialCount)
++	}
++}
++
++func TestStableFallbackSequentialFailoverAndRecovery(t *testing.T) {
++	a, b, c := newFallbackHealthTestOutbound("primary", false), newFallbackHealthTestOutbound("backup", true), newFallbackHealthTestOutbound("third", true)
++	s := stableTestGroup(t, a, b, c)
++	s.checkOutbounds(context.Background(), 0)
++	if selectedTag(s) != "backup" || a.dialCount != 2 || b.dialCount != 1 || c.dialCount != 0 {
++		t.Fatalf("wrong failover: %s checks=%d/%d/%d", selectedTag(s), a.dialCount, b.dialCount, c.dialCount)
++	}
++	a.setAvailable(true)
++	s.checkOutbounds(context.Background(), 0)
++	if a.dialCount != 2 {
++		t.Fatal("recovery interval ignored")
++	}
++	for i := 1; i <= 3; i++ {
++		s.stable.lastRecovery = time.Now().Add(-2 * time.Minute)
++		s.checkOutbounds(context.Background(), 0)
++		want := "backup"
++		if i == 3 {
++			want = "primary"
++		}
++		if selectedTag(s) != want {
++			t.Fatalf("recovery %d selected %s, want %s", i, selectedTag(s), want)
++		}
++		if i < 3 && s.candidatesForNetwork("tcp")[0].tag != "backup" {
++			t.Fatal("real dials bypassed recovery hysteresis")
++		}
++	}
++	if c.dialCount != 0 {
++		t.Fatal("third reserve was probed")
++	}
++}
++
++func TestStableFallbackCancelledRoundPreservesState(t *testing.T) {
++	a, b := newFallbackHealthTestOutbound("primary", true), newFallbackHealthTestOutbound("backup", true)
++	s := stableTestGroup(t, a, b)
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	s.checkOutbounds(ctx, 0)
++	if a.dialCount != 0 || b.dialCount != 0 || s.health["primary"].checked {
++		t.Fatal("cancelled round changed health")
++	}
++}
++
++func TestStableFallbackAllDownHasNoDirectEscape(t *testing.T) {
++	a, b := newFallbackHealthTestOutbound("primary", false), newFallbackHealthTestOutbound("backup", false)
++	s := stableTestGroup(t, a, b)
++	s.checkOutbounds(context.Background(), 0)
++	status := s.StableStatus()
++	if status.State != "degraded" || status.Active != "primary" {
++		t.Fatalf("unexpected state %+v", status)
++	}
++	if len(s.candidatesForNetwork("tcp")) != 1 {
++		t.Fatal("outage walks all unavailable candidates")
++	}
++}
++
++func TestStableFallbackConcurrentChecksCoalesce(t *testing.T) {
++	a, b := newFallbackHealthTestOutbound("primary", true), newFallbackHealthTestOutbound("backup", true)
++	s := stableTestGroup(t, a, b)
++	var wg sync.WaitGroup
++	for range 8 {
++		wg.Add(1)
++		go func() { defer wg.Done(); s.checkOutbounds(context.Background(), time.Minute) }()
++	}
++	wg.Wait()
++	if b.dialCount != 0 {
++		t.Fatal("concurrent requests woke reserve")
++	}
++	if s.StableStatus().State != "primary" {
++		t.Fatal("lost active selection")
++	}
++}
++
++func TestStableFallbackMissingWANDoesNotCondemnServers(t *testing.T) {
++	a, b := newFallbackHealthTestOutbound("primary", true), newFallbackHealthTestOutbound("backup", true)
++	s := stableTestGroup(t, a, b)
++	s.stable.networkReady = func() bool { return false }
++	s.checkOutbounds(context.Background(), 0)
++	if a.dialCount != 0 || b.dialCount != 0 || s.StableStatus().State != "no_network" {
++		t.Fatal("missing WAN marked candidates down")
++	}
++	s.stable.networkReady = func() bool { return true }
++	s.checkOutbounds(context.Background(), 0)
++	if s.StableStatus().State != "primary" {
++		t.Fatal("WAN recovery failed")
++	}
++}
+diff --git a/release/forkop/package.sh b/release/forkop/package.sh
+index eca4ab7..a13a32a 100755
+--- a/release/forkop/package.sh
++++ b/release/forkop/package.sh
+@@ -7,8 +7,8 @@ umask 022
+ 
+ PROJECT=$(cd "$(dirname "$0")/../.." && pwd)
+ PACKAGE=sing-box-forkop
+-URL=https://github.com/ushan0v/sing-box-forkop
+-MAINTAINER=ushan0v
++URL=https://github.com/fefenke/kaban-max
++MAINTAINER="K.A.B.A.N.-MAX contributors"
+ LICENSE=GPL-3.0-or-later
+ DEPENDS=(ca-bundle)
+ # Every package that installs /usr/bin/sing-box. opkg removes one in the same transaction only
