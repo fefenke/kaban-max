@@ -4,7 +4,7 @@
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 po2lmo="${1:?Pass the upstream LuCI po2lmo executable}"
-version="${2:-2.0.1}"
+version="${2:-0.1.0}"
 output="${3:-$repo/dist/zapret2-local}"
 mkdir -p "$output"
 work="$(mktemp -d)"

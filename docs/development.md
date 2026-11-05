@@ -20,11 +20,9 @@ npm run build
 
 ```sh
 docker build -f scripts/release.Dockerfile -t kabanmax-build .
-docker run --rm -v "$PWD:/work" -w /work kabanmax-build bash scripts/build-release.sh 2.1.0 /work/dist/release
+docker run --rm -v "$PWD:/work" -w /work kabanmax-build bash scripts/build-release.sh 0.1.0 /work/dist/release
 ```
 
-В `dist/release` создаются пакеты backend, LuCI, RU и ядра base/tiny для aarch64_cortex-a53 в форматах IPK/APK, два манифеста, установщик и SHA256SUMS. Полный вариант full не является частью первого выпуска. Не публикуйте содержимое временных рабочих каталогов builder.
+В `dist/release` создаются пакеты backend, LuCI, RU и ядра base/tiny для aarch64_cortex-a53 в форматах IPK/APK, два манифеста, установщик и SHA256SUMS.
 
 Исходный commit ядра закреплён в `core/UPSTREAM`, изменения — в `core/patches/`. Номер `1.14.4-r2` принадлежит этой сборке. Проверка ядра: `go test -race ./protocol/group -run Fallback -count=1` в исходниках с применённым patch.
-
-Публичный репозиторий содержит исходники и синтетические тестовые конфигурации с example-доменами/документационными IP. Реальные конфиги, SSH-ключи и журналы роутеров в него не входят.
