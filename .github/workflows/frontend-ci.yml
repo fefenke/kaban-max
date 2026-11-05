@@ -1,0 +1,45 @@
+name: Frontend CI
+
+on:
+  pull_request:
+    paths:
+      - 'fe-app-forkop/**'
+      - 'luci-app-forkop/**'
+      # The suite includes checks that compare the page with what the package
+      # ships, and fixtures it shares with the backend tests.
+      - 'forkop/files/etc/config/forkop'
+      - 'tests/fixtures/**'
+      - '.github/workflows/frontend-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'fe-app-forkop/**'
+      - 'luci-app-forkop/**'
+      - 'forkop/files/etc/config/forkop'
+      - 'tests/fixtures/**'
+      - '.github/workflows/frontend-ci.yml'
+
+jobs:
+  frontend-checks:
+    name: Frontend Quality Checks
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: fe-app-forkop
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5.0.0
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: npm test -- --run --maxWorkers=2

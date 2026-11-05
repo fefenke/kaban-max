@@ -1,0 +1,8 @@
+.git
+dist
+**/node_modules
+docs/.vitepress/dist
+docs/.vitepress/cache
+docs/superpowers
+.env
+**/.env

@@ -1,0 +1,35 @@
+name: Build preview packages
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Numeric preview version (X.Y.Z)
+        required: true
+        default: '2.1.0'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5.0.0
+      - name: Validate version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: '[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]'
+      - name: Build tools
+        run: docker build -f scripts/release.Dockerfile -t kabanmax-build .
+      - name: Build packages and pinned patched core
+        env:
+          VERSION: ${{ inputs.version }}
+        run: docker run --rm -e GOFLAGS=-p=2 -v "$PWD:/work" -w /work kabanmax-build bash scripts/build-release.sh "$VERSION" /work/dist/release
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: preview-packages
+          path: |
+            dist/release/*.apk
+            dist/release/*.ipk
+            dist/release/*.json
+            dist/release/install.sh
+            dist/release/SHA256SUMS
+          if-no-files-found: error
