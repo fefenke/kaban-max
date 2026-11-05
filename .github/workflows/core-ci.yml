@@ -1,0 +1,29 @@
+name: Patched core fallback
+on:
+  push:
+    branches: [main]
+    paths: ['core/**', 'scripts/build-core.sh', '.github/workflows/core-ci.yml']
+  pull_request:
+    paths: ['core/**', 'scripts/build-core.sh', '.github/workflows/core-ci.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fallback:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5.0.0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - name: Fetch exact upstream and apply published changes
+        run: |
+          git init /tmp/kaban-core
+          git -C /tmp/kaban-core fetch --depth=1 https://github.com/ushan0v/sing-box-forkop.git 60d96c99815a672712915a5c00114bf0f690ad80
+          git -C /tmp/kaban-core checkout --detach FETCH_HEAD
+          git -C /tmp/kaban-core apply --check "$PWD/core/patches/0001-stable-fallback.patch"
+          git -C /tmp/kaban-core apply "$PWD/core/patches/0001-stable-fallback.patch"
+      - name: Test fallback including cancellation and concurrent checks
+        working-directory: /tmp/kaban-core
+        run: go test -race ./protocol/group -run Fallback -count=1
