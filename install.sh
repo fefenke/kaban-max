@@ -902,7 +902,9 @@ resolve_release() {
 	[ "$ASKED" = 0 ] || printf '\n' >/dev/tty
 	# opkg keeps an installed package of the version it is given and refuses an older one: a fork's
 	# go and Forkop's come in, whatever versions the fork took
-	[ -z "$FORK_URL" ] || OPKG_FLAGS='--force-downgrade --force-reinstall'
+	if [ -n "$FORK_URL" ] || [ -n "$TARGET_TAG" ]; then
+		OPKG_FLAGS='--force-downgrade --force-reinstall'
+	fi
 }
 
 decide_forkop() { # the Forkop packages to install, NEED_*, and the Forkop that will run
@@ -918,7 +920,7 @@ decide_forkop() { # the Forkop packages to install, NEED_*, and the Forkop that 
 		NEED_FORKOP=1 NEED_APP=1 NEED_I18N=$I18N
 		return 0
 	fi
-	if [ -n "$FORKOP_OLD" ] && [ "$(vercmp "$FORKOP_OLD" "$F_VERSION")" = 1 ]; then
+	if [ -z "$TARGET_TAG" ] && [ -n "$FORKOP_OLD" ] && [ "$(vercmp "$FORKOP_OLD" "$F_VERSION")" = 1 ]; then
 		info "$(t 'forkop %s is newer than the latest release %s and stays' 'forkop %s новее последнего релиза %s и остаётся' "$FORKOP_OLD" "$F_VERSION")"
 		RESULT_FORKOP=$FORKOP_OLD
 		F_CORE_MIN=$(core_requirement "$(pkg_depends forkop)")
@@ -1758,7 +1760,7 @@ main() {
 	[ "$ASK_VARIANT" = 0 ] || [ -n "$BAD_ARG" ] || may_ask || BAD_ARG=variant_tty
 	[ -z "$BAD_ARG" ] || usage_error
 	if [ -n "$TARGET_TAG" ] && ! printf '%s\n' "$TARGET_TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-		fail 1 release "KABANMAX_RELEASE must be a release version such as 2.1.0"
+		fail 1 release "KABANMAX_RELEASE must be a release version such as 0.1.0"
 	fi
 	( : >"$LOG" ) 2>/dev/null || LOG=/dev/null
 	log "install.sh $* ($(date))"
