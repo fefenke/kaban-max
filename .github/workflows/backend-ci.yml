@@ -57,3 +57,6 @@ jobs:
       - name: Run tests
         shell: bash
         run: tests/run.sh
+
+      - name: Check explicit release selection
+        run: bash tests/installer-release-pin.sh
