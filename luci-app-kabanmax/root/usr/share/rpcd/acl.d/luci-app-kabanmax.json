@@ -1,0 +1,61 @@
+{
+  "luci-app-kabanmax": {
+    "description": "Grant UCI and RPC access to LuCI app KabanMax",
+    "read": {
+      "file": {
+        "/usr/bin/kabanmax": [
+          "exec"
+        ]
+      },
+      "ubus": {
+        "kabanmax": [
+          "state",
+          "state_wait",
+          "config",
+          "system_info",
+          "logs",
+          "log_text",
+          "usage",
+          "refresh"
+        ],
+        "kabanmax.installer": [
+          "read",
+          "input",
+          "stop"
+        ],
+        "luci-rpc": [
+          "getDHCPLeases",
+          "getHostHints"
+        ],
+        "network.interface": [
+          "dump"
+        ]
+      },
+      "uci": [
+        "dhcp",
+        "kabanmax"
+      ]
+    },
+    "write": {
+      "cgi-io": [
+        "upload"
+      ],
+      "file": {
+        "/tmp/kabanmax-import.conf": [
+          "write"
+        ]
+      },
+      "ubus": {
+        "file": [
+          "remove"
+        ],
+        "kabanmax": [
+          "import_config"
+        ]
+      },
+      "uci": [
+        "kabanmax"
+      ]
+    }
+  }
+}

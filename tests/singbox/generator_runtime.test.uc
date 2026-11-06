@@ -87,13 +87,13 @@ t.test("tunnels become native endpoints with the fields their kind allows", () =
             {
                 ".name": "tun_tailnet", section: "tunnels", order: "2",
                 kind: "tailscale", name: "Tailnet", tailscale_auth_key: "tskey-auth-test",
-                tailscale_hostname: "forkop-router", tailscale_exit_node: "100.64.0.1",
+                tailscale_hostname: "kabanmax-router", tailscale_exit_node: "100.64.0.1",
                 tailscale_detour_section: "control"
             },
             {
                 ".name": "tun_home", section: "tunnels", order: "6",
                 kind: "tailscale", name: "Home", tailscale_auth_key: "tskey-auth-test",
-                tailscale_hostname: "forkop-home"
+                tailscale_hostname: "kabanmax-home"
             },
             {
                 ".name": "tun_json", section: "tunnels", order: "3",
@@ -127,7 +127,7 @@ t.test("tunnels become native endpoints with the fields their kind allows", () =
 
     let tailscale = q.endpoint(config, "tunnels/Tailnet");
     t.eq(tailscale.type, "tailscale");
-    t.eq(tailscale.state_directory, "/etc/forkop/tailscale/tunnels-tun_tailnet");
+    t.eq(tailscale.state_directory, "/etc/kabanmax/tailscale/tunnels-tun_tailnet");
     t.eq(tailscale.detour, "control");
     t.eq(tailscale.exit_node, "100.64.0.1");
     t.eq(tailscale.exit_node_allow_lan_access, true);
@@ -181,7 +181,7 @@ t.test("list update settings reach remote rule sets, and ports constrain the who
     t.ok(q.dns_rule(defaults, (r) => r.server == "dns-server" && has(r.inbound, "source-dns-in") &&
         r.source_ip_cidr == null && r.domain == null && r.domain_suffix == null && r.domain_regex == null &&
         r.rule_set == null && r.query_type == null) != null,
-        "unmatched interface DNS resolves through the Forkop DNS by default");
+        "unmatched interface DNS resolves through the KabanMax DNS by default");
     t.ok(q.dns_rule(defaults, (r) => r.server == "dnsmasq-server" && has(r.inbound, "source-dns-in") &&
         r.domain_regex == "^[^.]+$") != null, "the local resolver keeps the zone it is authoritative for");
 });
@@ -198,7 +198,7 @@ t.test("server inbounds carry their protocol options and their clients", () => {
             { ".name": "edge", enabled: "1", protocol: "mixed", mixed_auth_enabled: "1", listen: "0.0.0.0", listen_port: "18080", routing_mode: "direct" },
             {
                 ".name": "tailnet", enabled: "1", protocol: "tailscale", tailscale_auth_key: "tskey-auth-server",
-                tailscale_hostname: "forkop-server", tailscale_detour_enabled: "1", tailscale_detour_section: "proxy",
+                tailscale_hostname: "kabanmax-server", tailscale_detour_enabled: "1", tailscale_detour_section: "proxy",
                 routing_mode: "direct"
             },
             { ".name": "open", enabled: "1", protocol: "mixed", listen: "0.0.0.0", listen_port: "18081", mixed_auth_enabled: "0", routing_mode: "direct" },

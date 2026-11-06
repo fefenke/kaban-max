@@ -1,4 +1,4 @@
-// Run from repo root with tests/fakes, tests/lib and forkop/files/usr/lib in -L.
+// Run from repo root with tests/fakes, tests/lib and kabanmax/files/usr/lib in -L.
 // The resulting script can be checked by nft -c in an isolated network namespace.
 require("fixture").seed({ settings: require("fixture").settings(), section: [
     { ".name": "https", action: "zapret2", destinations: "youtube.com", fully_routed_ips: [ "192.168.1.10" ] },

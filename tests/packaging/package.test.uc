@@ -8,7 +8,7 @@ let constants = require("core.constants");
 let singbox_constants = require("singbox.constants");
 let cli = require("service.cli");
 
-const MAKEFILE = fs.readfile(repo.path("forkop/Makefile"));
+const MAKEFILE = fs.readfile(repo.path("kabanmax/Makefile"));
 const BUILD_SH = fs.readfile(repo.path("build.sh"));
 
 function lines(text) {
@@ -22,7 +22,7 @@ function makefile_field(name) {
         if (found)
             return found[1];
     }
-    t.fail("forkop/Makefile has no " + name);
+    t.fail("kabanmax/Makefile has no " + name);
 }
 
 // `NAME="value"` at the top of build.sh.
@@ -60,7 +60,7 @@ t.test("the IPK and APK packages depend on what the feed package depends on", ()
 });
 
 t.test("every native ucode module the library loads is a dependency", () => {
-    let pipe = fs.popen("grep -rhoE 'require\\(\"[a-z]+\"\\)' '" + repo.path("forkop/files/usr/lib") + "'", "r");
+    let pipe = fs.popen("grep -rhoE 'require\\(\"[a-z]+\"\\)' '" + repo.path("kabanmax/files/usr/lib") + "'", "r");
     let found = pipe.read("all");
     pipe.close();
     let modules = sorted(map(split(trim(found), "\n"), (call) => match(call, /"([a-z]+)"/)[1]));
@@ -73,12 +73,12 @@ t.test("every native ucode module the library loads is a dependency", () => {
 t.test("every command a package hook or an init script runs is one the command line has", () => {
     let sources = [
         MAKEFILE, BUILD_SH,
-        fs.readfile(repo.path("forkop/files/etc/init.d/forkop")),
-        fs.readfile(repo.path("luci-app-forkop/root/etc/uci-defaults/50_luci-forkop"))
+        fs.readfile(repo.path("kabanmax/files/etc/init.d/kabanmax")),
+        fs.readfile(repo.path("luci-app-kabanmax/root/etc/uci-defaults/50_luci-kabanmax"))
     ];
     let names = [];
     for (let source in sources)
-        for (let call in match(source, /(\/usr\/bin\/forkop|"\$FORKOP_BIN") ([a-z_]+)/g) ?? [])
+        for (let call in match(source, /(\/usr\/bin\/kabanmax|"\$KABANMAX_BIN") ([a-z_]+)/g) ?? [])
             push(names, call[2]);
     names = sorted(names);
     for (let hook in [ "package_prerm", "package_postinst", "luci_prerm", "luci_postinst", "initd_start", "initd_reload" ])
@@ -94,10 +94,10 @@ t.test("every postinst migrates the configuration, then runs its hook with the c
     for (let source in [ MAKEFILE, BUILD_SH ]) {
         let previous = "";
         for (let line in lines(source)) {
-            if (index(line, "forkop package_postinst") >= 0) {
+            if (index(line, "kabanmax package_postinst") >= 0) {
                 calls++;
-                t.contains(line, "FORKOP_BYTECODE_VALIDATION_TTL=0 /usr/bin/forkop package_postinst");
-                t.contains(previous + line, "/usr/lib/forkop/config/migration.uc migrate");
+                t.contains(line, "KABANMAX_BYTECODE_VALIDATION_TTL=0 /usr/bin/kabanmax package_postinst");
+                t.contains(previous + line, "/usr/lib/kabanmax/config/migration.uc migrate");
             }
             previous = line;
         }
@@ -106,34 +106,34 @@ t.test("every postinst migrates the configuration, then runs its hook with the c
 });
 
 t.test("both packagers install the reset configuration and the fw4 include", () => {
-    t.contains(MAKEFILE, "./files/etc/config/forkop $(1)/usr/share/forkop/default-config");
-    t.contains(BUILD_SH, "forkop/files/etc/config/forkop\" \"$output_root/usr/share/forkop/default-config\"");
-    t.contains(MAKEFILE, "./files/usr/share/nftables.d/chain-pre/input/forkop.nft $(1)/usr/share/nftables.d/chain-pre/input/forkop.nft");
-    t.contains(BUILD_SH, "\"$output_root/usr/share/nftables.d/chain-pre/input/forkop.nft\"");
+    t.contains(MAKEFILE, "./files/etc/config/kabanmax $(1)/usr/share/kabanmax/default-config");
+    t.contains(BUILD_SH, "kabanmax/files/etc/config/kabanmax\" \"$output_root/usr/share/kabanmax/default-config\"");
+    t.contains(MAKEFILE, "./files/usr/share/nftables.d/chain-pre/input/kabanmax.nft $(1)/usr/share/nftables.d/chain-pre/input/kabanmax.nft");
+    t.contains(BUILD_SH, "\"$output_root/usr/share/nftables.d/chain-pre/input/kabanmax.nft\"");
 });
 
 t.test("a sysupgrade keeps the Tailscale identities, which no UCI option holds", () => {
-    t.eq(fs.readfile(repo.path("forkop/files/lib/upgrade/keep.d/forkop")), "/etc/forkop/\n");
-    t.contains(MAKEFILE, "./files/lib/upgrade/keep.d/forkop $(1)/lib/upgrade/keep.d/forkop");
-    t.contains(BUILD_SH, "\"$output_root/lib/upgrade/keep.d/forkop\"");
+    t.eq(fs.readfile(repo.path("kabanmax/files/lib/upgrade/keep.d/kabanmax")), "/etc/kabanmax/\n");
+    t.contains(MAKEFILE, "./files/lib/upgrade/keep.d/kabanmax $(1)/lib/upgrade/keep.d/kabanmax");
+    t.contains(BUILD_SH, "\"$output_root/lib/upgrade/keep.d/kabanmax\"");
 });
 
 t.test("both packagers stamp the release into the files that carry the placeholder", () => {
-    t.eq(constants.FORKOP_VERSION, "__COMPILED_VERSION_VARIABLE__");
-    t.contains(MAKEFILE, "s/__COMPILED_VERSION_VARIABLE__/$(FORKOP_COMPILED_VERSION)/g' $(1)/usr/lib/forkop/core/constants.uc");
-    t.contains(BUILD_SH, "\"$output_root/usr/lib/forkop/core/constants.uc\"");
-    t.contains(fs.readfile(repo.path("luci-app-forkop/htdocs/luci-static/resources/view/forkop/main.js")), "__COMPILED_VERSION_VARIABLE__");
-    t.contains(BUILD_SH, "\"$output_root/www/luci-static/resources/view/forkop/main.js\"");
+    t.eq(constants.KABANMAX_VERSION, "__COMPILED_VERSION_VARIABLE__");
+    t.contains(MAKEFILE, "s/__COMPILED_VERSION_VARIABLE__/$(KABANMAX_COMPILED_VERSION)/g' $(1)/usr/lib/kabanmax/core/constants.uc");
+    t.contains(BUILD_SH, "\"$output_root/usr/lib/kabanmax/core/constants.uc\"");
+    t.contains(fs.readfile(repo.path("luci-app-kabanmax/htdocs/luci-static/resources/view/kabanmax/main.js")), "__COMPILED_VERSION_VARIABLE__");
+    t.contains(BUILD_SH, "\"$output_root/www/luci-static/resources/view/kabanmax/main.js\"");
 });
 
-t.test("the fw4 input include accepts the traffic Forkop marks and the DNS it redirects", () => {
-    let include = fs.readfile(repo.path("forkop/files/usr/share/nftables.d/chain-pre/input/forkop.nft"));
+t.test("the fw4 input include accepts the traffic KabanMax marks and the DNS it redirects", () => {
+    let include = fs.readfile(repo.path("kabanmax/files/usr/share/nftables.d/chain-pre/input/kabanmax.nft"));
     t.contains(include, "meta mark & " + constants.NFT_FAKEIP_MARK + " == " + constants.NFT_FAKEIP_MARK);
     t.contains(include, "ct status dnat meta l4proto { tcp, udp } th dport " + singbox_constants.SOURCE_DNS_INBOUND_PORT);
 });
 
 t.test("the init script starts at the priority the autostart link is named after", () => {
-    t.contains(lines(fs.readfile(repo.path("forkop/files/etc/init.d/forkop"))), "START=" + constants.FORKOP_START_PRIORITY);
+    t.contains(lines(fs.readfile(repo.path("kabanmax/files/etc/init.d/kabanmax"))), "START=" + constants.KABANMAX_START_PRIORITY);
 });
 
 t.test("build.sh explains itself and refuses a malformed version before building", () => {

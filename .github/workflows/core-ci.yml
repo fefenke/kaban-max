@@ -2,9 +2,9 @@ name: Patched core fallback
 on:
   push:
     branches: [main]
-    paths: ['core/**', 'scripts/build-core.sh', '.github/workflows/core-ci.yml']
+    paths: ['core/**', 'scripts/build-core.sh', 'scripts/brand-core.py', '.github/workflows/core-ci.yml']
   pull_request:
-    paths: ['core/**', 'scripts/build-core.sh', '.github/workflows/core-ci.yml']
+    paths: ['core/**', 'scripts/build-core.sh', 'scripts/brand-core.py', '.github/workflows/core-ci.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,6 +24,7 @@ jobs:
           git -C /tmp/kaban-core checkout --detach FETCH_HEAD
           git -C /tmp/kaban-core apply --check "$PWD/core/patches/0001-stable-fallback.patch"
           git -C /tmp/kaban-core apply "$PWD/core/patches/0001-stable-fallback.patch"
+          python3 scripts/brand-core.py /tmp/kaban-core
       - name: Test fallback including cancellation and concurrent checks
         working-directory: /tmp/kaban-core
         run: go test -race ./protocol/group -run Fallback -count=1

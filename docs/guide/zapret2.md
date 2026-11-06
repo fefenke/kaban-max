@@ -9,9 +9,9 @@
 Проверки в SSH:
 
 ```sh
-forkop zapret2_status
+kabanmax zapret2_status
 cat /proc/net/netfilter/nfnetlink_queue
-logread -e forkop-zapret2
+logread -e kabanmax-zapret2
 ```
 
 Пустой список очередей при активных секциях — повод изучить журнал. `did not bind its NFQUEUE queues` означает отсутствие ожидаемых привязок, а не автоматически ошибку стратегии. Проверьте модули, права файлов Lua/fake и конфликты служб.

@@ -5,7 +5,7 @@ let kernel = require("zapret2.kernel");
 let repo = require("repo");
 
 t.test("NFQUEUE is a persistent package dependency, even when old modules are still loaded", () => {
-    for (let file in [ "forkop/Makefile", "build.sh" ])
+    for (let file in [ "kabanmax/Makefile", "build.sh" ])
         for (let dependency in [ "kmod-nfnetlink-queue", "kmod-nft-queue" ])
             t.ok(index(fs.readfile(repo.path(file)), dependency) >= 0, file + ": " + dependency);
 });

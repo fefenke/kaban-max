@@ -1,0 +1,14 @@
+{
+  "admin/services/kabanmax": {
+    "title": "K.A.B.A.N.-MAX",
+    "order": 42,
+    "action": {
+      "type": "view",
+      "path": "kabanmax/kabanmax"
+    },
+    "depends": {
+			"acl": [ "luci-app-kabanmax" ],
+			"uci": { "kabanmax": true }
+		}
+  }
+}

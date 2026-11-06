@@ -49,7 +49,7 @@ t.test("an OpenConnect tunnel is refused on what the core would refuse it for", 
     v.accepts(openconnect());
     v.accepts(openconnect({ server: "https://vpn.example.com:8443/staff", flavor: "fortinet",
         token: { mode: "totp", secret: "JBSWY3DPEHPK3PXP" },
-        tls: { client_certificate: [ "C" ], client_key_path: "/etc/forkop/key.pem" } }));
+        tls: { client_certificate: [ "C" ], client_key_path: "/etc/kabanmax/key.pem" } }));
     for (let server in [ "", "http://vpn.example.com", "vpn.example.com/?camouflage", "user@vpn.example.com", "vpn example.com" ])
         v.refuses(openconnect({ server }), "has no valid OpenConnect server");
     v.refuses(openconnect({ flavor: "array" }), "has an unknown OpenConnect protocol 'array'");

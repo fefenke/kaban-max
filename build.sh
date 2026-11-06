@@ -7,7 +7,7 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") <version> [output-directory]
 
-Build Forkop IPK and APK packages and the other files of its release: install.sh,
+Build KabanMax IPK and APK packages and the other files of its release: install.sh,
 release.json and SHA256SUMS. The version must use x.y.z format.
 
 INSTALL_COMMAND, when set, goes into release.json as install_command: the release installs
@@ -34,19 +34,19 @@ if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 APK_INTERNAL_VERSION="$RELEASE_VERSION"
 
-BUILD_DIR="${BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/forkop/build}"
-SDK_CACHE_DIR="${SDK_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/forkop/openwrt-sdk}"
+BUILD_DIR="${BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kabanmax/build}"
+SDK_CACHE_DIR="${SDK_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kabanmax/openwrt-sdk}"
 SDK_DIR="${SDK_DIR:-$SDK_CACHE_DIR/extracted}"
 IPK_SDK_URL="${IPK_SDK_URL:-https://downloads.openwrt.org/releases/24.10.6/targets/x86/64/openwrt-sdk-24.10.6-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst}"
 APK_SDK_URL="${APK_SDK_URL:-https://downloads.openwrt.org/releases/25.12.3/targets/x86/64/openwrt-sdk-25.12.3-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst}"
 
 BACKEND_DESCRIPTION="Rule-based traffic routing for OpenWrt"
 APP_DESCRIPTION="Web interface for K.A.B.A.N.-MAX"
-I18N_DESCRIPTION="Translation for luci-app-forkop - Русский (Russian)"
+I18N_DESCRIPTION="Translation for luci-app-kabanmax - Русский (Russian)"
 MAINTAINER="K.A.B.A.N.-MAX contributors"
 PROJECT_URL="https://github.com/fefenke/kaban-max"
 uc_constant() {
-  sed -n "s/^[[:space:]]*\(const[[:space:]]\{1,\}\)\{0,1\}$2[[:space:]]*[:=][[:space:]]*\"\([^\"]*\)\".*/\2/p" "$ROOT_DIR/forkop/files/usr/lib/$1"
+  sed -n "s/^[[:space:]]*\(const[[:space:]]\{1,\}\)\{0,1\}$2[[:space:]]*[:=][[:space:]]*\"\([^\"]*\)\".*/\2/p" "$ROOT_DIR/kabanmax/files/usr/lib/$1"
 }
 SB_REQUIRED_VERSION="$(uc_constant core/constants.uc SB_REQUIRED_VERSION)"
 MIN_CONFIG_VERSION="$(uc_constant config/migration.uc MIN_CONFIG_VERSION)"
@@ -55,15 +55,15 @@ if [[ ! "$SB_REQUIRED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$ ]] ||
   echo "Cannot read SB_REQUIRED_VERSION or MIN_CONFIG_VERSION from the sources" >&2
   exit 1
 fi
-# Forkop runs only on its own core. A 1.0.x updater installs luci-app-forkop and forkop by
+# KabanMax runs only on its own core. A 1.0.x updater installs luci-app-kabanmax and kabanmax by
 # file and never the core: this dependency makes that fail before anything changes.
 # APK says ip: apk refuses ip-tiny beside ip-full, yet takes it for ip; opkg takes ip-full for ip
-BACKEND_DEPENDS_IPK="libc, ca-bundle, ucode, ucode-mod-fs, ucode-mod-resolv, ucode-mod-socket, ucode-mod-ubus, ucode-mod-uloop, ucode-mod-uci, uclient-fetch, kmod-nft-tproxy, nftables, kmod-nft-nat, kmod-nfnetlink-queue, kmod-nft-queue, ip-tiny, sing-box-forkop (>= ${SB_REQUIRED_VERSION})"
-BACKEND_DEPENDS_APK="ca-bundle ip kmod-nft-nat kmod-nft-tproxy kmod-nfnetlink-queue kmod-nft-queue libc nftables uclient-fetch ucode ucode-mod-fs ucode-mod-resolv ucode-mod-socket ucode-mod-ubus ucode-mod-uci ucode-mod-uloop sing-box-forkop>=${SB_REQUIRED_VERSION}"
+BACKEND_DEPENDS_IPK="libc, ca-bundle, ucode, ucode-mod-fs, ucode-mod-resolv, ucode-mod-socket, ucode-mod-ubus, ucode-mod-uloop, ucode-mod-uci, uclient-fetch, kmod-nft-tproxy, nftables, kmod-nft-nat, kmod-nfnetlink-queue, kmod-nft-queue, ip-tiny, sing-box-kabanmax (>= ${SB_REQUIRED_VERSION})"
+BACKEND_DEPENDS_APK="ca-bundle ip kmod-nft-nat kmod-nft-tproxy kmod-nfnetlink-queue kmod-nft-queue libc nftables uclient-fetch ucode ucode-mod-fs ucode-mod-resolv ucode-mod-socket ucode-mod-ubus ucode-mod-uci ucode-mod-uloop sing-box-kabanmax>=${SB_REQUIRED_VERSION}"
 # The app calls the backend's ubus object, so it needs a backend at least as new;
 # the feed Makefile's DEPENDS cannot express a version.
-APP_DEPENDS_IPK="libc, luci-base, forkop (>= ${RELEASE_VERSION})"
-APP_DEPENDS_APK="libc luci-base forkop>=${RELEASE_VERSION}"
+APP_DEPENDS_IPK="libc, luci-base, kabanmax (>= ${RELEASE_VERSION})"
+APP_DEPENDS_APK="libc luci-base kabanmax>=${RELEASE_VERSION}"
 
 ensure_host_deps() {
   local missing=()
@@ -119,7 +119,7 @@ extract_sdk() {
   local archive_path="$2"
   local sdk_url="$3"
   local destination="$SDK_DIR/$kind"
-  local marker_file="$destination/.forkop-sdk-url"
+  local marker_file="$destination/.kabanmax-sdk-url"
   local temp_dir
   local extracted_root
 
@@ -189,27 +189,27 @@ build_backend_root() {
   make_dir "$output_root/etc/init.d"
   make_dir "$output_root/etc/config"
   make_dir "$output_root/usr/bin"
-  make_dir "$output_root/usr/lib/forkop"
-  make_dir "$output_root/usr/share/forkop"
+  make_dir "$output_root/usr/lib/kabanmax"
+  make_dir "$output_root/usr/share/kabanmax"
   make_dir "$output_root/usr/share/nftables.d/chain-pre/input"
   make_dir "$output_root/lib/upgrade/keep.d"
 
-  install -m 0755 "$ROOT_DIR/forkop/files/etc/init.d/forkop" "$output_root/etc/init.d/forkop"
-  install -m 0755 "$ROOT_DIR/forkop/files/etc/init.d/forkop-state" "$output_root/etc/init.d/forkop-state"
-  install -m 0755 "$ROOT_DIR/forkop/files/etc/init.d/forkop-zapret2" "$output_root/etc/init.d/forkop-zapret2"
-  install -m 0644 "$ROOT_DIR/forkop/files/etc/config/forkop" "$output_root/etc/config/forkop"
-  install -m 0644 "$ROOT_DIR/forkop/files/etc/config/forkop" "$output_root/usr/share/forkop/default-config"
-  install -m 0755 "$ROOT_DIR/forkop/files/usr/bin/forkop" "$output_root/usr/bin/forkop"
-  cp -a "$ROOT_DIR/forkop/files/usr/lib/." "$output_root/usr/lib/forkop/"
-  install -m 0644 "$ROOT_DIR/forkop/files/usr/share/nftables.d/chain-pre/input/forkop.nft" \
-    "$output_root/usr/share/nftables.d/chain-pre/input/forkop.nft"
-  install -m 0644 "$ROOT_DIR/forkop/files/lib/upgrade/keep.d/forkop" "$output_root/lib/upgrade/keep.d/forkop"
+  install -m 0755 "$ROOT_DIR/kabanmax/files/etc/init.d/kabanmax" "$output_root/etc/init.d/kabanmax"
+  install -m 0755 "$ROOT_DIR/kabanmax/files/etc/init.d/kabanmax-state" "$output_root/etc/init.d/kabanmax-state"
+  install -m 0755 "$ROOT_DIR/kabanmax/files/etc/init.d/kabanmax-zapret2" "$output_root/etc/init.d/kabanmax-zapret2"
+  install -m 0644 "$ROOT_DIR/kabanmax/files/etc/config/kabanmax" "$output_root/etc/config/kabanmax"
+  install -m 0644 "$ROOT_DIR/kabanmax/files/etc/config/kabanmax" "$output_root/usr/share/kabanmax/default-config"
+  install -m 0755 "$ROOT_DIR/kabanmax/files/usr/bin/kabanmax" "$output_root/usr/bin/kabanmax"
+  cp -a "$ROOT_DIR/kabanmax/files/usr/lib/." "$output_root/usr/lib/kabanmax/"
+  install -m 0644 "$ROOT_DIR/kabanmax/files/usr/share/nftables.d/chain-pre/input/kabanmax.nft" \
+    "$output_root/usr/share/nftables.d/chain-pre/input/kabanmax.nft"
+  install -m 0644 "$ROOT_DIR/kabanmax/files/lib/upgrade/keep.d/kabanmax" "$output_root/lib/upgrade/keep.d/kabanmax"
 
   sed -i -e "s/__COMPILED_VERSION_VARIABLE__/${RELEASE_VERSION}/g" \
-    "$output_root/usr/lib/forkop/core/constants.uc"
+    "$output_root/usr/lib/kabanmax/core/constants.uc"
 
   normalize_package_root_modes "$output_root"
-  chmod 0755 "$output_root/etc/init.d/forkop" "$output_root/etc/init.d/forkop-state" "$output_root/etc/init.d/forkop-zapret2" "$output_root/usr/bin/forkop"
+  chmod 0755 "$output_root/etc/init.d/kabanmax" "$output_root/etc/init.d/kabanmax-state" "$output_root/etc/init.d/kabanmax-zapret2" "$output_root/usr/bin/kabanmax"
 }
 
 build_app_root() {
@@ -218,10 +218,10 @@ build_app_root() {
   rm -rf "$output_root"
   make_dir "$output_root/www"
 
-  cp -a "$ROOT_DIR/luci-app-forkop/htdocs/." "$output_root/www/"
-  cp -a "$ROOT_DIR/luci-app-forkop/root/." "$output_root/"
+  cp -a "$ROOT_DIR/luci-app-kabanmax/htdocs/." "$output_root/www/"
+  cp -a "$ROOT_DIR/luci-app-kabanmax/root/." "$output_root/"
   sed -i -e "s/__COMPILED_VERSION_VARIABLE__/${RELEASE_VERSION}/g" \
-    "$output_root/www/luci-static/resources/view/forkop/main.js"
+    "$output_root/www/luci-static/resources/view/kabanmax/main.js"
 
   normalize_package_root_modes "$output_root"
   find "$output_root/etc/uci-defaults" -type f -exec chmod 0755 {} + 2>/dev/null || true
@@ -230,17 +230,17 @@ build_app_root() {
 build_i18n_root() {
   local output_root="$1"
   local po2lmo_bin="$2"
-  local lmo_path="$output_root/usr/lib/lua/luci/i18n/forkop.ru.lmo"
+  local lmo_path="$output_root/usr/lib/lua/luci/i18n/kabanmax.ru.lmo"
 
   rm -rf "$output_root"
   make_dir "$output_root/etc/uci-defaults"
   make_dir "$(dirname "$lmo_path")"
 
-  cat > "$output_root/etc/uci-defaults/luci-i18n-forkop-ru" <<'EOF'
+  cat > "$output_root/etc/uci-defaults/luci-i18n-kabanmax-ru" <<'EOF'
 uci set luci.languages.ru='Русский (Russian)'; uci commit luci
 EOF
 
-  "$po2lmo_bin" "$ROOT_DIR/luci-app-forkop/po/ru/forkop.po" "$lmo_path"
+  "$po2lmo_bin" "$ROOT_DIR/luci-app-kabanmax/po/ru/kabanmax.po" "$lmo_path"
 
   normalize_package_root_modes "$output_root"
   find "$output_root/etc/uci-defaults" -type f -exec chmod 0755 {} + 2>/dev/null || true
@@ -281,7 +281,7 @@ write_backend_ipk_control() {
   make_dir "$control_dir"
 
   cat > "$control_dir/control" <<EOF
-Package: forkop
+Package: kabanmax
 Version: ${RELEASE_VERSION}
 Depends: ${BACKEND_DEPENDS_IPK}
 License: GPL-2.0-or-later
@@ -294,21 +294,21 @@ Description: ${BACKEND_DESCRIPTION}
 EOF
 
   cat > "$control_dir/conffiles" <<'EOF'
-/etc/config/forkop
+/etc/config/kabanmax
 EOF
 
   cat > "$control_dir/postinst" <<'EOF'
 #!/bin/sh
 [ -n "${IPKG_INSTROOT}" ] && exit 0
-FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate || exit $?
-FORKOP_BYTECODE_VALIDATION_TTL=0 /usr/bin/forkop package_postinst
+KABANMAX_LIB=/usr/lib/kabanmax ucode -L /usr/lib/kabanmax /usr/lib/kabanmax/config/migration.uc migrate || exit $?
+KABANMAX_BYTECODE_VALIDATION_TTL=0 /usr/bin/kabanmax package_postinst
 EOF
 
   cat > "$control_dir/prerm" <<'EOF'
 #!/usr/bin/ucode
 
 if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-	system("/usr/bin/forkop package_prerm " + (ARGV[0] || "") + " >/dev/null 2>&1");
+	system("/usr/bin/kabanmax package_prerm " + (ARGV[0] || "") + " >/dev/null 2>&1");
 
 exit(0);
 EOF
@@ -324,7 +324,7 @@ write_app_ipk_control() {
   make_dir "$control_dir"
 
   cat > "$control_dir/control" <<EOF
-Package: luci-app-forkop
+Package: luci-app-kabanmax
 Version: ${RELEASE_VERSION}
 Depends: ${APP_DEPENDS_IPK}
 License: GPL-2.0-or-later
@@ -348,7 +348,7 @@ EOF
 #!/bin/sh
 [ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
 . ${IPKG_INSTROOT}/lib/functions.sh
-[ -n "${IPKG_INSTROOT}" ] || /usr/bin/forkop luci_prerm >/dev/null 2>&1 || true
+[ -n "${IPKG_INSTROOT}" ] || /usr/bin/kabanmax luci_prerm >/dev/null 2>&1 || true
 default_prerm $0 $@
 EOF
 
@@ -363,9 +363,9 @@ write_i18n_ipk_control() {
   make_dir "$control_dir"
 
   cat > "$control_dir/control" <<EOF
-Package: luci-i18n-forkop-ru
+Package: luci-i18n-kabanmax-ru
 Version: ${RELEASE_VERSION}
-Depends: libc, luci-app-forkop (>= ${RELEASE_VERSION})
+Depends: libc, luci-app-kabanmax (>= ${RELEASE_VERSION})
 License: GPL-2.0-or-later
 Section: luci
 URL: ${PROJECT_URL}
@@ -438,7 +438,7 @@ EOF
   cat > "$scripts_dir/backend-post-install.sh" <<'EOF'
 #!/usr/bin/ucode
 if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-    exit(system("FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate && FORKOP_BYTECODE_VALIDATION_TTL=0 /usr/bin/forkop package_postinst"));
+    exit(system("KABANMAX_LIB=/usr/lib/kabanmax ucode -L /usr/lib/kabanmax /usr/lib/kabanmax/config/migration.uc migrate && KABANMAX_BYTECODE_VALIDATION_TTL=0 /usr/bin/kabanmax package_postinst"));
 exit(0);
 EOF
 
@@ -446,7 +446,7 @@ EOF
 #!/usr/bin/ucode
 
 if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-	system("/usr/bin/forkop package_prerm remove >/dev/null 2>&1");
+	system("/usr/bin/kabanmax package_prerm remove >/dev/null 2>&1");
 
 exit(0);
 EOF
@@ -454,14 +454,14 @@ EOF
   cat > "$scripts_dir/backend-pre-upgrade.sh" <<'EOF'
 #!/usr/bin/ucode
 if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-    exit(system("/usr/bin/forkop package_prerm upgrade >/dev/null 2>&1"));
+    exit(system("/usr/bin/kabanmax package_prerm upgrade >/dev/null 2>&1"));
 exit(0);
 EOF
 
   cat > "$scripts_dir/backend-post-upgrade.sh" <<'EOF'
 #!/usr/bin/ucode
 if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-    exit(system("FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate && FORKOP_BYTECODE_VALIDATION_TTL=0 /usr/bin/forkop package_postinst"));
+    exit(system("KABANMAX_LIB=/usr/lib/kabanmax ucode -L /usr/lib/kabanmax /usr/lib/kabanmax/config/migration.uc migrate && KABANMAX_BYTECODE_VALIDATION_TTL=0 /usr/bin/kabanmax package_postinst"));
 exit(0);
 EOF
 
@@ -484,7 +484,7 @@ EOF
 [ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
 . ${IPKG_INSTROOT}/lib/functions.sh
 export root="${IPKG_INSTROOT}"
-export pkgname="luci-app-forkop"
+export pkgname="luci-app-kabanmax"
 add_group_and_user
 default_postinst
 EOF
@@ -494,8 +494,8 @@ EOF
 [ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
 . ${IPKG_INSTROOT}/lib/functions.sh
 export root="${IPKG_INSTROOT}"
-export pkgname="luci-app-forkop"
-[ -n "${IPKG_INSTROOT}" ] || /usr/bin/forkop luci_prerm >/dev/null 2>&1 || true
+export pkgname="luci-app-kabanmax"
+[ -n "${IPKG_INSTROOT}" ] || /usr/bin/kabanmax luci_prerm >/dev/null 2>&1 || true
 default_prerm
 exit 0
 EOF
@@ -512,7 +512,7 @@ export PKG_UPGRADE=1
 [ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
 . ${IPKG_INSTROOT}/lib/functions.sh
 export root="${IPKG_INSTROOT}"
-export pkgname="luci-app-forkop"
+export pkgname="luci-app-kabanmax"
 add_group_and_user
 default_postinst
 EOF
@@ -536,7 +536,7 @@ EOF
 [ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
 . ${IPKG_INSTROOT}/lib/functions.sh
 export root="${IPKG_INSTROOT}"
-export pkgname="luci-i18n-forkop-ru"
+export pkgname="luci-i18n-kabanmax-ru"
 add_group_and_user
 default_postinst
 EOF
@@ -546,7 +546,7 @@ EOF
 [ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
 . ${IPKG_INSTROOT}/lib/functions.sh
 export root="${IPKG_INSTROOT}"
-export pkgname="luci-i18n-forkop-ru"
+export pkgname="luci-i18n-kabanmax-ru"
 default_prerm
 EOF
 
@@ -562,7 +562,7 @@ export PKG_UPGRADE=1
 [ -s ${IPKG_INSTROOT}/lib/functions.sh ] || exit 0
 . ${IPKG_INSTROOT}/lib/functions.sh
 export root="${IPKG_INSTROOT}"
-export pkgname="luci-i18n-forkop-ru"
+export pkgname="luci-i18n-kabanmax-ru"
 add_group_and_user
 default_postinst
 EOF
@@ -601,7 +601,7 @@ build_apk_package() {
     -I "description:${description}" \
     -I "arch:noarch" \
     -I "license:GPL-2.0-or-later" \
-    -I "origin:forkop" \
+    -I "origin:kabanmax" \
     -I "maintainer:${maintainer}" \
     -I "url:${PROJECT_URL}" \
     -I "depends:${depends}" \
@@ -624,11 +624,11 @@ verify_ipk_metadata() {
   grep -q "^Package: ${expected_package}$" "$tmp_dir/control"
   grep -q "^Version: ${expected_version}$" "$tmp_dir/control"
   case "$expected_package" in
-    forkop)
-      grep -q "^Depends: .*sing-box-forkop (>= ${SB_REQUIRED_VERSION})" "$tmp_dir/control"
+    kabanmax)
+      grep -q "^Depends: .*sing-box-kabanmax (>= ${SB_REQUIRED_VERSION})" "$tmp_dir/control"
       ;;
-    luci-app-forkop) grep -q "^Depends: .*forkop (>= ${expected_version})" "$tmp_dir/control" ;;
-    luci-i18n-forkop-ru) grep -q "^Depends: .*luci-app-forkop (>= ${expected_version})" "$tmp_dir/control" ;;
+    luci-app-kabanmax) grep -q "^Depends: .*kabanmax (>= ${expected_version})" "$tmp_dir/control" ;;
+    luci-i18n-kabanmax-ru) grep -q "^Depends: .*luci-app-kabanmax (>= ${expected_version})" "$tmp_dir/control" ;;
   esac
   rm -rf "$tmp_dir"
 }
@@ -645,11 +645,11 @@ verify_apk_metadata() {
   grep -q "^  name: ${expected_package}$" "$dump_file"
   grep -q "^  version: ${expected_version}$" "$dump_file"
   case "$expected_package" in
-    forkop)
-      grep -q "^[[:space:]]*- sing-box-forkop>=${SB_REQUIRED_VERSION}$" "$dump_file"
+    kabanmax)
+      grep -q "^[[:space:]]*- sing-box-kabanmax>=${SB_REQUIRED_VERSION}$" "$dump_file"
       ;;
-    luci-app-forkop) grep -q "^[[:space:]]*- forkop>=${expected_version}$" "$dump_file" ;;
-    luci-i18n-forkop-ru) grep -q "^[[:space:]]*- luci-app-forkop>=${expected_version}$" "$dump_file" ;;
+    luci-app-kabanmax) grep -q "^[[:space:]]*- kabanmax>=${expected_version}$" "$dump_file" ;;
+    luci-i18n-kabanmax-ru) grep -q "^[[:space:]]*- luci-app-kabanmax>=${expected_version}$" "$dump_file" ;;
   esac
   rm -f "$dump_file"
 }
@@ -673,17 +673,17 @@ write_release_files() {
   cat > "$output_dir/release.json" <<EOF
 {
   "schema": 1,
-  "name": "forkop",
+  "name": "kabanmax",
   "version": "${RELEASE_VERSION}",
   "tag": "${RELEASE_VERSION}",
   "page": "${PROJECT_URL}/releases/tag/${RELEASE_VERSION}",
-  "requires": { "sing-box-forkop": "${SB_REQUIRED_VERSION}" },
+  "requires": { "sing-box-kabanmax": "${SB_REQUIRED_VERSION}" },
   "min_config_version": "${MIN_CONFIG_VERSION}"${install_command}
 }
 EOF
   (
     cd "$output_dir"
-    sha256sum forkop_* luci-app-forkop_* luci-i18n-forkop-ru_* install.sh release.json > SHA256SUMS
+    sha256sum kabanmax_* luci-app-kabanmax_* luci-i18n-kabanmax-ru_* install.sh release.json > SHA256SUMS
   )
 }
 
@@ -723,12 +723,12 @@ main() {
   mkdir -p "$BUILD_DIR" "$SDK_CACHE_DIR"
   exec 9>"$SDK_CACHE_DIR/.build.lock"
   if ! flock -n 9; then
-    echo "Another Forkop package build is already running" >&2
+    echo "Another KabanMax package build is already running" >&2
     exit 1
   fi
   output_dir="$OUTPUT_DIR"
   mkdir -p "$output_dir"
-  rm -f "$output_dir"/forkop_* "$output_dir"/luci-app-forkop_* "$output_dir"/luci-i18n-forkop-ru_* \
+  rm -f "$output_dir"/kabanmax_* "$output_dir"/luci-app-kabanmax_* "$output_dir"/luci-i18n-kabanmax-ru_* \
     "$output_dir/install.sh" "$output_dir/release.json" "$output_dir/SHA256SUMS"
 
   ipk_archive="$(download_sdk_archive "$IPK_SDK_URL")"
@@ -758,74 +758,74 @@ main() {
   # skips a file whose dependencies fail; without that name they stop before downloading anything.
   build_ipk_package \
     "$ipkg_build_bin" \
-    "forkop" \
+    "kabanmax" \
     "$backend_root" \
     "$backend_control" \
-    "$output_dir/forkop_${RELEASE_VERSION}_all.ipk"
+    "$output_dir/kabanmax_${RELEASE_VERSION}_all.ipk"
 
   build_ipk_package \
     "$ipkg_build_bin" \
-    "luci-app-forkop" \
+    "luci-app-kabanmax" \
     "$app_root" \
     "$app_control" \
-    "$output_dir/luci-app-forkop_${RELEASE_VERSION}_all.ipk"
+    "$output_dir/luci-app-kabanmax_${RELEASE_VERSION}_all.ipk"
 
   build_ipk_package \
     "$ipkg_build_bin" \
-    "luci-i18n-forkop-ru" \
+    "luci-i18n-kabanmax-ru" \
     "$i18n_root" \
     "$i18n_control" \
-    "$output_dir/luci-i18n-forkop-ru_${RELEASE_VERSION}_all.ipk"
+    "$output_dir/luci-i18n-kabanmax-ru_${RELEASE_VERSION}_all.ipk"
 
-  generate_apk_metadata_files "forkop" "$backend_root" "/etc/config/forkop"
-  generate_apk_metadata_files "luci-app-forkop" "$app_root"
-  generate_apk_metadata_files "luci-i18n-forkop-ru" "$i18n_root"
+  generate_apk_metadata_files "kabanmax" "$backend_root" "/etc/config/kabanmax"
+  generate_apk_metadata_files "luci-app-kabanmax" "$app_root"
+  generate_apk_metadata_files "luci-i18n-kabanmax-ru" "$i18n_root"
   write_backend_apk_scripts "$apk_scripts"
   write_app_apk_scripts "$apk_scripts"
   write_i18n_apk_scripts "$apk_scripts"
 
   build_apk_package \
     "$apk_bin" \
-    "forkop" \
+    "kabanmax" \
     "$APK_INTERNAL_VERSION" \
     "$BACKEND_DESCRIPTION" \
     "$BACKEND_DEPENDS_APK" \
     "$backend_root" \
     "$apk_scripts" \
     "backend" \
-    "$output_dir/forkop_${RELEASE_VERSION}_all.apk" \
+    "$output_dir/kabanmax_${RELEASE_VERSION}_all.apk" \
     "$MAINTAINER"
 
   build_apk_package \
     "$apk_bin" \
-    "luci-app-forkop" \
+    "luci-app-kabanmax" \
     "$APK_INTERNAL_VERSION" \
     "$APP_DESCRIPTION" \
     "$APP_DEPENDS_APK" \
     "$app_root" \
     "$apk_scripts" \
     "app" \
-    "$output_dir/luci-app-forkop_${RELEASE_VERSION}_all.apk" \
+    "$output_dir/luci-app-kabanmax_${RELEASE_VERSION}_all.apk" \
     "$MAINTAINER"
 
   build_apk_package \
     "$apk_bin" \
-    "luci-i18n-forkop-ru" \
+    "luci-i18n-kabanmax-ru" \
     "$APK_INTERNAL_VERSION" \
     "$I18N_DESCRIPTION" \
-    "libc luci-app-forkop>=${RELEASE_VERSION}" \
+    "libc luci-app-kabanmax>=${RELEASE_VERSION}" \
     "$i18n_root" \
     "$apk_scripts" \
     "i18n" \
-    "$output_dir/luci-i18n-forkop-ru_${RELEASE_VERSION}_all.apk" \
+    "$output_dir/luci-i18n-kabanmax-ru_${RELEASE_VERSION}_all.apk" \
     "$MAINTAINER"
 
-  verify_ipk_metadata "$output_dir/forkop_${RELEASE_VERSION}_all.ipk" "forkop" "$RELEASE_VERSION"
-  verify_ipk_metadata "$output_dir/luci-app-forkop_${RELEASE_VERSION}_all.ipk" "luci-app-forkop" "$RELEASE_VERSION"
-  verify_ipk_metadata "$output_dir/luci-i18n-forkop-ru_${RELEASE_VERSION}_all.ipk" "luci-i18n-forkop-ru" "$RELEASE_VERSION"
-  verify_apk_metadata "$apk_bin" "$output_dir/forkop_${RELEASE_VERSION}_all.apk" "forkop" "$APK_INTERNAL_VERSION"
-  verify_apk_metadata "$apk_bin" "$output_dir/luci-app-forkop_${RELEASE_VERSION}_all.apk" "luci-app-forkop" "$APK_INTERNAL_VERSION"
-  verify_apk_metadata "$apk_bin" "$output_dir/luci-i18n-forkop-ru_${RELEASE_VERSION}_all.apk" "luci-i18n-forkop-ru" "$APK_INTERNAL_VERSION"
+  verify_ipk_metadata "$output_dir/kabanmax_${RELEASE_VERSION}_all.ipk" "kabanmax" "$RELEASE_VERSION"
+  verify_ipk_metadata "$output_dir/luci-app-kabanmax_${RELEASE_VERSION}_all.ipk" "luci-app-kabanmax" "$RELEASE_VERSION"
+  verify_ipk_metadata "$output_dir/luci-i18n-kabanmax-ru_${RELEASE_VERSION}_all.ipk" "luci-i18n-kabanmax-ru" "$RELEASE_VERSION"
+  verify_apk_metadata "$apk_bin" "$output_dir/kabanmax_${RELEASE_VERSION}_all.apk" "kabanmax" "$APK_INTERNAL_VERSION"
+  verify_apk_metadata "$apk_bin" "$output_dir/luci-app-kabanmax_${RELEASE_VERSION}_all.apk" "luci-app-kabanmax" "$APK_INTERNAL_VERSION"
+  verify_apk_metadata "$apk_bin" "$output_dir/luci-i18n-kabanmax-ru_${RELEASE_VERSION}_all.apk" "luci-i18n-kabanmax-ru" "$APK_INTERNAL_VERSION"
 
   write_release_files "$output_dir"
   cleanup_work_dir

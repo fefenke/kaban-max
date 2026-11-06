@@ -71,7 +71,7 @@ t.test("static records answer from a hosts server after the sections and before 
         ]
     });
     let hosts = q.dns_server_tag(records, "hosts-server");
-    t.eq([ hosts.type, hosts.path ], [ "hosts", null ], "only the records Forkop was given, from no file");
+    t.eq([ hosts.type, hosts.path ], [ "hosts", null ], "only the records KabanMax was given, from no file");
     t.eq(hosts.predefined["ntc.party"], [ "130.255.77.28", "2a03:4000::1" ], "a repeated domain collects every address");
     t.eq(hosts.predefined["www.ntc.party"], [ "130.255.77.28" ]);
     t.ok(hosts.predefined["example.com"] != null, "a trailing comment keeps its record");
@@ -155,7 +155,7 @@ t.test("no DNS rule matches the answer without asking for it, which the core ref
         { ".name": "direct_all", enabled: "1", action: "bypass", fully_routed_ips: [ "@system", "192.168.1.20/32" ] },
         { ".name": "dns_all", enabled: "1", action: "dns", dns_server: [ "8.8.8.8" ], fully_routed_ips: [ "192.168.1.30/32" ] }
     ];
-    for (let mode in [ "forkop", "router" ]) {
+    for (let mode in [ "kabanmax", "router" ]) {
         let config = build({ settings: { ...DNS, unmatched_dns_mode: mode }, section: sections });
         for (let rule in config.dns.rules)
             t.eq(response_matchers(rule), [], mode + ": " + sprintf("%J", rule));
@@ -191,7 +191,7 @@ t.test("a device whose every query goes to one server keeps the local zone with 
     t.eq(q.dns_rule(router, (r) => q.has(r.source_ip_cidr, "192.168.1.30/32") && r.domain_regex != null), null, "with nothing to carve out");
 });
 
-t.test("unmatched client DNS goes to Forkop, with the local zone left to whoever owns loopback 53", () => {
+t.test("unmatched client DNS goes to KabanMax, with the local zone left to whoever owns loopback 53", () => {
     let moved = build({ settings: DNS, dhcp_dnsmasq: { port: "5353", domain: "home" }, section: BYPASS });
     let local = q.dns_server_tag(moved, "dnsmasq-server");
     t.eq([ local.server, local.server_port ], [ "127.0.0.1", 53 ], "a moved dnsmasq port changes nothing about the fallback");
@@ -199,10 +199,10 @@ t.test("unmatched client DNS goes to Forkop, with the local zone left to whoever
     t.ok(q.dns_rule(moved, (r) => r.server == "dnsmasq-server" && q.has(r.inbound, "source-dns-in") && r.domain_regex == "^[^.]+$") != null, "single-label names");
     t.ok(q.dns_rule(moved, (r) => r.server == "dnsmasq-server" && q.has(r.inbound, "source-dns-in") && r.domain_suffix == ".home") != null, "the DHCP domain");
     t.ok(q.dns_rule(moved, (r) => r.server == "dnsmasq-server" && q.has(r.inbound, "source-dns-in") && q.has(r.query_type, "PTR")) != null, "reverse lookups");
-    let forkop_at = q.dns_rule_index(moved, (r) => r.server == "dns-server" && q.has(r.inbound, "source-dns-in") && r.domain_regex == null);
+    let kabanmax_at = q.dns_rule_index(moved, (r) => r.server == "dns-server" && q.has(r.inbound, "source-dns-in") && r.domain_regex == null);
     for (let i, rule in moved.dns.rules)
         if (rule.server == "dnsmasq-server" && q.has(rule.inbound, "source-dns-in"))
-            t.ok(i < forkop_at, "the local zone is answered before the Forkop fallback");
+            t.ok(i < kabanmax_at, "the local zone is answered before the KabanMax fallback");
 
     let disabled = build({ settings: DNS, dhcp_dnsmasq: { port: "0" }, section: BYPASS });
     t.eq(q.dns_server_tag(disabled, "dnsmasq-server").server_port, 53, "a disabled dnsmasq port changes nothing either");

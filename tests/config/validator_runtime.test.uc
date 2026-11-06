@@ -262,7 +262,7 @@ t.test("accepts tailscale-without-exit-node", () => {
                 "kind": "tailscale",
                 "name": "Tailnet",
                 "tailscale_auth_key": "tskey-auth-test",
-                "tailscale_hostname": "forkop-router"
+                "tailscale_hostname": "kabanmax-router"
             }
         ]
     });
@@ -284,7 +284,7 @@ t.test("Tailscale tunnel without auth key", () => {
                 "section": "proxy",
                 "kind": "tailscale",
                 "name": "Tailnet",
-                "tailscale_hostname": "forkop-router"
+                "tailscale_hostname": "kabanmax-router"
             }
         ]
     }, "incomplete Tailscale endpoint");
@@ -307,7 +307,7 @@ t.test("Tailscale tunnel self detour", () => {
                 "kind": "tailscale",
                 "name": "Tailnet",
                 "tailscale_auth_key": "tskey-auth-test",
-                "tailscale_hostname": "forkop-router",
+                "tailscale_hostname": "kabanmax-router",
                 "tailscale_exit_node": "100.64.0.1",
                 "tailscale_detour_section": "proxy"
             }
@@ -977,7 +977,7 @@ t.test("reality short ID with an odd digit count", () => {
     }, "even number of hex digits");
 });
 
-t.test("a server of a protocol Forkop no longer serves is refused by name", () => {
+t.test("a server of a protocol KabanMax no longer serves is refused by name", () => {
     for (let protocol in [ "ssh", "mtproto" ])
         v.refuses({
             "settings": {},
@@ -1302,7 +1302,7 @@ t.test("two servers on one port", () => {
     }, "which is already used by server 'first'");
 });
 
-t.test("server on a Forkop port", () => {
+t.test("server on a KabanMax port", () => {
     v.refuses({
         "settings": {},
         "section": [
@@ -1331,7 +1331,7 @@ t.test("server on a Forkop port", () => {
                 "uuid": "11111111-1111-4111-8111-111111111111"
             }
         ]
-    }, "already used by a Forkop inbound");
+    }, "already used by a KabanMax inbound");
 });
 
 t.test("servers share a port only on different transports", () => {
@@ -1358,7 +1358,7 @@ t.test("a server may not take the port the WARP profile requests go out through"
         section: [ { ".name": "main", enabled: "1", action: "connection" } ],
         connection_link: fixture.links("main", [ "socks://127.0.0.1:1080#one" ]),
         server: [ { ".name": "srv", enabled: "1", protocol: "mixed", listen_port: "4536", mixed_auth_enabled: "0", routing_mode: "direct" } ]
-    }, "already used by a Forkop inbound");
+    }, "already used by a KabanMax inbound");
 });
 
 t.test("bad detour", () => {

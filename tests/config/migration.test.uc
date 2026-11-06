@@ -210,8 +210,8 @@ t.test("Zapret2 and its strategy survive while Zapret and ByeDPI are removed", (
     t.eq([ server.routing_mode, server.routing_section ], [ "section", "zap2" ]);
     t.eq(length(filter(out.config.server, (item) => item.protocol == "mixed")), 0, "its own mixed proxy goes with it");
     for (let line in [
-        "Removed the Zapret section 'Zapret': Forkop no longer runs DPI bypass",
-        "Removed the ByeDPI section 'bye': Forkop no longer runs DPI bypass"
+        "Removed the Zapret section 'Zapret': KabanMax no longer runs DPI bypass",
+        "Removed the ByeDPI section 'bye': KabanMax no longer runs DPI bypass"
     ])
         t.contains(out.warnings, line);
 });
@@ -278,9 +278,9 @@ t.test("a list file 1.0.5 skipped as missing or empty goes with a warning", () =
         domain_ip_lists: [ dir + "/missing.txt", dir + "/empty.txt", "https://x.example/list.txt" ] } ] }));
     t.eq(out.config.section[0].rule_set_with_subnets, [ "https://x.example/list.txt" ]);
     t.contains(out.warnings, "Section 'Main' no longer lists '" + dir + "/missing.txt': the file is missing or holds no entry, " +
-        "which Forkop no longer starts with. Add it again once it holds the list");
+        "which KabanMax no longer starts with. Add it again once it holds the list");
     t.contains(out.warnings, "Section 'Main' no longer lists '" + dir + "/empty.txt': the file is missing or holds no entry, " +
-        "which Forkop no longer starts with. Add it again once it holds the list");
+        "which KabanMax no longer starts with. Add it again once it holds the list");
     let gone = migrated(released({ section: [ { ".name": "main", action: "connection", domain_ip_lists: [ dir + "/missing.txt" ] } ] }));
     absent(gone.config.section[0], [ "domain_ip_lists", "rule_set_with_subnets" ]);
 });
@@ -288,7 +288,7 @@ t.test("a list file 1.0.5 skipped as missing or empty goes with a warning", () =
 t.test("lists no release ever applied go with a warning", () => {
     let out = migrated(released({ section: [ { ".name": "main", label: "Main", action: "connection", remote_domain_lists: [ "https://x.example" ] } ] }));
     absent(out.config.section[0], [ "remote_domain_lists" ]);
-    t.contains(out.warnings, "Removed 'remote_domain_lists' from section 'Main': no Forkop release ever applied it; add those lists as rule sets");
+    t.contains(out.warnings, "Removed 'remote_domain_lists' from section 'Main': no KabanMax release ever applied it; add those lists as rule sets");
 });
 
 t.test("built-in lists 2.0.0 carries go under their new names, the others stay as the files 1.0.5 used", () => {
@@ -368,8 +368,8 @@ t.test("what 2.0.0 cannot read in destinations goes with a warning, keeping the 
     let section = by_name(out.config.section);
     t.eq(section.main.destinations, "good.example # note");
     t.eq(section.dns.destinations, "example.org");
-    t.contains(out.warnings, "Section 'Main' dropped from its destinations what Forkop cannot read there: bad..example, host.123");
-    t.contains(out.warnings, "Section 'DNS' dropped from its destinations what Forkop cannot read there: 192.0.2.1, regex:a(");
+    t.contains(out.warnings, "Section 'Main' dropped from its destinations what KabanMax cannot read there: bad..example, host.123");
+    t.contains(out.warnings, "Section 'DNS' dropped from its destinations what KabanMax cannot read there: 192.0.2.1, regex:a(");
     t.contains(out.warnings, "Section 'R' no longer matches 'regex:a b': a value with a space, a comma, '#' or '//' cannot be written in its destinations");
     absent(section.regex, [ "destinations" ]);
 });
@@ -568,7 +568,7 @@ t.test("a subscription sends the headers 1.0.5 sent: the core's User-Agent when 
         { ".name": "custom", section: "main", url: "https://b.example/sub", auto_user_agent: "0", user_agent: "Happ/1.0", auto_hwid: "0", hwid: "MY-HWID" },
         { ".name": "implied", section: "main", url: "https://c.example/sub", user_agent: "v2rayN", hwid: "H2" },
         { ".name": "blank", section: "main", url: "https://d.example/sub", auto_user_agent: "0", user_agent: "" },
-        { ".name": "file", section: "main", url: "/etc/forkop/sub.txt", auto_user_agent: "0", user_agent: "X" }
+        { ".name": "file", section: "main", url: "/etc/kabanmax/sub.txt", auto_user_agent: "0", user_agent: "X" }
     ] }));
     let subscription = by_name(out.config.subscription_url);
     stub.commands([ [ /\| md5sum$/, { stdout: "0123456789abcdef0123456789abcdef  -\n" } ] ]);
@@ -688,7 +688,7 @@ t.test("a country matched by address and a pattern the core cannot read come wit
         include_regex: [ "a(", "ok" ] });
     t.eq(result.group.include_regex, "(?:ok)|(?:🇩🇪)");
     t.contains(result.warnings, "URLTest 'Fast' in section 'Main' matched countries by the server's address; it now matches the country flag in the server's name");
-    t.contains(result.warnings, "URLTest 'Fast' in section 'Main' dropped the regular expressions Forkop cannot read: a(");
+    t.contains(result.warnings, "URLTest 'Fast' in section 'Main' dropped the regular expressions KabanMax cannot read: a(");
 });
 
 /* ---------------------------------------------------------------------------- groups */
@@ -846,7 +846,7 @@ t.test("a Reality server takes its handshake target as the SNI and says when the
         absent(item, [ "reality_handshake_server", "reality_handshake_server_port", "reality_max_time_difference" ]);
 });
 
-t.test("a certificate Forkop issued moves into the server, the user's own path stays a path", () => {
+t.test("a certificate KabanMax issued moves into the server, the user's own path stays a path", () => {
     let dir = stub.tmpdir() + "/server-certs/";
     fs.mkdir(dir);
     fs.writefile(dir + "hy2.crt", "-----BEGIN CERTIFICATE-----\nissued\n-----END CERTIFICATE-----\n");
@@ -906,13 +906,13 @@ t.test("an HTTP transport takes the first host, and an inbound JSON loses the fi
     t.eq(json(result.server.json.inbound_json), { type: "mixed", listen_port: 1080 });
     t.eq(json(result.server.sniffing.inbound_json), { type: "mixed", listen_port: 1081 });
     t.eq(result.warnings, [ "Removed sniff_override_destination, domain_strategy from the inbound JSON of server 'JSON': sing-box no longer reads them there" ],
-        "Forkop sniffs every server itself");
+        "KabanMax sniffs every server itself");
 });
 
 t.test("a released MTProto server leaves with a warning", () => {
     let result = servers([ { ".name": "mt", label: "MTProto", protocol: "mtproto", mtproto_secret: "ee00", mtproto_padding: "1" } ]);
     t.eq(result.server.mt, null);
-    t.eq(result.warnings, [ "Removed the MTProto server 'MTProto': Forkop no longer serves MTProto" ]);
+    t.eq(result.warnings, [ "Removed the MTProto server 'MTProto': KabanMax no longer serves MTProto" ]);
 });
 
 t.test("a section's own mixed proxy becomes a mixed server routed to it, its port closed in the firewall", () => {
@@ -958,13 +958,13 @@ t.test("the writes replay the migration: added sections first, then edits, then 
 t.test("a takeover backup is restored exactly and its private keys removed", () => {
     let plan = v2.dnsmasq_plan({
         server: [ "127.0.0.42" ], noresolv: "1", cachesize: "0", rebind_protection: "0",
-        forkop_server: [ "1.1.1.1", "tls://8.8.8.8" ], forkop_noresolv: "1",
-        forkop_cachesize: "321", forkop_rebind_protection: "__unset__"
+        kabanmax_server: [ "1.1.1.1", "tls://8.8.8.8" ], kabanmax_noresolv: "1",
+        kabanmax_cachesize: "321", kabanmax_rebind_protection: "__unset__"
     }, false, "");
     t.ok(plan.changed);
     t.eq(plan.set_lists.server, [ "1.1.1.1", "tls://8.8.8.8" ]);
     t.eq([ plan.set.noresolv, plan.set.cachesize ], [ "1", "321" ]);
-    for (let key in [ "forkop_server", "forkop_noresolv", "forkop_cachesize", "forkop_rebind_protection", "rebind_protection" ])
+    for (let key in [ "kabanmax_server", "kabanmax_noresolv", "kabanmax_cachesize", "kabanmax_rebind_protection", "rebind_protection" ])
         t.contains(plan.delete_options, key);
 });
 
