@@ -12,7 +12,7 @@ t.test("disabling or reordering sections does not reassign active connection mar
     model.persist_slots();
     t.eq(model.mark("second"), before);
     t.ok(model.mark("third") != 0x02000001, "retired marks must not be reused for another strategy");
-    model.paths.slots = "/etc/forkop/zapret2-slots.json";
+    model.paths.slots = "/etc/kabanmax/zapret2-slots.json";
 });
 
 t.test("strategies are parsed without shell evaluation and cannot replace queue ownership", () => {
@@ -26,8 +26,8 @@ t.test("legacy bundled files and Lua resolve inside the managed release", () => 
     require("fixture").seed({ section: [{ ".name": "legacy", action: "zapret2",
         nfqws2_opt: "--blob=fake_quic:@/opt/zapret2/files/fake/quic_initial_www_google_com.bin --lua-init=@/opt/zapret2/lua/zapret-obfs.lua" }] });
     let args = model.instances()[0].argv;
-    t.contains(args, "--blob=fake_quic:@/opt/forkop-zapret2/current/files/fake/quic_initial_www_google_com.bin");
-    t.contains(args, "--lua-init=@/opt/forkop-zapret2/current/lua/zapret-obfs.lua");
+    t.contains(args, "--blob=fake_quic:@/opt/kabanmax-zapret2/current/files/fake/quic_initial_www_google_com.bin");
+    t.contains(args, "--lua-init=@/opt/kabanmax-zapret2/current/lua/zapret-obfs.lua");
 });
 t.test("updater uses official embedded releases with a digest and supported architectures", () => {
     let url = "https://github.com/bol-van/zapret2/releases/download/v1.0.6/zapret2-v1.0.6-openwrt-embedded.tar.gz";
@@ -50,7 +50,7 @@ t.test("failed activation restores the old release and restarts it", () => {
     t.eq(t.throws(() => updates.activate("new", "old", true, ops)).message, "new release cannot start");
     t.eq(calls, ["stop", "new", "start", "stop", "old", "start"]);
 });
-t.test("an installation on a stopped router keeps Forkop stopped", () => {
+t.test("an installation on a stopped router keeps KabanMax stopped", () => {
     let calls = [];
     updates.activate("new", null, false, {
         select: (target) => { push(calls, target); },
@@ -66,12 +66,12 @@ t.test("even a fresh installation checks the bundled default strategy", () => {
     t.contains(instances[0].argv, "--lua-init=@" + model.LUA + "zapret-antidpi.lua");
     t.contains(instances[0].argv, "--filter-udp=443");
 });
-t.test("upstream Forkop installer cannot remove an active Zapret2 integration", () => {
+t.test("upstream KabanMax installer cannot remove an active Zapret2 integration", () => {
     require("fixture").seed({ section: [{ ".name": "yt", action: "zapret2" }] });
     let constants = require("core.constants");
-    let own = constants.FORKOP_RELEASE_REPO;
-    constants.FORKOP_RELEASE_REPO = "ushan0v/forkop";
+    let own = constants.KABANMAX_RELEASE_REPO;
+    constants.KABANMAX_RELEASE_REPO = "ushan0v/forkop";
     t.contains(t.throws(() => require("service.installer").start("update", "", "0", "en")).message, "Zapret2 fork");
-    constants.FORKOP_RELEASE_REPO = own;
+    constants.KABANMAX_RELEASE_REPO = own;
 });
 t.done();

@@ -1,5 +1,5 @@
 // The page carries its own copy of a few backend tables; tests/fixtures/page_contract.json holds
-// both copies: this file checks the backend, fe-app-forkop/tests/pageContract.test.js the page.
+// both copies: this file checks the backend, fe-app-kabanmax/tests/pageContract.test.js the page.
 
 let t = require("t");
 let fs = require("fs");
@@ -19,7 +19,7 @@ let stub = require("stub");
 
 let contract = json(fs.readfile(repo.path("tests/fixtures/page_contract.json")));
 
-t.test("the reserved ports are every port Forkop's own inbounds bind", () => {
+t.test("the reserved ports are every port KabanMax's own inbounds bind", () => {
     let ports = [ constants.CLASH_API_CONTROLLER_PORT ];
     for (let name in keys(constants))
         if (match(name, /_INBOUND_PORT$/))
@@ -27,7 +27,7 @@ t.test("the reserved ports are every port Forkop's own inbounds bind", () => {
     t.eq(sort(uniq(ports), (a, b) => a - b), contract.reserved_ports);
 });
 
-t.test("the reserved tags are the ones Forkop gives its own listeners", () => {
+t.test("the reserved tags are the ones KabanMax gives its own listeners", () => {
     t.eq(sort(keys(constants.RESERVED_TAGS)), contract.reserved_tags);
 });
 
@@ -84,14 +84,14 @@ t.test("the state service parks a request as long as the page expects", () => {
 
 // rpcd refuses a method the page's ACL does not list; the one that changes something is a write.
 t.test("the page may call every method the state service publishes", () => {
-    let acl = json(fs.readfile(repo.path("luci-app-forkop/root/usr/share/rpcd/acl.d/luci-app-forkop.json")))["luci-app-forkop"];
-    t.eq(sort([ ...acl.read.ubus.forkop, ...acl.write.ubus.forkop ]), sort(keys(state_service.object_methods())));
-    t.eq(acl.write.ubus.forkop, [ "import_config" ]);
+    let acl = json(fs.readfile(repo.path("luci-app-kabanmax/root/usr/share/rpcd/acl.d/luci-app-kabanmax.json")))["luci-app-kabanmax"];
+    t.eq(sort([ ...acl.read.ubus.kabanmax, ...acl.write.ubus.kabanmax ]), sort(keys(state_service.object_methods())));
+    t.eq(acl.write.ubus.kabanmax, [ "import_config" ]);
 });
 
 t.test("the option every password field is stored in is masked in diagnostics", () => {
     for (let field, stored in contract.password_fields) {
-        let masked = mask.forkop_config("config tunnel 'probe'\n\toption " + stored + " 'secret-value'\n");
+        let masked = mask.kabanmax_config("config tunnel 'probe'\n\toption " + stored + " 'secret-value'\n");
         t.excludes(masked, "secret-value", field);
     }
 });

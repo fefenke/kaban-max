@@ -7,7 +7,7 @@ let migration = require("config.migration");
 let imports = require("config.import");
 
 const SESSION = "0123456789abcdef0123456789abcdef";
-const FILE = "/tmp/forkop-import.conf";
+const FILE = "/tmp/kabanmax-import.conf";
 
 function copy(value) {
     return json(sprintf("%J", value));
@@ -77,8 +77,8 @@ function setup(file, committed, unsaved) {
     uci.__reset();
     ubus.__reset();
     if (file != null)
-        uci.__seed("forkop-import.conf", file);
-    uci.__seed("forkop", committed);
+        uci.__seed("kabanmax-import.conf", file);
+    uci.__seed("kabanmax", committed);
     return rpcd(committed, unsaved);
 }
 
@@ -116,7 +116,7 @@ t.test("a released configuration is staged as an update would migrate it, in the
     let wanted = migration.migrate(migration.read_file(FILE).model, "1.0.5");
 
     t.eq(imports.check(FILE, SESSION), { success: true, from: "1.0.5", to: "2.0.0",
-        warnings: [ "Removed the MTProto server 'MT': Forkop no longer serves MTProto" ], changed: true, unsaved: false });
+        warnings: [ "Removed the MTProto server 'MT': KabanMax no longer serves MTProto" ], changed: true, unsaved: false });
     t.eq(imports.stage(FILE, SESSION), { success: true });
     t.eq(shape(session.staged), shape(wanted.model.sections));
     t.eq(session.staged[0].config_version, "2.0.0");
@@ -126,7 +126,7 @@ t.test("a released configuration is staged as an update would migrate it, in the
     t.eq(imports.check(FILE, SESSION).changed, false, "the same file again has nothing to change");
 });
 
-t.test("the session's unsaved changes to Forkop give way to the file", () => {
+t.test("the session's unsaved changes to KabanMax give way to the file", () => {
     let unsaved = current();
     unsaved[1].label = "Edited";
     let session = setup(current(), current(), unsaved);
@@ -194,10 +194,10 @@ t.test("without the page's session the check reads the committed configuration a
 
 t.test("the command line takes the session from the environment, never from its arguments", () => {
     let session = setup(released(), current());
-    stub.env({ FORKOP_RPC_SESSION: SESSION });
+    stub.env({ KABANMAX_RPC_SESSION: SESSION });
     let check = stub.capture(() => cli.main([ "import_config_check", FILE ], "/lib"));
     let staged = stub.capture(() => cli.main([ "import_config", FILE ], "/lib"));
-    stub.env({ FORKOP_RPC_SESSION: "" });
+    stub.env({ KABANMAX_RPC_SESSION: "" });
     let refused = stub.capture(() => cli.main([ "import_config", FILE ], "/lib"));
     stub.restore();
     t.eq([ check.result, json(check.stdout).changed ], [ 0, true ]);

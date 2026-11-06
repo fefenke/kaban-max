@@ -3,23 +3,23 @@ name: Backend CI
 on:
   pull_request:
     paths:
-      - 'forkop/files/**'
-      - 'forkop/Makefile'
+      - 'kabanmax/files/**'
+      - 'kabanmax/Makefile'
       - 'build.sh'
       - 'tests/**'
       # The packaging checks read the LuCI app's package scripts and bundle.
-      - 'luci-app-forkop/**'
+      - 'luci-app-kabanmax/**'
       - '.github/workflows/build.yml'
       - '.github/workflows/backend-ci.yml'
   push:
     branches:
       - main
     paths:
-      - 'forkop/files/**'
-      - 'forkop/Makefile'
+      - 'kabanmax/files/**'
+      - 'kabanmax/Makefile'
       - 'build.sh'
       - 'tests/**'
-      - 'luci-app-forkop/**'
+      - 'luci-app-kabanmax/**'
       - '.github/workflows/build.yml'
       - '.github/workflows/backend-ci.yml'
 
@@ -51,8 +51,8 @@ jobs:
       - name: Check ucode syntax
         shell: bash
         run: |
-          find forkop/files/usr/lib -name '*.uc' -print0 | xargs -0 -n1 ucode -c -o /dev/null
-          find forkop/files/usr/lib -name '*.uc' -print0 | xargs -0 -n1 ucode -S -c -o /dev/null
+          find kabanmax/files/usr/lib -name '*.uc' -print0 | xargs -0 -n1 ucode -c -o /dev/null
+          find kabanmax/files/usr/lib -name '*.uc' -print0 | xargs -0 -n1 ucode -S -c -o /dev/null
 
       - name: Run tests
         shell: bash
@@ -60,3 +60,6 @@ jobs:
 
       - name: Check explicit release selection
         run: bash tests/installer-release-pin.sh
+
+      - name: Check namespace migration
+        run: bash tests/legacy-namespace.sh

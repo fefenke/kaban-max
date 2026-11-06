@@ -1,0 +1,33 @@
+#!/bin/sh /etc/rc.common
+# KabanMax owns lifecycle and nftables. This service only supervises nfqws2.
+USE_PROCD=1
+START=98
+
+start_service() {
+    . /usr/share/libubox/jshn.sh
+    local data keys key name argv
+    data="$(ucode -L /usr/lib/kabanmax -e 'require("zapret2.kernel").load(); print(sprintf("%J", { instances: require("zapret2.model").instances() }))')" || return 1
+    json_load "$data" || return 1
+    json_select instances || return 1
+    json_get_keys keys
+    for key in $keys; do
+        json_select "$key"
+        json_get_var name name
+        procd_open_instance "$name"
+        procd_set_param command
+        json_select argv
+        json_get_keys argv
+        local arg value
+        for arg in $argv; do
+            json_get_var value "$arg"
+            procd_append_param command "$value"
+        done
+        json_select ..
+        procd_set_param respawn 3600 5 5
+        procd_set_param stdout 1
+        procd_set_param stderr 1
+        procd_set_param term_timeout 10
+        procd_close_instance
+        json_select ..
+    done
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package architecture-independent Forkop files with existing upstream control scripts.
+# Package architecture-independent KabanMax files with existing upstream control scripts.
 # Needs bash, GNU coreutils/tar, a built frontend and apk-tools v3 for .apk output.
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,8 +18,8 @@ for kind in backend app; do
     control="$work/$kind-control"
     "build_${kind}_root" "$root"
     "write_${kind}_ipk_control" "$control" "$(installed_size_bytes "$root")"
-    name=forkop
-    [[ "$kind" = app ]] && name=luci-app-forkop
+    name=kabanmax
+    [[ "$kind" = app ]] && name=luci-app-kabanmax
     packed="$work/$kind-packed"
     mkdir -p "$packed"
     printf '2.0\n' > "$packed/debian-binary"
@@ -34,14 +34,14 @@ if (apk mkpkg --help 2>&1 || true) | grep -q mkpkg; then
     write_backend_apk_scripts "$scripts"
     write_app_apk_scripts "$scripts"
     for kind in backend app; do
-        name=forkop
+        name=kabanmax
         depends="$BACKEND_DEPENDS_APK"
-        [[ "$kind" = app ]] && { name=luci-app-forkop; depends="$APP_DEPENDS_APK"; }
-        generate_apk_metadata_files "$name" "$work/$kind" "$([[ "$kind" = backend ]] && echo /etc/config/forkop || true)"
+        [[ "$kind" = app ]] && { name=luci-app-kabanmax; depends="$APP_DEPENDS_APK"; }
+        generate_apk_metadata_files "$name" "$work/$kind" "$([[ "$kind" = backend ]] && echo /etc/config/kabanmax || true)"
         apk mkpkg --files "$work/$kind" --output "$output/${name}_${version}_all.apk" \
             -I "name:$name" -I "version:$version" -I arch:noarch -I license:GPL-2.0-or-later \
             -I "description:K.A.B.A.N.-MAX routing with Zapret2 and stable fallback" \
-            -I "depends:$depends" -I origin:forkop \
+            -I "depends:$depends" -I origin:kabanmax \
             -s "pre-install:$scripts/$kind-pre-install.sh" \
             -s "post-install:$scripts/$kind-post-install.sh" \
             -s "pre-deinstall:$scripts/$kind-pre-deinstall.sh" \

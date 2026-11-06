@@ -75,7 +75,7 @@ t.test("types name the feature they need by the kind of object they are", () => 
     t.eq(features.type_feature("inbound", "ssh"), "", "there is no SSH server");
 });
 
-t.test("Forkop runs on a core with the Clash API whose tunnels have their gVisor stack", () => {
+t.test("KabanMax runs on a core with the Clash API whose tunnels have their gVisor stack", () => {
     t.eq(features.core_problem(split(BASE, ",")), "");
     t.eq(features.core_problem(split(TINY, ",")), "");
     t.contains(features.core_problem([ "with_utls", "with_quic" ]), "sing-box was built without with_clash_api");

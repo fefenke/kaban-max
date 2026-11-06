@@ -56,7 +56,7 @@ t.test("a name belongs to one server or group of its section and holds no slash"
     let main = [ { ".name": "proxy", label: "Main", enabled: "1", action: "connection" } ];
     let links = fixture.links("proxy", [ "socks5://127.0.0.1:1080#A" ]);
     let tailnet = { ".name": "proxy_tunnel", section: "proxy", kind: "tailscale", name: "B",
-        tailscale_auth_key: "tskey-auth-test", tailscale_hostname: "forkop-router" };
+        tailscale_auth_key: "tskey-auth-test", tailscale_hostname: "kabanmax-router" };
     v.accepts({ section: main, connection_link: links, tunnel: [ tailnet ], urltest: [ { ".name": "ut", section: "proxy", name: "C" } ] });
     v.refuses({ section: main, connection_link: links, tunnel: [ { ...tailnet, name: "A" } ] },
         "Section 'Main' has a link and a tunnel named 'A'. Rename one of them");

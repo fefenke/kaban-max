@@ -5,26 +5,26 @@ let fixture = require("fixture");
 let report = require("diagnostics.report");
 
 let dir = stub.tmpdir();
-report.paths.forkop_config = dir + "/forkop";
+report.paths.kabanmax_config = dir + "/kabanmax";
 
-const TABLE = "table inet ForkopTable {\n\tset localv4 {\n\t\ttype ipv4_addr\n\t\tflags interval\n\t\tauto-merge\n\t}\n\n" +
-    "\tset forkop_interfaces {\n\t\ttype ifname\n\t\tflags interval\n\t}\n\n" +
+const TABLE = "table inet KabanMaxTable {\n\tset localv4 {\n\t\ttype ipv4_addr\n\t\tflags interval\n\t\tauto-merge\n\t}\n\n" +
+    "\tset kabanmax_interfaces {\n\t\ttype ifname\n\t\tflags interval\n\t}\n\n" +
     "\tchain mangle {\n\t\ttype filter hook prerouting priority mangle + 1; policy accept;\n\t\tip daddr @localv4 return\n\t}\n}\n";
 
 function seed() {
     fixture.seed({ settings: { config_path: dir + "/config.json", dns_server: [ "77.88.8.8", "https://dns.google/dns-query" ], bootstrap_dns_server: [ "tls://1.1.1.1" ] }, server: [ { ".name": "s", public_host: "vpn.example", tls_server_name: "2a00:1450::1" } ] });
     fs.writefile(dir + "/config.json", sprintf("%J", { outbounds: [ { type: "vless", tag: "Main", server: "node.example", uuid: "uuid-secret" } ] }));
-    fs.writefile(report.paths.forkop_config, "config section 'main'\n\toption label 'Main via node.example'\n\toption proxy_string 'vless://uuid-secret@node.example:443'\n");
+    fs.writefile(report.paths.kabanmax_config, "config section 'main'\n\toption label 'Main via node.example'\n\toption proxy_string 'vless://uuid-secret@node.example:443'\n");
     let log = "";
     for (let i = 1; i <= 60; i++)
-        log += sprintf("Mon Oct 19 17:05:01 2026 user.info forkop: [info] line %d\n", i);
+        log += sprintf("Mon Oct 19 17:05:01 2026 user.info kabanmax: [info] line %d\n", i);
     for (let i = 1; i <= 60; i++)
         log += sprintf("Mon Oct 19 17:05:02 2026 daemon.err sing-box[1]: ERROR dial tcp node.example:443 (185.199.108.9) %d\n", i);
-    log += "Mon Oct 19 17:05:03 2026 user.info forkop: [info] line 61\n";
+    log += "Mon Oct 19 17:05:03 2026 user.info kabanmax: [info] line 61\n";
     stub.commands([
         [ /'logread'/, { stdout: log } ],
-        [ /'nft' '-t' 'list' 'table' 'inet' 'ForkopTable'/, { stdout: TABLE } ],
-        [ /'ip' '-4' 'rule'/, { stdout: "105:\tfrom all fwmark 0x4000000/0x4000000 lookup forkop\n" } ],
+        [ /'nft' '-t' 'list' 'table' 'inet' 'KabanMaxTable'/, { stdout: TABLE } ],
+        [ /'ip' '-4' 'rule'/, { stdout: "105:\tfrom all fwmark 0x4000000/0x4000000 lookup kabanmax\n" } ],
         [ /'ip' '-6' 'rule'/, { stdout: "" } ]
     ]);
 }
@@ -33,26 +33,26 @@ t.test("a masked report hides the credentials, the configured servers and public
     seed();
     let value = report.report("masked", "Main: 443/tcp · vpn.example\nExit: 185.199.108.9, direct 192.168.1.1\nMain DNS: 77.88.8.8 · 12 ms\nBootstrap DNS: tls://1.1.1.1 · 30 ms\n");
     stub.restore();
-    let text = join("\n", [ value.checks, value.log, value.forkop_config ]);
+    let text = join("\n", [ value.checks, value.log, value.kabanmax_config ]);
     for (let secret in [ "uuid-secret", "node.example", "vpn.example", "185.199.108.9" ])
         t.excludes(text, secret);
     t.eq(value.checks, "Main: 443/tcp · MASKED\nExit: X.X.X.9, direct 192.168.1.1\nMain DNS: 77.88.8.8 · 12 ms\nBootstrap DNS: tls://1.1.1.1 · 30 ms\n",
         "the checks the page ran are masked by the same rules, and the resolvers asked stay readable");
-    t.contains(value.forkop_config, "option label 'Main via MASKED'");
+    t.contains(value.kabanmax_config, "option label 'Main via MASKED'");
     t.contains(value.log, "X.X.X.9");
-    t.eq(value.ip_rules, "105:\tfrom all fwmark 0x4000000/0x4000000 lookup forkop\n");
+    t.eq(value.ip_rules, "105:\tfrom all fwmark 0x4000000/0x4000000 lookup kabanmax\n");
 });
 
-t.test("the report leaves out what the Forkop configuration already determines", () => {
+t.test("the report leaves out what the KabanMax configuration already determines", () => {
     seed();
     let value = report.report("raw", "");
     stub.restore();
-    t.eq(sort(keys(value)), [ "checks", "forkop_config", "ip_rules", "log", "nftables" ], "no sing-box configuration");
-    t.eq(value.nftables, "table inet ForkopTable {\n\tchain mangle {\n\t\ttype filter hook prerouting priority mangle + 1; policy accept;\n\t\tip daddr @localv4 return\n\t}\n}\n",
+    t.eq(sort(keys(value)), [ "checks", "ip_rules", "kabanmax_config", "log", "nftables" ], "no sing-box configuration");
+    t.eq(value.nftables, "table inet KabanMaxTable {\n\tchain mangle {\n\t\ttype filter hook prerouting priority mangle + 1; policy accept;\n\t\tip daddr @localv4 return\n\t}\n}\n",
         "the chains without the declarations of the sets they use");
 });
 
-t.test("the log keeps the last lines of Forkop and of the core apart, so the core's errors never push Forkop's out", () => {
+t.test("the log keeps the last lines of KabanMax and of the core apart, so the core's errors never push KabanMax's out", () => {
     seed();
     let value = report.report("raw", "Main: vpn.example");
     stub.restore();
@@ -70,7 +70,7 @@ t.test("a raw report is the router as it is", () => {
     let value = report.report("raw", "Main: vpn.example");
     stub.restore();
     t.contains(value.log, "node.example:443 (185.199.108.9)");
-    t.contains(value.forkop_config, "vless://uuid-secret@node.example:443");
+    t.contains(value.kabanmax_config, "vless://uuid-secret@node.example:443");
     t.eq(value.checks, "Main: vpn.example");
 });
 

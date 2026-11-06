@@ -1,4 +1,4 @@
-// Every verdict matches `sing-box check` and a real start; with FORKOP_SING_BOX_BIN set the
+// Every verdict matches `sing-box check` and a real start; with KABANMAX_SING_BOX_BIN set the
 // accepted cases run against that binary.
 
 let t = require("t");
@@ -8,7 +8,7 @@ let fixture = require("fixture");
 let generator = require("singbox.generator");
 let fs = require("fs");
 
-let core = stub.real.getenv("FORKOP_SING_BOX_BIN");
+let core = stub.real.getenv("KABANMAX_SING_BOX_BIN");
 let dir = stub.tmpdir();
 let cert = dir + "/server.crt";
 let key = dir + "/server.key";
@@ -142,8 +142,8 @@ const cases = [
     [ "an own certificate by path", null, server(own({ tls_certificate: cert, tls_key: key })), [ client("t", { password: "p" }) ] ],
     [ "an own certificate pasted", null,
         server(own({ tls_certificate: fs.readfile(cert), tls_key: fs.readfile(key) })), [ client("t", { password: "p" }) ] ],
-    [ "an own certificate file that is not there", "certificate file '/tmp/forkop-absent.crt' does not exist",
-        server(own({ tls_certificate: "/tmp/forkop-absent.crt", tls_key: key })), [ client("t", { password: "p" }) ] ],
+    [ "an own certificate file that is not there", "certificate file '/tmp/kabanmax-absent.crt' does not exist",
+        server(own({ tls_certificate: "/tmp/kabanmax-absent.crt", tls_key: key })), [ client("t", { password: "p" }) ] ],
     [ "an own certificate that is not one", "not a PEM certificate",
         server(own({ tls_certificate: "hello", tls_key: key })), [ client("t", { password: "p" }) ] ],
     [ "an own key behind a passphrase", "not one unencrypted PEM private key",

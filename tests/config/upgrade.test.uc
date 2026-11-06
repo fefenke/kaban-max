@@ -29,7 +29,7 @@ function pem(label) {
 
 function released(name) {
     let text = fs.readfile(repo.path("tests/fixtures/" + name));
-    text = replace(text, /\/etc\/forkop\/server-certs\//g, issued);
+    text = replace(text, /\/etc\/kabanmax\/server-certs\//g, issued);
     text = replace(text, /\/etc\/ssl\/acme\//g, files + "/acme/");
     for (let path in match(text, /'([^']+\.(crt|key))'/g) ?? []) {
         let file = substr(path[0], 1, length(path[0]) - 2);
@@ -69,19 +69,19 @@ function stays(upgraded) {
 
 /* --------------------------------------------------------------------- 1.0.5, a router */
 
-let router105 = migrate(released("forkop-1.0.5-router.conf"));
+let router105 = migrate(released("kabanmax-1.0.5-router.conf"));
 let built105 = router105.config != null ? build(router105.config) : null;
 
 t.test("1.0.5: the router's configuration migrates, saying what it could not keep", () => {
     t.eq([ router105.decision.result, router105.decision.from ], [ "migrate", "1.0.5" ]);
     t.eq(router105.warnings, [
-        "Removed the Zapret section 'YouTube DPI': Forkop no longer runs DPI bypass",
-        "Removed the ByeDPI section 'Discord DPI': Forkop no longer runs DPI bypass",
-        "Section 'Main proxy' no longer lists '/etc/forkop/lists/custom.txt': the file is missing or holds no entry, " +
-            "which Forkop no longer starts with. Add it again once it holds the list",
+        "Removed the Zapret section 'YouTube DPI': KabanMax no longer runs DPI bypass",
+        "Removed the ByeDPI section 'Discord DPI': KabanMax no longer runs DPI bypass",
+        "Section 'Main proxy' no longer lists '/etc/kabanmax/lists/custom.txt': the file is missing or holds no entry, " +
+            "which KabanMax no longer starts with. Add it again once it holds the list",
         "Server 'Family SOCKS' accepts the account 'Family-SOCKS' instead of 'Family SOCKS', since an account name holds " +
             "only letters, digits, '.', '_' and '-': use it in its clients",
-        "Removed the MTProto server 'Telegram': Forkop no longer serves MTProto",
+        "Removed the MTProto server 'Telegram': KabanMax no longer serves MTProto",
         "Fallback group 'Failover' in section 'Main proxy' takes the first working server of a level in its order, not " +
             "the fastest one: add a URLTest group to a level to pick by speed there"
     ]);
@@ -177,14 +177,14 @@ t.test("1.0.5: servers take the same clients on the same ports", () => {
 
 /* --------------------------------------------------------------------- 1.0.2, a router */
 
-let router102 = migrate(released("forkop-1.0.2-router.conf"));
+let router102 = migrate(released("kabanmax-1.0.2-router.conf"));
 let built102 = router102.config != null ? build(router102.config) : null;
 
 t.test("1.0.2: the router's configuration migrates through 1.0.5's step", () => {
     t.eq([ router102.decision.result, router102.decision.from ], [ "migrate", "1.0.2" ]);
     t.eq(router102.warnings, [
-        "Removed the Zapret section 'YouTube': Forkop no longer runs DPI bypass",
-        "Removed the ByeDPI section 'Discord': Forkop no longer runs DPI bypass",
+        "Removed the Zapret section 'YouTube': KabanMax no longer runs DPI bypass",
+        "Removed the ByeDPI section 'Discord': KabanMax no longer runs DPI bypass",
         "Server 'SS 2022' gives each Shadowsocks 2022 client a key of its own now, which a link holds next to the server " +
             "key: hand its clients the new link"
     ]);
@@ -199,7 +199,7 @@ t.test("1.0.2: HTTP links became HTTP outbounds, and text conditions match as 1.
     let work = rule(built102, "Work", (item) => item.domain != null);
     t.eq([ work.domain, work.ip_cidr, work.port ], [ [ "corp.example.com", "jira.example.com" ], [ "10.20.0.0/16" ], [ 22, 8443 ] ]);
     let nas = require("nft.sections").matchers(filter(router102.config.section, (item) => item[".name"] == "nas")[0]);
-    t.eq([ nas.action, nas.needed, nas.fully.ips ], [ "bypass", true, [ "192.168.1.5" ] ], "the device still skips Forkop");
+    t.eq([ nas.action, nas.needed, nas.fully.ips ], [ "bypass", true, [ "192.168.1.5" ] ], "the device still skips KabanMax");
     t.eq(router102.config.settings.unmatched_dns_mode, "router", "dont_touch_dhcp left unmatched queries with the router");
     t.eq(map([ "dns-server-1", "dns-server-2" ], (tag) => sb.dns_server_tag(built102, tag).server), [ "77.88.8.8", "77.88.8.1" ]);
 });
@@ -223,7 +223,7 @@ t.test("1.0.2: groups, the subscription and the servers carry over", () => {
 
 /* --------------------------------------------------------- the forms older releases wrote */
 
-let legacy = migrate(released("forkop-1.0.2-legacy.conf"));
+let legacy = migrate(released("kabanmax-1.0.2-legacy.conf"));
 let built_legacy = legacy.config != null ? build(legacy.config) : null;
 
 t.test("the forms releases before 1.0.2 wrote mean what 1.0.5 read in them", () => {
@@ -247,7 +247,7 @@ t.test("the forms releases before 1.0.2 wrote mean what 1.0.5 read in them", () 
 
 /* --------------------------------------------- 1.0.5's own configuration with its examples */
 
-let examples = migrate(released("forkop-1.0.5.conf"));
+let examples = migrate(released("kabanmax-1.0.5.conf"));
 
 t.test("1.0.5's shipped configuration with its examples filled in builds with every server", () => {
     t.eq(examples.decision.result, "migrate");

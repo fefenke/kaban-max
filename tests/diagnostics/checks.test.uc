@@ -79,21 +79,21 @@ function write_config(config) {
     fs.writefile(dir + "/config.json", sprintf("%J", config));
 }
 
-t.test("the reason Forkop is down is the first error of the last action, not what its cleanup ran into", () => {
-    let line = (level, message) => "Mon Oct 19 16:51:18 2026 user." + level + " forkop: [" + level + "] " + message;
-    t.eq(checks.last_error(join("\n", [ line("info", "Starting Forkop"), line("error", "Another sing-box process is running outside Forkop"),
-        line("error", "sing-box is still running after it was stopped"), line("warn", "Forkop did not start") ])),
-        "Another sing-box process is running outside Forkop");
-    t.eq(checks.last_error(join("\n", [ line("error", "An old failure"), line("info", "Forkop started"), line("info", "Stopping Forkop"),
-        line("info", "Forkop stopped") ])), "", "a stop the user asked for left no error");
-    t.eq(checks.last_error(join("\n", [ line("info", "Starting Forkop"), line("error", "first try"), line("info", "Starting Forkop"),
+t.test("the reason KabanMax is down is the first error of the last action, not what its cleanup ran into", () => {
+    let line = (level, message) => "Mon Oct 19 16:51:18 2026 user." + level + " kabanmax: [" + level + "] " + message;
+    t.eq(checks.last_error(join("\n", [ line("info", "Starting KabanMax"), line("error", "Another sing-box process is running outside KabanMax"),
+        line("error", "sing-box is still running after it was stopped"), line("warn", "KabanMax did not start") ])),
+        "Another sing-box process is running outside KabanMax");
+    t.eq(checks.last_error(join("\n", [ line("error", "An old failure"), line("info", "KabanMax started"), line("info", "Stopping KabanMax"),
+        line("info", "KabanMax stopped") ])), "", "a stop the user asked for left no error");
+    t.eq(checks.last_error(join("\n", [ line("info", "Starting KabanMax"), line("error", "first try"), line("info", "Starting KabanMax"),
         line("error", "second try") ])), "second try", "the last attempt, not an earlier one");
-    t.eq(checks.last_error("Mon Oct 19 16:51:18 2026 daemon.err sing-box[1]: FATAL[0000] start service"), "", "the core's own lines are not Forkop's");
-    t.eq(checks.last_error(join("\n", [ line("info", "Starting Forkop"), line("error", "an earlier failure"), line("info", "Starting Forkop"),
-        line("warn", "Forkop has nothing to run") ])), "Forkop has nothing to run", "an action that did not fail, by its last warning");
+    t.eq(checks.last_error("Mon Oct 19 16:51:18 2026 daemon.err sing-box[1]: FATAL[0000] start service"), "", "the core's own lines are not KabanMax's");
+    t.eq(checks.last_error(join("\n", [ line("info", "Starting KabanMax"), line("error", "an earlier failure"), line("info", "Starting KabanMax"),
+        line("warn", "KabanMax has nothing to run") ])), "KabanMax has nothing to run", "an action that did not fail, by its last warning");
 });
 
-t.test("the service check finds running cores other than Forkop's, and nothing Forkop runs for a moment", () => {
+t.test("the service check finds running cores other than KabanMax's, and nothing KabanMax runs for a moment", () => {
     let proc = dir + "/proc";
     for (let process in [ [ "100", [ "/usr/bin/sing-box", "run", "-c", "/etc/sing-box/config.json" ] ],
         [ "200", [ "/usr/bin/sing-box", "run", "-c", "/tmp/probe.json" ] ], [ "300", [ "sing-box", "check", "-c", "x" ] ], [ "400", [ "/sbin/procd" ] ] ]) {
@@ -106,12 +106,12 @@ t.test("the service check finds running cores other than Forkop's, and nothing F
     checks.paths.uptime = dir + "/uptime";
     fs.writefile(checks.paths.meminfo, "MemTotal:         239540 kB\nMemFree:           26652 kB\nMemAvailable:      45536 kB\n");
     fs.writefile(checks.paths.uptime, "100700.12 300000.00\n");
-    health.forkop_stably_running = () => false;
+    health.kabanmax_stably_running = () => false;
     health.sing_box_service_pid_runtime = () => 100;
     health.pid_is_sing_box = (pid) => index([ "100", "200", "300" ], "" + pid) >= 0;
     health.process_age_seconds = () => 42;
     stub.commands([
-        [ /'logread'/, { stdout: "Mon Oct 19 16:51:18 2026 user.info forkop: [info] Starting Forkop\nMon Oct 19 16:51:18 2026 user.err forkop: [error] Clash API address 192.168.1.1:9090 is already in use by another process\n" } ],
+        [ /'logread'/, { stdout: "Mon Oct 19 16:51:18 2026 user.info kabanmax: [info] Starting KabanMax\nMon Oct 19 16:51:18 2026 user.err kabanmax: [error] Clash API address 192.168.1.1:9090 is already in use by another process\n" } ],
         [ /'nft' '-t' 'list' 'ruleset'/, { stdout: "table inet other {\n\tchain c {\n\t\ttype filter hook prerouting priority mangle; policy accept;\n\t\tmeta l4proto tcp tproxy ip to :7893\n\t}\n}\n" } ]
     ]);
     let packages = require("core.packages");
@@ -134,7 +134,7 @@ t.test("the core check names the version the binary reports, and the package's v
     packages.paths.sing_box_version = dir + "/version";
     packages.paths.sing_box_variant = dir + "/variant";
     features.paths.binary = dir + "/sing-box";
-    fs.writefile(packages.paths.sing_box_version, "1.14.4-r2
+    fs.writefile(packages.paths.sing_box_version, "1.14.4-r3
 ");
     fs.writefile(packages.paths.sing_box_variant, "tiny
 ");
@@ -153,18 +153,18 @@ CGO: disabled
         return value;
     };
     let tags = "with_clash_api,with_utls,with_quic";
-    t.eq(core_of("1.14.4-r2", tags), { installed: true, binary: "1.14.4-r2", version: "1.14.4-r2", variant: "tiny",
+    t.eq(core_of("1.14.4-r3", tags), { installed: true, binary: "1.14.4-r3", version: "1.14.4-r3", variant: "tiny",
         outdated: false, required: require("core.constants").SB_REQUIRED_VERSION, problem: "" });
-    t.eq(core_of("1.14.4-r2+72", tags).variant, "tiny", "a build between releases of the package's release");
+    t.eq(core_of("1.14.4-r3+72", tags).variant, "tiny", "a build between releases of the package's release");
     t.eq(core_of("1.14.5-r1", tags).variant, "", "a binary of another build copied over the package's");
 
     let foreign = core_of("1.12.22", tags);
-    t.eq([ foreign.binary, foreign.version, foreign.variant, foreign.outdated ], [ "1.12.22", "", "", false ], "not sing-box-forkop");
+    t.eq([ foreign.binary, foreign.version, foreign.variant, foreign.outdated ], [ "1.12.22", "", "", false ], "not sing-box-kabanmax");
     let old = core_of("1.13.18-extended-2.6.5-f165", tags);
-    t.eq([ old.version, old.outdated ], [ "1.13.18-extended-2.6.5-f165", true ], "sing-box-forkop older than Forkop needs");
+    t.eq([ old.version, old.outdated ], [ "1.13.18-extended-2.6.5-f165", true ], "sing-box-kabanmax older than KabanMax needs");
 
-    t.contains(core_of("1.14.4-r2", "with_utls,with_quic").problem, "sing-box was built without with_clash_api");
-    t.contains(core_of("1.14.4-r2", "with_clash_api,with_wireguard,with_openvpn").problem,
+    t.contains(core_of("1.14.4-r3", "with_utls,with_quic").problem, "sing-box was built without with_clash_api");
+    t.contains(core_of("1.14.4-r3", "with_clash_api,with_wireguard,with_openvpn").problem,
         "sing-box was built with with_wireguard, with_openvpn but without with_gvisor");
 });
 
@@ -191,7 +191,7 @@ t.test("the main DNS is asked through the core for a name no cache holds; bootst
     stub.restore();
     t.eq(value.main, { servers: "77.88.8.8", answered: true, status: "NOERROR", ms: 12 });
     t.eq([ value.bootstrap, value.local.answered ], [ null, true ]);
-    t.matches(asked[0].names[0], /^forkop-[0-9a-f]+\.example\.com$/);
+    t.matches(asked[0].names[0], /^kabanmax-[0-9a-f]+\.example\.com$/);
     t.eq([ asked[0].options.type, asked[0].options.timeout, asked[0].options.retries ], [ [ "A" ], 4000, 1 ], "one attempt, as a page waits for it");
 });
 
@@ -285,7 +285,7 @@ t.test("a server is checked for its listener, its firewall port and its public a
         [ /'ip' '-[46]' 'route'/, { stdout: "" } ],
         [ "netstat -ln", { stdout: "Proto Recv-Q Send-Q Local Address Foreign Address State\ntcp 0 0 :::443 :::* LISTEN\ntcp 0 0 127.0.0.1:1080 0.0.0.0:* LISTEN\ntcp 0 0 0.0.0.0:22 0.0.0.0:* LISTEN\n" } ],
         [ "netstat -lnp", { stdout: "Active Internet connections\nProto Recv-Q Send-Q Local Address Foreign Address State PID/Program name\nudp 0 0 0.0.0.0:8443 0.0.0.0:* 812/nginx\ntcp 0 0 0.0.0.0:22 0.0.0.0:* LISTEN 1203/dropbear\n" } ],
-        [ "nft list chain inet fw4 input", { stdout: "\t\ttcp dport 443 counter accept comment \"forkop: server ports\"\n" } ]
+        [ "nft list chain inet fw4 input", { stdout: "\t\ttcp dport 443 counter accept comment \"kabanmax: server ports\"\n" } ]
     ]);
     let restore = tailscale({ endpoints: [ {
         tag: "Tail", state: "Running", connected: true, name: "router-2", advertisesExitNode: true, exitNodeApproved: false,

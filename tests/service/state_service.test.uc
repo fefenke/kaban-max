@@ -22,7 +22,7 @@ function runtime_state() {
     let running = runtime.running;
     return {
         service: {
-            forkop: { running, enabled: 1, status: health.service_status_text(running, 1), busy: null },
+            kabanmax: { running, enabled: 1, status: health.service_status_text(running, 1), busy: null },
             sing_box: { running, enabled: 1, status: health.service_status_text(running, 1) }
         },
         capabilities: {},
@@ -43,8 +43,8 @@ function started(during) {
     runtime.log_reads = 0;
     let service = fresh_service();
     stub.commands([
-        [ "/usr/bin/forkop get_system_info", { stdout: "{}" } ],
-        [ "logread", () => ({ stdout: "forkop: line " + ++runtime.log_reads + "\n" }) ]
+        [ "/usr/bin/kabanmax get_system_info", { stdout: "{}" } ],
+        [ "logread", () => ({ stdout: "kabanmax: line " + ++runtime.log_reads + "\n" }) ]
     ]);
     let looped = false;
     uloop.__on_run(() => {
@@ -70,11 +70,11 @@ t.test("a stop that arrives while the service starts up ends it as soon as its l
 });
 
 function revision() {
-    return ubus.__invoke("forkop", "state", {}).replied.revision;
+    return ubus.__invoke("kabanmax", "state", {}).replied.revision;
 }
 
 function wait(args) {
-    return ubus.__invoke("forkop", "state_wait", args);
+    return ubus.__invoke("kabanmax", "state_wait", args);
 }
 
 function fire_interval(ms) {
@@ -87,7 +87,7 @@ t.test("a reader that has seen every line waits, however few lines there are", (
     let parked = {};
     started((service) => {
         parked.nothing_seen = wait({ revision: revision(), cursor: 0 }).deferred;
-        service.remember_log_line("forkop: first");
+        service.remember_log_line("kabanmax: first");
         parked.all_seen = wait({ revision: revision(), cursor: 1 }).deferred;
     });
     t.eq(parked, { nothing_seen: true, all_seen: true });
@@ -96,20 +96,20 @@ t.test("a reader that has seen every line waits, however few lines there are", (
 t.test("a reader behind is answered at once, and one ahead of a restarted service resumes from its cursor", () => {
     let replies = {};
     started((service) => {
-        service.remember_log_line("forkop: first");
-        service.remember_log_line("forkop: second");
+        service.remember_log_line("kabanmax: first");
+        service.remember_log_line("kabanmax: second");
         let behind = wait({ revision: revision(), cursor: 1 });
         let ahead = wait({ revision: revision(), cursor: 40 });
         replies.behind = [ behind.deferred, behind.replied.cursor, behind.replied.lines ];
         replies.ahead = [ ahead.deferred, ahead.replied.cursor, ahead.replied.lines ];
     });
-    t.eq(replies, { behind: [ false, 2, [ "forkop: second" ] ], ahead: [ false, 2, [] ] });
+    t.eq(replies, { behind: [ false, 2, [ "kabanmax: second" ] ], ahead: [ false, 2, [] ] });
 });
 
 t.test("a page's one parked request is answered by a new line and by a new state", () => {
     let answers = {};
     started((service) => {
-        let cursor = ubus.__invoke("forkop", "logs", {}).replied.cursor;
+        let cursor = ubus.__invoke("kabanmax", "logs", {}).replied.cursor;
         let first = wait({ revision: revision(), cursor });
         fire_interval(service.LOG_POLL_MS);
         answers.line = [ first.replied.revision, first.replied.lines ];
@@ -117,16 +117,16 @@ t.test("a page's one parked request is answered by a new line and by a new state
         let second = wait({ revision: revision(), cursor: first.replied.cursor });
         runtime.running = 0;
         ubus.__notify("service", "instance.stop", { service: "sing-box", instance: "instance1" });
-        answers.state = [ second.replied.revision - first.replied.revision, second.replied.service.forkop.running, second.replied.lines ];
+        answers.state = [ second.replied.revision - first.replied.revision, second.replied.service.kabanmax.running, second.replied.lines ];
     });
     runtime.running = 1;
-    t.eq(answers, { line: [ 1, [ "forkop: line 2" ] ], state: [ 1, 0, [] ] });
+    t.eq(answers, { line: [ 1, [ "kabanmax: line 2" ] ], state: [ 1, 0, [] ] });
 });
 
 t.test("a request that sends no cursor waits for the state alone", () => {
     let seen = {};
     started((service) => {
-        ubus.__invoke("forkop", "logs", {});
+        ubus.__invoke("kabanmax", "logs", {});
         let request = wait({ revision: revision() });
         fire_interval(service.LOG_POLL_MS);
         seen.after_line = request.replied;
@@ -138,8 +138,8 @@ t.test("a request that sends no cursor waits for the state alone", () => {
 
 t.test("the first log answer says where the log stands and carries none of it", () => {
     let service = fresh_service();
-    service.remember_log_line("forkop: first");
-    service.remember_log_line("forkop: second");
+    service.remember_log_line("kabanmax: first");
+    service.remember_log_line("kabanmax: second");
     stub.commands([ [ "logread", { stdout: "" } ] ]);
     let reply = service.object_methods().logs.call({ args: {} });
     stub.restore();
@@ -153,11 +153,11 @@ t.test("the Logs tab gets the whole log, read again only once a line arrived pas
     let full_reads = 0;
     exec.capture_parallel = (commands) => map(commands, (argv) =>
         argv[0] == "logread" && argv[1] == "-e" ? { status: 0, stdout: "whole log " + ++full_reads + "\n" } : die("unexpected " + join(" ", argv)));
-    stub.commands([ [ "logread -l", { stdout: "forkop: first\n" } ] ]);
+    stub.commands([ [ "logread -l", { stdout: "kabanmax: first\n" } ] ]);
     let log_text = (args) => service.object_methods().log_text.call({ args });
     let first = log_text({});
     let same = log_text({ cursor: first.cursor });
-    service.remember_log_line("forkop: second");
+    service.remember_log_line("kabanmax: second");
     let moved = log_text({ cursor: first.cursor });
     let fresh_page = log_text({});
     stub.restore();
@@ -227,7 +227,7 @@ t.test("the watch notices the autostart link the state reads", () => {
         let tick = filter(uloop.__timers(), (entry) => entry.kind == "interval")[0];
         tick.callback();
         let before = runtime.reads;
-        fs.writefile(ui.paths.rc_dir + "/S99forkop", "");
+        fs.writefile(ui.paths.rc_dir + "/S99kabanmax", "");
         tick.callback();
         reads = runtime.reads - before;
     });
@@ -238,7 +238,7 @@ t.test("the watch notices the autostart link the state reads", () => {
 t.test("the log is read on every tick while it is watched, however recently a request read it", () => {
     let reads = null;
     started((service) => {
-        ubus.__invoke("forkop", "logs", {});
+        ubus.__invoke("kabanmax", "logs", {});
         let before = runtime.log_reads;
         for (let entry in uloop.__timers())
             if (entry.kind == "interval" && entry.ms == service.LOG_POLL_MS)
@@ -256,25 +256,25 @@ t.test("a refresh after the configuration changed reads the committed configurat
     ui.paths.reload_lock = dir + "/reload.lock";
     ui.paths.rc_dir = dir + "/rc.d";
     let real = {
-        stable: health.forkop_stably_running,
+        stable: health.kabanmax_stably_running,
         sing_box_stable: health.sing_box_service_stable,
         running: health.sing_box_service_running,
         report: features.report
     };
-    health.forkop_stably_running = () => false;
+    health.kabanmax_stably_running = () => false;
     health.sing_box_service_stable = () => false;
     health.sing_box_service_running = () => false;
     features.report = () => ({ known: true });
 
     fixture.seed({ server: [ { ".name": "one", enabled: "1" } ] });
     let service = fresh_service();
-    service.paths.config = dir + "/forkop";
+    service.paths.config = dir + "/kabanmax";
     fs.writefile(service.paths.config, "one server");
-    stub.commands([ [ "/usr/bin/forkop get_system_info", { stdout: "{}" } ] ]);
+    stub.commands([ [ "/usr/bin/kabanmax get_system_info", { stdout: "{}" } ] ]);
     let enabled = () => service.object_methods().refresh.call({ args: {} }).capabilities.server_inbounds_enabled_count;
     let counts = [ enabled() ];
 
-    uci.__seed("forkop", [
+    uci.__seed("kabanmax", [
         { ".type": "server", ".name": "one", enabled: "1" },
         { ".type": "server", ".name": "two", enabled: "1" }
     ]);
@@ -282,7 +282,7 @@ t.test("a refresh after the configuration changed reads the committed configurat
     push(counts, enabled());
 
     stub.restore();
-    health.forkop_stably_running = real.stable;
+    health.kabanmax_stably_running = real.stable;
     health.sing_box_service_stable = real.sing_box_stable;
     health.sing_box_service_running = real.running;
     features.report = real.report;
@@ -293,14 +293,14 @@ t.test("the page reads the committed configuration, again as soon as it changes"
     let uci = require("uci");
     let dir = stub.tmpdir();
     let service = fresh_service();
-    service.paths.config = dir + "/forkop";
+    service.paths.config = dir + "/kabanmax";
     let labels = () => map(service.object_methods().config.call({ args: {} }).sections, (section) => section.label);
 
-    uci.__seed("forkop", [ { ".type": "section", ".name": "main", label: "proxy" } ]);
+    uci.__seed("kabanmax", [ { ".type": "section", ".name": "main", label: "proxy" } ]);
     fs.writefile(service.paths.config, "proxy");
     let seen = [ labels() ];
 
-    uci.__seed("forkop", [
+    uci.__seed("kabanmax", [
         { ".type": "section", ".name": "main", label: "renamed" },
         { ".type": "section", ".name": "added", label: "games" }
     ]);
@@ -315,7 +315,7 @@ t.test("the installed versions are read again as soon as the package database ch
     let service = fresh_service();
     service.paths.package_databases = [ db + ".absent", db ];
     let version = "1.0.0";
-    stub.commands([ [ "/usr/bin/forkop get_system_info", () => ({ stdout: sprintf("%J", { sing_box_version: version }) }) ] ]);
+    stub.commands([ [ "/usr/bin/kabanmax get_system_info", () => ({ stdout: sprintf("%J", { sing_box_version: version }) }) ] ]);
     let asked = () => service.object_methods().system_info.call({ args: {} }).system_info.sing_box_version;
     t.eq(asked(), "1.0.0");
     version = "1.1.0";
@@ -328,15 +328,15 @@ t.test("an uploaded configuration is checked and staged by commands of their own
     let dir = stub.tmpdir();
     let seen = {};
     started((service) => {
-        service.paths.import_file = dir + "/forkop-import.conf";
+        service.paths.import_file = dir + "/kabanmax-import.conf";
         service.paths.import_answer = dir + "/answer";
         fs.writefile(service.paths.import_file, "config settings 'settings'\n");
-        let check = ubus.__invoke("forkop", "import_config", { ubus_rpc_session: "page-session" });
-        let stage = ubus.__invoke("forkop", "import_config", { stage: true, ubus_rpc_session: "page-session" });
+        let check = ubus.__invoke("kabanmax", "import_config", { ubus_rpc_session: "page-session" });
+        let stage = ubus.__invoke("kabanmax", "import_config", { stage: true, ubus_rpc_session: "page-session" });
         let runs = uloop.__processes();
         seen.parked = [ check.deferred, stage.deferred ];
         seen.commands = map(runs, (run) => [ run.executable, ...run.args ]);
-        seen.sessions = map(runs, (run) => run.env.FORKOP_RPC_SESSION);
+        seen.sessions = map(runs, (run) => run.env.KABANMAX_RPC_SESSION);
         seen.path = runs[0].env.PATH;
 
         fs.writefile(runs[0].args[2], "{ \"success\": true, \"changed\": false }\n");
@@ -347,8 +347,8 @@ t.test("an uploaded configuration is checked and staged by commands of their own
     });
     t.eq(seen.parked, [ true, true ]);
     t.eq(seen.commands, [
-        [ "/bin/sh", "-c", "umask 077; exec \"$@\" > \"$0\"", dir + "/answer.1", "/usr/bin/forkop", "import_config_check", dir + "/forkop-import.conf" ],
-        [ "/bin/sh", "-c", "umask 077; exec \"$@\" > \"$0\"", dir + "/answer.2", "/usr/bin/forkop", "import_config", dir + "/forkop-import.conf" ]
+        [ "/bin/sh", "-c", "umask 077; exec \"$@\" > \"$0\"", dir + "/answer.1", "/usr/bin/kabanmax", "import_config_check", dir + "/kabanmax-import.conf" ],
+        [ "/bin/sh", "-c", "umask 077; exec \"$@\" > \"$0\"", dir + "/answer.2", "/usr/bin/kabanmax", "import_config", dir + "/kabanmax-import.conf" ]
     ]);
     t.eq(seen.sessions, [ "page-session", "page-session" ]);
     t.eq(seen.path, getenv("PATH"), "the rest of the environment is kept");

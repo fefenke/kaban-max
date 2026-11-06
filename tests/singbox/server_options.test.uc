@@ -123,7 +123,7 @@ const SERVERS = {
         },
         {
             ".name": "tailscale_srv", ".type": "server", enabled: "1", label: "tailscale",
-            protocol: "tailscale", tailscale_auth_key: "tskey-auth-contract", tailscale_hostname: "forkop",
+            protocol: "tailscale", tailscale_auth_key: "tskey-auth-contract", tailscale_hostname: "kabanmax",
             tailscale_control_url: "https://controlplane.tailscale.com", tailscale_ephemeral: "1",
             tailscale_advertise_routes: [ "192.168.1.0/24" ], routing_mode: "direct"
         },

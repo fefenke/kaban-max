@@ -1,0 +1,28 @@
+'use strict';
+'require baseclass';
+'require dom';
+'require form';
+'require fs';
+'require network';
+'require rpc';
+'require tools.widgets as widgets';
+'require uci';
+'require ui';
+
+import './helpers/structuredClonePolyfill';
+
+// view/kabanmax/kabanmax.js hands this to view.extend().
+export { KabanMaxView } from './kabanmax/entry';
+
+// The tab builders, which the bundle checks use to build one tab at a time.
+export {
+  configureSectionSection,
+  createSectionContent,
+} from './kabanmax/tabs/sections';
+export {
+  configureServerSection,
+  createServerContent,
+} from './kabanmax/tabs/servers';
+export { createSettingsContent } from './kabanmax/tabs/settings';
+// A check building one tab sets the core features the way KabanMaxView reads them.
+export { setCoreFeatures } from './kabanmax/services/coreFeatures.service';

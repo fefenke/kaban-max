@@ -3,20 +3,20 @@ name: Frontend CI
 on:
   pull_request:
     paths:
-      - 'fe-app-forkop/**'
-      - 'luci-app-forkop/**'
+      - 'fe-app-kabanmax/**'
+      - 'luci-app-kabanmax/**'
       # The suite includes checks that compare the page with what the package
       # ships, and fixtures it shares with the backend tests.
-      - 'forkop/files/etc/config/forkop'
+      - 'kabanmax/files/etc/config/kabanmax'
       - 'tests/fixtures/**'
       - '.github/workflows/frontend-ci.yml'
   push:
     branches:
       - main
     paths:
-      - 'fe-app-forkop/**'
-      - 'luci-app-forkop/**'
-      - 'forkop/files/etc/config/forkop'
+      - 'fe-app-kabanmax/**'
+      - 'luci-app-kabanmax/**'
+      - 'kabanmax/files/etc/config/kabanmax'
       - 'tests/fixtures/**'
       - '.github/workflows/frontend-ci.yml'
 
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-24.04
     defaults:
       run:
-        working-directory: fe-app-forkop
+        working-directory: fe-app-kabanmax
 
     steps:
       - name: Checkout code

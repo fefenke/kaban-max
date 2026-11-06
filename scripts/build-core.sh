@@ -22,6 +22,7 @@ else
 fi
 git -C "$work/source" apply --check "$repo/core/patches/0001-stable-fallback.patch"
 git -C "$work/source" apply "$repo/core/patches/0001-stable-fallback.patch"
+python3 "$repo/scripts/brand-core.py" "$work/source"
 export SOURCE_DATE_EPOCH=1793880000
 mkdir -p "$output"
 bash "$work/source/build.sh" --variant "$variant" --arch "$architecture" --version "$version" --format all --output "$output"

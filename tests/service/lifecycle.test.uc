@@ -22,8 +22,8 @@ let lifecycle = require("service.lifecycle");
 let world = null;
 let real_sleep = global.sleep;
 
-const CHANGED_TABLE = "table inet ForkopTable\nadd rule inet ForkopTable mangle jump x\n";
-const NOTHING_TO_RUN = "[warn] Forkop has nothing to run: no section with servers and no VPN server is enabled. Set up a section or a VPN server, then start Forkop";
+const CHANGED_TABLE = "table inet KabanMaxTable\nadd rule inet KabanMaxTable mangle jump x\n";
+const NOTHING_TO_RUN = "[warn] KabanMax has nothing to run: no section with servers and no VPN server is enabled. Set up a section or a VPN server, then start KabanMax";
 
 function event(name) {
     push(world.events, name);
@@ -31,7 +31,7 @@ function event(name) {
 
 function reset(options) {
     let dir = stub.tmpdir();
-    lifecycle.paths.config = dir + "/forkop.config";
+    lifecycle.paths.config = dir + "/kabanmax.config";
     lifecycle.paths.lock = dir + "/start.lock";
     lifecycle.paths.pending_reload = dir + "/reload.pending";
     lifecycle.paths.planned_stop = dir + "/planned-stop";
@@ -40,7 +40,7 @@ function reset(options) {
     lifecycle.paths.sing_box_init = dir + "/sing-box";
     fs.writefile(lifecycle.paths.sing_box_init, "#!/bin/sh\n");
     fs.chmod(lifecycle.paths.sing_box_init, 0755);
-    fs.writefile(lifecycle.paths.config, "config forkop\n");
+    fs.writefile(lifecycle.paths.config, "config kabanmax\n");
     lifecycle.paths.shipped_config = dir + "/default-config";
     fs.writefile(lifecycle.paths.shipped_config, "config settings 'settings'\n\toption config_version '2.0.0'\n");
     fixture.seed({ settings: { config_version: options?.config_version ?? "2.0.0" } });
@@ -55,7 +55,7 @@ function reset(options) {
         ports: false,
         network: false,
         capture: true,
-        script: "table inet ForkopTable\n",
+        script: "table inet KabanMaxTable\n",
         config_changed: false,
         slept: 0,
         // What the core does on its own between two looks of a wait.
@@ -116,9 +116,9 @@ function reset(options) {
     health.pid_is_sing_box = (pid) => pid == world.pid && pid > 0 && !world.forked;
     health.start_ticks = (pid) => pid == world.pid ? world.ticks : null;
     health.sing_box_runtime_ports_ready = () => world.ports;
-    health.forkop_runtime_network_configured = () => world.network && world.capture && !world.routing_lost;
+    health.kabanmax_runtime_network_configured = () => world.network && world.capture && !world.routing_lost;
     health.sing_box_service_running = () => world.pid > 0;
-    health.forkop_running = () => world.pid > 0 && world.ports && world.network && world.capture && !world.routing_lost;
+    health.kabanmax_running = () => world.pid > 0 && world.ports && world.network && world.capture && !world.routing_lost;
     watch.start_worker = () => { event("watcher started"); return !world.watcher_fails; };
     watch.stop_worker = () => { event("watcher stopped"); return true; };
     rulesets.start_worker = () => { event("rule-set worker started"); return !world.ruleset_fails; };
@@ -174,7 +174,7 @@ function reset(options) {
             world.capture = true;
             return { status: world.resume_fails ? 1 : 0 };
         } ],
-        [ "nft delete table inet ForkopTable", () => {
+        [ "nft delete table inet KabanMaxTable", () => {
             event("nft table deleted");
             if (!world.table_delete_fails)
                 world.network = false;
@@ -208,7 +208,7 @@ function running(options) {
     world.ticks = 100;
     world.ports = true;
     world.network = true;
-    fs.writefile(lifecycle.paths.applied_nft, "table inet ForkopTable\n");
+    fs.writefile(lifecycle.paths.applied_nft, "table inet KabanMaxTable\n");
 }
 
 function failures_logged() {
@@ -227,7 +227,7 @@ t.test("a start answers only once sing-box is ready, then turns the table on, th
     t.eq(result.result, 0);
     t.eq(world.events, [ "firewall opened", "config checked", "sing-box started", "nft applied", "watcher started", "rule-set worker started" ]);
     t.eq(fs.readfile(lifecycle.paths.applied_nft), world.script, "the applied table is recorded");
-    t.eq(world.logs, [ "[info] Starting Forkop", "[info] Forkop started" ]);
+    t.eq(world.logs, [ "[info] Starting KabanMax", "[info] KabanMax started" ]);
     t.eq(result.stdout, "", "a start prints nothing");
 });
 
@@ -264,21 +264,21 @@ t.test("a configuration restored from an older release is migrated before anythi
 t.test("a start on a router with IPv6 off says that only IPv4 is routed", () => {
     reset({ ipv6_off: true });
     t.eq(run(() => lifecycle.start()).result, 0);
-    t.eq(world.logs, [ "[info] Starting Forkop", "[info] IPv6 is off on the router; only IPv4 traffic is routed", "[info] Forkop started" ]);
+    t.eq(world.logs, [ "[info] Starting KabanMax", "[info] IPv6 is off on the router; only IPv4 traffic is routed", "[info] KabanMax started" ]);
 });
 
-t.test("a start of a running Forkop does nothing", () => {
+t.test("a start of a running KabanMax does nothing", () => {
     running();
     let result = run(() => lifecycle.start());
     t.eq([ result.result, world.events ], [ 0, [] ]);
-    t.contains(world.logs, "[info] Forkop is already running");
+    t.contains(world.logs, "[info] KabanMax is already running");
 });
 
 t.test("a start with nothing to run warns once, runs nothing and succeeds", () => {
     reset({ nothing_to_run: true });
     let result = run(() => lifecycle.start());
     t.eq(result.result, 0);
-    t.eq(world.logs, [ "[info] Starting Forkop", NOTHING_TO_RUN ]);
+    t.eq(world.logs, [ "[info] Starting KabanMax", NOTHING_TO_RUN ]);
     t.eq(filter(world.events, (e) => e == "config checked" || e == "sing-box started" || e == "nft applied"), []);
     t.eq([ result.stdout, result.stderr ], [ "", "" ]);
 });
@@ -291,7 +291,7 @@ t.test("a start with nothing to run takes down what an earlier run left", () => 
     t.eq(filter(world.events, (e) => e == "sing-box started"), []);
 });
 
-t.test("a stopped Forkop with nothing to run is not started by a reload", () => {
+t.test("a stopped KabanMax with nothing to run is not started by a reload", () => {
     reset({ nothing_to_run: true });
     let result = run(() => lifecycle.reload("interface_up:wwan"));
     t.eq(result.result, 0);
@@ -319,7 +319,7 @@ t.test("a start that fails after sing-box came up takes everything down again", 
     reset({ nft_fails: true });
     let result = run(() => lifecycle.start());
     t.eq(result.result, 1);
-    t.eq(world.logs, [ "[info] Starting Forkop", "[error] nft refused the ruleset: Error: broken" ],
+    t.eq(world.logs, [ "[info] Starting KabanMax", "[error] nft refused the ruleset: Error: broken" ],
         "the reason, once, and nothing about the cleanup behind it");
     t.contains(world.events, "sing-box stopped");
     t.contains(world.events, "firewall closed");
@@ -342,7 +342,7 @@ t.test("a start refuses to run a second sing-box", () => {
     let result = run(() => lifecycle.start());
     t.eq(result.result, 1);
     t.eq(filter(world.events, (e) => e == "sing-box started"), []);
-    t.contains(result.stderr, "Another sing-box process is running outside Forkop; stop it before starting Forkop");
+    t.contains(result.stderr, "Another sing-box process is running outside KabanMax; stop it before starting KabanMax");
 });
 
 t.test("each failed step of a start names itself in the log as an error", () => {
@@ -403,7 +403,7 @@ t.test("a reload routes the devices the new configuration binds before the core 
     result = reloaded({ config_changed: true, bound: [ "wwan0" ], bound_rules_fail: true });
     t.eq(result.result, 1);
     t.eq(failures_logged(), [ "[error] Failed to add the IPv4 routing rule of interface wwan0" ]);
-    t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; Forkop is stopped");
+    t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; KabanMax is stopped");
     t.eq(filter(world.events, (e) => e == "sing-box reloaded"), []);
 });
 
@@ -411,10 +411,10 @@ t.test("a configuration refused while it is generated leaves the running runtime
     let result = reloaded({ config_fails: true, config_changed: true, script: CHANGED_TABLE });
     t.eq(result.result, 1);
     t.eq(world.events, [ "firewall opened", "config written" ]);
-    t.eq(fs.readfile(lifecycle.paths.applied_nft), "table inet ForkopTable\n", "the table applied last is still the live one");
+    t.eq(fs.readfile(lifecycle.paths.applied_nft), "table inet KabanMaxTable\n", "the table applied last is still the live one");
     t.eq(failures_logged(), [ "[error] Failed to generate sing-box configuration: broken" ]);
     t.eq(result.stderr, "Failed to generate sing-box configuration: broken\n");
-    t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; Forkop keeps running the previous one");
+    t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; KabanMax keeps running the previous one");
 });
 
 t.test("a table that cannot be built is said in one line and touches nothing", () => {
@@ -447,7 +447,7 @@ t.test("each failed step of a reload after the runtime was touched names itself 
         t.eq(result.result, 1, failure[1]);
         t.eq(failures_logged(), [ failure[1] ], failure[1]);
         t.contains(result.stderr, substr(failure[1], 8));
-        t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; Forkop is stopped", failure[1]);
+        t.eq(world.logs[length(world.logs) - 1], "[warn] Configuration not applied; KabanMax is stopped", failure[1]);
         t.contains(world.events, "sing-box stopped", failure[1]);
         t.eq(index(world.events, "sing-box reloaded") >= 0, failure[2], failure[1] + ": whether sing-box was signalled");
     }
@@ -465,7 +465,7 @@ t.test("a reload of a runtime that is not complete restarts it", () => {
     world.network = false;
     let result = run(() => lifecycle.reload("on_config_change"));
     t.eq(result.result, 0);
-    t.eq(world.logs, [ "[info] Applying configuration", "[info] Forkop is not fully running; restarting it", "[info] Configuration applied" ]);
+    t.eq(world.logs, [ "[info] Applying configuration", "[info] KabanMax is not fully running; restarting it", "[info] Configuration applied" ]);
     t.ok(index(world.events, "sing-box stopped") < index(world.events, "sing-box started"));
     t.contains(world.events, "nft applied");
 });
@@ -473,7 +473,7 @@ t.test("a reload of a runtime that is not complete restarts it", () => {
 t.test("a configuration changed while a reload ran queues another one", () => {
     running({ config_changed: true });
     runtime.write_config = (checked) => {
-        fs.writefile(lifecycle.paths.config, "config forkop changed\n");
+        fs.writefile(lifecycle.paths.config, "config kabanmax changed\n");
         return false;
     };
     run(() => lifecycle.reload("on_config_change"));
@@ -521,7 +521,7 @@ t.test("a stop whose table cannot be removed fails", () => {
     running({ table_delete_fails: true });
     let result = run(() => lifecycle.stop());
     t.eq(result.result, 1);
-    t.contains(result.stderr, "Failed to remove the Forkop nftables table");
+    t.contains(result.stderr, "Failed to remove the KabanMax nftables table");
 });
 
 t.test("a crash cleanup leaves a planned stop and a running runtime alone, and takes a dead one down", () => {
@@ -530,7 +530,7 @@ t.test("a crash cleanup leaves a planned stop and a running runtime alone, and t
     world.ports = false;
     fs.writefile(lifecycle.paths.planned_stop, "1\n");
     let result = run(() => lifecycle.crash_cleanup("137"));
-    t.eq([ result.result, world.events ], [ 0, [] ], "a stop Forkop made itself");
+    t.eq([ result.result, world.events ], [ 0, [] ], "a stop KabanMax made itself");
 
     running();
     t.eq([ run(() => lifecycle.crash_cleanup("137")).result, world.events ], [ 0, [] ], "a runtime that recovered");
@@ -539,7 +539,7 @@ t.test("a crash cleanup leaves a planned stop and a running runtime alone, and t
     world.pid = 0;
     world.ports = false;
     t.eq(run(() => lifecycle.crash_cleanup("137")).result, 0);
-    t.contains(world.logs, "[error] sing-box stopped after repeated crashes (exit code 137); Forkop is stopped");
+    t.contains(world.logs, "[error] sing-box stopped after repeated crashes (exit code 137); KabanMax is stopped");
     t.contains(world.events, "nft table deleted");
     t.contains(world.events, "firewall closed");
     t.eq(length(filter(world.events, (e) => e == "watcher stopped")), 1, "the watcher runs the cleanup and is stopped once it finished");
@@ -595,7 +595,7 @@ t.test("the crash pause leaves alone what a lifecycle action or a live core owns
     crashed();
     fs.writefile(lifecycle.paths.planned_stop, "1\n");
     run(() => lifecycle.crash_pause());
-    t.eq(world.events, [], "a stop Forkop made itself");
+    t.eq(world.events, [], "a stop KabanMax made itself");
 
     crashed();
     fs.mkdir(lifecycle.paths.lock);
@@ -625,7 +625,7 @@ t.test("the routing a network restart took is put back under a running core and 
     running({ routing_lost: true, bound: [ "wwan0" ] });
     let result = run(() => lifecycle.restore_routing());
     t.eq([ result.result, world.events ], [ true, [ "routing restored", "bound to wwan0" ] ]);
-    t.eq(world.logs, [ "[info] The WAN came up without Forkop's routing; restored it" ]);
+    t.eq(world.logs, [ "[info] The WAN came up without KabanMax's routing; restored it" ]);
 
     running({ routing_lost: true, routing_fails: true });
     result = run(() => lifecycle.restore_routing());
@@ -636,7 +636,7 @@ t.test("the routing a network restart took is put back under a running core and 
 t.test("restoring the routing leaves alone what a stop, an action or a crash owns, and a routing in place", () => {
     running({ routing_lost: true });
     fs.writefile(lifecycle.paths.planned_stop, "1\n");
-    t.eq([ run(() => lifecycle.restore_routing()).result, world.events ], [ false, [] ], "a stop Forkop made itself");
+    t.eq([ run(() => lifecycle.restore_routing()).result, world.events ], [ false, [] ], "a stop KabanMax made itself");
 
     running({ routing_lost: true });
     fs.mkdir(lifecycle.paths.lock);
@@ -697,7 +697,7 @@ t.test("a start whose sing-box exits on the way up points at the core's own reas
 t.test("a stop is reported from its start to its end, and a stop with nothing running says nothing", () => {
     running();
     run(() => lifecycle.stop());
-    t.eq(world.logs, [ "[info] Stopping Forkop", "[info] Forkop stopped" ]);
+    t.eq(world.logs, [ "[info] Stopping KabanMax", "[info] KabanMax stopped" ]);
 
     reset();
     t.eq(run(() => lifecycle.stop()).result, 0);
@@ -732,11 +732,11 @@ t.test("autostart is the rc.d link and nothing else", () => {
     reset();
     finish();
     t.eq(lifecycle.enable(), 0);
-    t.eq(fs.readlink(lifecycle.paths.rc_dir + "/S99forkop"), "../init.d/forkop");
+    t.eq(fs.readlink(lifecycle.paths.rc_dir + "/S99kabanmax"), "../init.d/kabanmax");
     t.eq(lifecycle.enable(), 0, "enabling twice");
-    fs.symlink("../init.d/forkop", lifecycle.paths.rc_dir + "/K99forkop");
+    fs.symlink("../init.d/kabanmax", lifecycle.paths.rc_dir + "/K99kabanmax");
     t.eq(lifecycle.disable(), 0);
-    t.ok(fs.lstat(lifecycle.paths.rc_dir + "/S99forkop") == null && fs.lstat(lifecycle.paths.rc_dir + "/K99forkop") == null);
+    t.ok(fs.lstat(lifecycle.paths.rc_dir + "/S99kabanmax") == null && fs.lstat(lifecycle.paths.rc_dir + "/K99kabanmax") == null);
 });
 
 t.done();

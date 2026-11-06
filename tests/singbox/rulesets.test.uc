@@ -10,7 +10,7 @@ t.test("a list is named for its section and a reference for itself, stably", () 
     t.eq(rulesets.custom_reference_tag("youtube"), "builtin-youtube-ruleset");
 });
 
-t.test("a list downloads the file forkop-lists releases under its name", () => {
+t.test("a list downloads the file kabanmax-lists releases under its name", () => {
     let release = "https://github.com/ushan0v/forkop-lists/releases/latest/download/";
     t.eq(rulesets.community_url("ru_blocked_all"), release + "ru-blocked-all.srs");
     t.eq(rulesets.community_url("google_play"), release + "google-play.srs");
