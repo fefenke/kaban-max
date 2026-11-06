@@ -14,7 +14,7 @@ function fresh() {
     let dir = stub.tmpdir();
     ui.paths.service_actions = dir + "/ui-state/service-actions";
     ui.paths.service_action_lock = dir + "/ui-state/service-actions.lock";
-    ui.paths.reload_lock = dir + "/forkop.reload.lock";
+    ui.paths.reload_lock = dir + "/kabanmax.reload.lock";
     ui.paths.pending_reload = dir + "/reload.pending";
     ui.paths.rc_dir = dir + "/rc.d";
     installer.paths.state = dir + "/installer/state.json";
@@ -89,7 +89,7 @@ t.test("a page action runs the init script in a worker whose pid the job records
     let command = stub.calls()[0].argv;
     stub.restore();
     t.eq([ started.success, started.message ], [ true, "Service restart started" ]);
-    t.eq(slice(command, -5), [ "/usr/bin/forkop", "service_action_worker", "restart", started.job_id, "" ]);
+    t.eq(slice(command, -5), [ "/usr/bin/kabanmax", "service_action_worker", "restart", started.job_id, "" ]);
     t.eq(job(started.job_id).pid, "31337");
     t.eq(ui.start_action("restart").message, "Another service action is already running");
     t.eq(ui.start_action("dance").message, "Invalid service action");
@@ -100,7 +100,7 @@ t.test("the worker finishes its job from the init script and then runs a reload 
     let begun = ui.begin("start", "ui", me);
     lock.mark_request(ui.paths.pending_reload, "on_config_change");
     stub.commands([
-        [ "env FORKOP_UI_ACTION_TRACKED=1 /etc/init.d/forkop start", { status: 0 } ],
+        [ "env KABANMAX_UI_ACTION_TRACKED=1 /etc/init.d/kabanmax start", { status: 0 } ],
         [ "logger", {} ],
         [ /service_action_worker' 'reload'/, { stdout: "4242\n" } ]
     ]);
@@ -118,7 +118,7 @@ t.test("a queued reload waits while another reload holds the reload lock", () =>
     let begun = ui.begin("start", "ui", me);
     lock.mark_request(ui.paths.pending_reload, "on_config_change");
     lock.acquire(ui.paths.reload_lock, me);
-    stub.commands([ [ "env FORKOP_UI_ACTION_TRACKED=1 /etc/init.d/forkop start", {} ] ]);
+    stub.commands([ [ "env KABANMAX_UI_ACTION_TRACKED=1 /etc/init.d/kabanmax start", {} ] ]);
     ui.worker("start", begun.job_id, "");
     stub.restore();
     t.ok(fs.stat(ui.paths.pending_reload) != null);
@@ -128,13 +128,13 @@ t.test("a queued reload waits while another reload holds the reload lock", () =>
 t.test("the state tells what the service is apart from what is being done to it", () => {
     fresh();
     fixture.seed({ server: [ { ".name": "a", enabled: "1" } ] });
-    health.forkop_stably_running = () => true;
+    health.kabanmax_stably_running = () => true;
     health.sing_box_service_stable = () => true;
     common.ensure_dir(ui.paths.rc_dir);
-    fs.symlink("/bin/sh", ui.paths.rc_dir + "/S99forkop");
+    fs.symlink("/bin/sh", ui.paths.rc_dir + "/S99kabanmax");
     ui.begin("reload", "initd", me);
     let state = ui.current_state();
-    t.eq(state.service.forkop, { running: 1, enabled: 1, status: "running & enabled", busy: "apply" });
+    t.eq(state.service.kabanmax, { running: 1, enabled: 1, status: "running & enabled", busy: "apply" });
     t.eq(state.service.sing_box, { running: 1, enabled: 0, status: "running but disabled" });
     t.eq(length(state.actions.service), 1);
     t.eq(keys(state.actions), [ "service" ]);
@@ -154,16 +154,16 @@ t.test("the state counts the servers and sections that run, as the generator dec
 t.test("while the installer runs the service is busy with it and takes no action of the page", () => {
     fresh();
     fixture.seed({});
-    health.forkop_stably_running = () => false;
+    health.kabanmax_stably_running = () => false;
     health.sing_box_service_stable = () => false;
     let runner = live_process("installer_run");
     common.ensure_dir(common.parent_dir(installer.paths.state));
     fs.writefile(installer.paths.state, sprintf("%J", { schema: 1, id: "run-1", action: "update", runner_pid: runner, finished_at: null }));
-    t.eq(ui.current_state().service.forkop.busy, "install");
+    t.eq(ui.current_state().service.kabanmax.busy, "install");
     t.eq(ui.begin("start", "initd", me), { status: 2, job_id: "" });
     t.eq(ui.start_action("restart"), { success: false, job_id: "", message: "The installer is running" });
     stub.real.system("kill " + runner);
-    t.eq(ui.current_state().service.forkop.busy, null, "a runner that died ends the run");
+    t.eq(ui.current_state().service.kabanmax.busy, null, "a runner that died ends the run");
     t.eq(ui.begin("start", "initd", me).status, 0);
 });
 

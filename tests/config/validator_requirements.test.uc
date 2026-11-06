@@ -67,7 +67,7 @@ const PRESENT = [ [ /command -v/, { status: 0 } ] ];
 
 // Past the core the next requirement is its init script, which this machine has not.
 function core_accepted(result) {
-    return result.error == null || result.error == "Service 'sing-box' is missing. Reinstall sing-box-forkop";
+    return result.error == null || result.error == "Service 'sing-box' is missing. Reinstall sing-box-kabanmax";
 }
 
 t.test("a kernel without IPv6 is refused before sing-box fails to open its IPv6 inbound", () => {
@@ -88,17 +88,17 @@ t.test("the core version comes from the binary itself, never from the package ma
     t.contains(requirements(null, null, PRESENT).error, "Failed to read the version sing-box reports");
 });
 
-t.test("a core that is not sing-box-forkop is refused, whatever package files stand beside it", () => {
+t.test("a core that is not sing-box-kabanmax is refused, whatever package files stand beside it", () => {
     for (let version in [ "1.12.22", "1.13.18-extended-2.6.5", "1.14.3" ])
         t.eq(requirements(version, null, PRESENT).error,
-            "sing-box " + version + " is not sing-box-forkop, the core Forkop runs on. Install sing-box-forkop", version);
+            "sing-box " + version + " is not sing-box-kabanmax, the core KabanMax runs on. Install sing-box-kabanmax", version);
 });
 
 t.test("a core of the sing-box-extended line or a build before the first release is older than the minimum", () => {
-    for (let version in [ "1.13.18-extended-2.6.5-f165", "1.14.0-forkop.3", "1.14.4-r0+12" ])
+    for (let version in [ "1.13.18-extended-2.6.5-f165", "1.14.0-kabanmax.3", "1.14.4-r0+12" ])
         t.eq(requirements(version, null, PRESENT).error,
-            "sing-box-forkop " + version + " is older than the required minimum (" + REQUIRED + "). Update sing-box-forkop", version);
-    for (let version in [ "1.14.4-r2", "1.14.4-r2+3", "1.14.5-r1" ])
+            "sing-box-kabanmax " + version + " is older than the required minimum (" + REQUIRED + "). Update sing-box-kabanmax", version);
+    for (let version in [ "1.14.4-r3", "1.14.4-r3+3", "1.14.5-r1" ])
         t.ok(core_accepted(requirements(version, null, PRESENT)), version);
 });
 

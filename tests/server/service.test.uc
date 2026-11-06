@@ -13,7 +13,7 @@ const HELLO_SHA256 = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e7304336293
 // Every test starts from directories of its own.
 function fresh_paths() {
     dir = stub.tmpdir();
-    server.paths.firewall_include = dir + "/nftables.d/chain-pre/input/forkop-servers.nft";
+    server.paths.firewall_include = dir + "/nftables.d/chain-pre/input/kabanmax-servers.nft";
     server.paths.firewall_init = dir + "/firewall-missing";
 }
 
@@ -49,11 +49,11 @@ function prepared(data, extra_tools) {
 }
 
 function value(section, option) {
-    return core_uci.get("forkop." + section + "." + option);
+    return core_uci.get("kabanmax." + section + "." + option);
 }
 
 function clients_of(owner) {
-    return filter(core_uci.sections("forkop", "server_client"), (name) => value(name, "server") == owner);
+    return filter(core_uci.sections("kabanmax", "server_client"), (name) => value(name, "server") == owner);
 }
 
 function client_value(owner, option) {
@@ -112,7 +112,7 @@ t.test("the defaults a server runs with are filled in, and nothing the user leav
         "vless.reality_public_key", "vless.tls_server_name", "shadowsocks.shadowsocks_psk", "tailscale.tailscale_hostname",
         "naive.naive_network", "mieru.mieru_transport", "tuic.tuic_congestion_control",
         "naive.tls_self_signed_certificate" ])
-        t.eq(core_uci.get("forkop." + path), "", path);
+        t.eq(core_uci.get("kabanmax." + path), "", path);
 
     for (let owner in [ "vless_no_client", "shadowsocks", "anytls", "tuic" ])
         t.eq(clients_of(owner), [], "a server without clients gets none: " + owner);
@@ -156,8 +156,8 @@ t.test("a certificate is issued for a host name, never an address or a name X.50
 t.test("a second prepare over prepared servers changes and generates nothing", () => {
     fresh_paths();
     prepared(configuration());
-    let data = { settings: {}, server: uci.__sections("forkop") };
-    uci.__seed("forkop", data.server);
+    let data = { settings: {}, server: uci.__sections("kabanmax") };
+    uci.__seed("kabanmax", data.server);
     core_uci.reset();
     let before = length(uci.__commits());
     issued = [];
@@ -210,7 +210,7 @@ t.test("prepare removes nothing: what removed servers left goes afterwards", () 
         server_client: [ { ".name": "stray", server: "vanished", name: "phone", password: "secret" } ] });
     stub.commands(TOOLS);
     server.prepare();
-    t.eq(core_uci.get("forkop.stray.server"), "vanished");
+    t.eq(core_uci.get("kabanmax.stray.server"), "vanished");
     server.remove_orphans();
     stub.restore();
     core_uci.reset();
@@ -245,8 +245,8 @@ t.test("the firewall include opens the ports of enabled servers for the protocol
     stub.commands(TOOLS);
     server.sync_firewall(false);
     let include = fs.readfile(server.paths.firewall_include);
-    t.contains(include, "meta l4proto tcp th dport { 31001, 31003, 31007, 31009 } counter accept comment \"forkop: server ports\"");
-    t.contains(include, "meta l4proto udp th dport { 31002, 31003, 31007, 31008, 31010, 31011 } counter accept comment \"forkop: server ports\"");
+    t.contains(include, "meta l4proto tcp th dport { 31001, 31003, 31007, 31009 } counter accept comment \"kabanmax: server ports\"");
+    t.contains(include, "meta l4proto udp th dport { 31002, 31003, 31007, 31008, 31010, 31011 } counter accept comment \"kabanmax: server ports\"");
     t.excludes(include, "31004");
     t.excludes(include, "31005");
     t.excludes(include, "31006");
@@ -276,7 +276,7 @@ t.test("a loaded firewall is reloaded when its chain disagrees with the include"
     ]);
     server.sync_firewall(false);
     t.eq(reloads, 1, "a new include is loaded");
-    loaded = "chain input {\n\tcomment \"forkop: server ports\"\n}\n";
+    loaded = "chain input {\n\tcomment \"kabanmax: server ports\"\n}\n";
     server.sync_firewall(false);
     t.eq(reloads, 1, "a chain that already carries the rules is left alone");
     loaded = "chain input {\n}\n";
@@ -336,8 +336,8 @@ t.test("an OpenVPN server prepared once keeps every certificate and key it was g
     fresh_paths();
     prepared(openvpn_configuration());
     let before = map([ "office.openvpn_certificate", "office.openvpn_tls_crypt_key", "laptop.openvpn_certificate" ],
-        (path) => core_uci.get("forkop." + path));
-    uci.__seed("forkop", uci.__sections("forkop"));
+        (path) => core_uci.get("kabanmax." + path));
+    uci.__seed("kabanmax", uci.__sections("kabanmax"));
     core_uci.reset();
     let commits = length(uci.__commits());
     issued = [];
@@ -347,7 +347,7 @@ t.test("an OpenVPN server prepared once keeps every certificate and key it was g
     t.eq(issued, []);
     t.eq(length(uci.__commits()), commits, "nothing is committed");
     t.eq(map([ "office.openvpn_certificate", "office.openvpn_tls_crypt_key", "laptop.openvpn_certificate" ],
-        (path) => core_uci.get("forkop." + path)), before);
+        (path) => core_uci.get("kabanmax." + path)), before);
 });
 
 let wireguard_keys = 0;
@@ -378,7 +378,7 @@ function wireguard_configuration(protocol) {
 }
 
 function list_value(section, option) {
-    return core_uci.get_all("forkop", section)[option];
+    return core_uci.get_all("kabanmax", section)[option];
 }
 
 t.test("a WireGuard server gets its key, and every client a key pair, a pre-shared key and a free address in each subnet", () => {
@@ -414,8 +414,8 @@ t.test("a WireGuard server prepared once keeps every key and address it was give
     prepared(wireguard_configuration("amneziawg"), WIREGUARD_TOOLS);
     let paths = [ "home.wireguard_private_key", "phone.wireguard_private_key",
         "phone.wireguard_pre_shared_key", "laptop.wireguard_address" ];
-    let before = map(paths, (path) => core_uci.get("forkop." + path));
-    uci.__seed("forkop", uci.__sections("forkop"));
+    let before = map(paths, (path) => core_uci.get("kabanmax." + path));
+    uci.__seed("kabanmax", uci.__sections("kabanmax"));
     core_uci.reset();
     let commits = length(uci.__commits());
     let keys = wireguard_keys;
@@ -424,7 +424,7 @@ t.test("a WireGuard server prepared once keeps every key and address it was give
     stub.restore();
     t.eq(wireguard_keys, keys, "no key pair is asked for");
     t.eq(length(uci.__commits()), commits, "nothing is committed");
-    t.eq(map(paths, (path) => core_uci.get("forkop." + path)), before);
+    t.eq(map(paths, (path) => core_uci.get("kabanmax." + path)), before);
 });
 
 t.test("a client whose address left the subnet, or that another client holds, gets a free one", () => {

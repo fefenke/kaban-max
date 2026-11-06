@@ -1,0 +1,149 @@
+import { KabanMaxShellMethods } from '../../../methods';
+import type { IDiagnosticsChecksItem } from '../../../services';
+import type { KabanMax } from '../../../types';
+import { formatDuration } from '../../../helpers/formatDuration';
+import {
+  CheckOutcome,
+  finding,
+  formatMegabytes,
+  outcome,
+  unanswered,
+} from './present';
+
+// Below this share of free memory the kernel is about to start killing.
+const LOW_MEMORY_SHARE = 0.1;
+
+function kabanmaxItem(data: KabanMax.ServiceCheckResult) {
+  if (data.running) {
+    return finding(
+      'success',
+      'KabanMax',
+      data.uptime >= 0
+        ? _('running for %s').format(formatDuration(data.uptime))
+        : _('running'),
+    );
+  }
+
+  return finding(
+    'error',
+    'KabanMax',
+    data.last_error
+      ? _('not running: %s').format(data.last_error)
+      : _('not running'),
+  );
+}
+
+// A core that answers no version is one KabanMax's start cannot read either: its reason says so.
+function coreItem(data: KabanMax.ServiceCheckResult) {
+  const key = _('Core');
+  const { installed, binary, version, variant, outdated, required, problem } =
+    data.core;
+
+  if (!installed) {
+    return finding('error', key, _('sing-box-kabanmax is not installed'));
+  }
+  if (!binary) {
+    return finding('error', key, problem);
+  }
+  if (!version) {
+    return finding(
+      'error',
+      key,
+      _('sing-box %s, not sing-box-kabanmax').format(binary),
+    );
+  }
+  if (outdated) {
+    return finding(
+      'error',
+      key,
+      _('sing-box-kabanmax %s is outdated: %s or newer is needed').format(
+        version,
+        required,
+      ),
+    );
+  }
+  if (problem) {
+    return finding('error', key, problem);
+  }
+  return finding(
+    'success',
+    key,
+    variant
+      ? _('sing-box-kabanmax %s (%s)').format(version, variant)
+      : _('sing-box-kabanmax %s').format(version),
+  );
+}
+
+function conflictItems(data: KabanMax.ServiceCheckResult) {
+  const key = _('Conflicts');
+  const items: IDiagnosticsChecksItem[] = data.conflicts.map((conflict) =>
+    conflict.kind === 'tproxy'
+      ? finding('error', key, _('%s intercepts traffic').format(conflict.table))
+      : finding(
+          'error',
+          key,
+          _('%s takes DNS queries before KabanMax').format(conflict.table),
+        ),
+  );
+
+  if (data.foreign_sing_box.length) {
+    items.push(
+      finding(
+        'error',
+        key,
+        _('another sing-box is running (PID %s)').format(
+          data.foreign_sing_box.join(', '),
+        ),
+      ),
+    );
+  }
+
+  return items.length ? items : [finding('success', key, _('none found'))];
+}
+
+function memoryItem(data: KabanMax.ServiceCheckResult) {
+  const key = _('Memory');
+  const free = _('%s of %s free').format(
+    formatMegabytes(data.memory.available_kb),
+    formatMegabytes(data.memory.total_kb),
+  );
+
+  if (
+    data.memory.total_kb > 0 &&
+    data.memory.available_kb < data.memory.total_kb * LOW_MEMORY_SHARE
+  ) {
+    return finding('warning', key, free);
+  }
+
+  return finding('success', key, free);
+}
+
+export function presentService(
+  data: KabanMax.ServiceCheckResult,
+): IDiagnosticsChecksItem[] {
+  return [
+    kabanmaxItem(data),
+    coreItem(data),
+    ...conflictItems(data),
+    memoryItem(data),
+  ];
+}
+
+// A failed call says nothing about the service, so the runtime checks still try.
+export async function runServiceCheck(): Promise<{
+  result: CheckOutcome;
+  running: boolean;
+  data?: KabanMax.ServiceCheckResult;
+}> {
+  const response = await KabanMaxShellMethods.checkService();
+
+  if (!response.success) {
+    return { result: unanswered(), running: true };
+  }
+
+  return {
+    result: outcome(presentService(response.data)),
+    running: response.data.running,
+    data: response.data,
+  };
+}

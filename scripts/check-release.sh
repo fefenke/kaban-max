@@ -15,12 +15,12 @@ python3 - "$output" <<'PY'
 import json, pathlib, sys
 p=pathlib.Path(sys.argv[1]); app=json.loads((p/'release.json').read_text()); core=json.loads((p/'core-release.json').read_text())
 assert app['tag']==core['tag']
-assert app['requires']['sing-box-forkop']==core['version']
-assert core['requires']['forkop']==app['version']
+assert app['requires']['sing-box-kabanmax']==core['version']
+assert core['requires']['kabanmax']==app['version']
 for ext in ('apk','ipk'):
- for name in ('forkop','luci-app-forkop','luci-i18n-forkop-ru'):
+ for name in ('kabanmax','luci-app-kabanmax','luci-i18n-kabanmax-ru'):
   assert (p/f"{name}_{app['version']}_all.{ext}").is_file()
  for variant in ('base','tiny'):
-  assert (p/f"sing-box-forkop_{core['version']}_{variant}_aarch64_cortex-a53.{ext}").is_file()
+  assert (p/f"sing-box-kabanmax_{core['version']}_{variant}_aarch64_cortex-a53.{ext}").is_file()
 print('Release manifests, required assets and installer checksum lookup: OK')
 PY

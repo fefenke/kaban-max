@@ -36,7 +36,7 @@ function monitored(services, cleanup_status) {
     cleanups = [];
     ubus.__reset();
     ubus.__on("service.list", () => services);
-    stub.commands([ [ "/usr/bin/forkop sing_box_crash_cleanup", (argv) => {
+    stub.commands([ [ "/usr/bin/kabanmax sing_box_crash_cleanup", (argv) => {
         push(cleanups, argv[2]);
         return { status: cleanup_status ?? 0 };
     } ] ]);
@@ -67,7 +67,7 @@ t.test("a notification from procd runs the cleanup, and a repeated one does not"
     cleanups = [];
     ubus.__reset();
     ubus.__on("service.list", () => ({}));
-    stub.commands([ [ "/usr/bin/forkop sing_box_crash_cleanup", (argv) => { push(cleanups, argv[2]); return {}; } ] ]);
+    stub.commands([ [ "/usr/bin/kabanmax sing_box_crash_cleanup", (argv) => { push(cleanups, argv[2]); return {}; } ] ]);
     fs.unlink(watch.paths.pending_cleanup);
     let uloop = require("uloop");
     uloop.__on_run(() => {
@@ -88,7 +88,7 @@ t.test("a core procd respawns pauses the capture on its exit, naming the pid it 
     ubus.__reset();
     ubus.__on("service.list", () => ({ "sing-box": { instances: { instance1: { running: true, pid } } } }));
     let step = (argv) => { push(steps, join(" ", slice(argv, 1))); return {}; };
-    stub.commands([ [ "/usr/bin/forkop sing_box_crash_pause", step ], [ "/usr/bin/forkop sing_box_crash_resume", step ] ]);
+    stub.commands([ [ "/usr/bin/kabanmax sing_box_crash_pause", step ], [ "/usr/bin/kabanmax sing_box_crash_resume", step ] ]);
     fs.unlink(watch.paths.pending_cleanup);
     let uloop = require("uloop");
     let service = (name) => ({ service: name, instance: "instance1" });
@@ -126,15 +126,15 @@ t.test("a stop that arrives while the watcher starts up ends it as soon as its l
 t.test("the watcher is a respawning procd service found again by its command line", () => {
     let spec = watch.spec();
     let payload = worker.payload(spec);
-    t.eq(payload.name, "forkop-singbox-watch");
-    t.eq(payload.instances.watch.command, [ "/usr/bin/forkop", "sing_box_watch" ]);
+    t.eq(payload.name, "kabanmax-singbox-watch");
+    t.eq(payload.instances.watch.command, [ "/usr/bin/kabanmax", "sing_box_watch" ]);
     t.eq(payload.instances.watch.respawn, [ "3600", "5", "0" ]);
     t.ok(!worker.is_worker(spec, common.own_pid()), "a process running something else");
 });
 
 t.test("stopping the watcher never signals a pid that is not the watcher", () => {
     fs.writefile(watch.paths.pid, common.own_pid() + "\n");
-    stub.commands([ [ "ubus call service delete", { status: 4 } ], [ "ubus call service list", { stdout: "{\"forkop-singbox-watch\":{}}" } ] ]);
+    stub.commands([ [ "ubus call service delete", { status: 4 } ], [ "ubus call service list", { stdout: "{\"kabanmax-singbox-watch\":{}}" } ] ]);
     t.ok(!watch.stop_worker(), "procd still holds the service");
     t.eq(trim(fs.readfile(watch.paths.pid)), common.own_pid(), "the record stays for the next attempt");
 

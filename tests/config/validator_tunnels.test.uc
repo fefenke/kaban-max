@@ -21,7 +21,7 @@ function tunnels() {
             {
                 ".name": "tun_tailnet", section: "tunnels", order: "2",
                 kind: "tailscale", name: "Tailnet", tailscale_auth_key: "tskey-auth-test",
-                tailscale_hostname: "forkop-router", tailscale_exit_node: "100.64.0.1"
+                tailscale_hostname: "kabanmax-router", tailscale_exit_node: "100.64.0.1"
             },
             {
                 ".name": "tun_json", section: "tunnels", order: "3",

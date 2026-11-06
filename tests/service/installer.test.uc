@@ -19,12 +19,12 @@ function fresh() {
     installer.paths.manifest = dir + "/release.json";
     installer.paths.listing = dir + "/listing.json";
     installer.paths.start_lock = dir + "/start.lock";
-    installer.paths.cli = system + "/forkop";
+    installer.paths.cli = system + "/kabanmax";
     installer.paths.proc = system + "/proc";
-    installer.paths.install_log = system + "/forkop-install.log";
+    installer.paths.install_log = system + "/kabanmax-install.log";
     installer.paths.ptmx = "/dev/ptmx";
     installer.paths.package_databases = [ system + "/installed" ];
-    fs.writefile(system + "/installed", "forkop 2.0.0\n");
+    fs.writefile(system + "/installed", "kabanmax 2.0.0\n");
     fs.writefile(installer.paths.cli, "");
     fs.mkdir(installer.paths.proc);
     return dir;
@@ -83,9 +83,9 @@ t.test("the page learns when the run began and ended, and whether install.sh lef
 
 t.test("the command line prints install.sh's log, and says when there is none", () => {
     fresh();
-    fs.writefile(installer.paths.install_log, "$ apk add forkop.apk\nOK: 83.7 MiB in 199 packages\n");
+    fs.writefile(installer.paths.install_log, "$ apk add kabanmax.apk\nOK: 83.7 MiB in 199 packages\n");
     let printed = stub.capture(() => require("service.cli").main([ "installer_log" ], "/lib"));
-    t.eq([ printed.result, printed.stdout ], [ 0, "$ apk add forkop.apk\nOK: 83.7 MiB in 199 packages\n" ]);
+    t.eq([ printed.result, printed.stdout ], [ 0, "$ apk add kabanmax.apk\nOK: 83.7 MiB in 199 packages\n" ]);
     fs.unlink(installer.paths.install_log);
     let missing = stub.capture(() => require("service.cli").main([ "installer_log" ], "/lib"));
     t.eq([ missing.result, missing.stderr ], [ 1, "install.sh has left no log\n" ]);
@@ -133,7 +133,7 @@ t.test("the latest release comes through GitHub's API, or from a mirror at githu
     t.eq([ installer.asset_url("{\"message\":\"Not Found\"}", "install.sh"), installer.asset_url(null, "install.sh") ], [ null, null ]);
     t.eq([ installer.rate_limited("{\"resources\":{\"core\":{\"remaining\":0}}}"),
         installer.rate_limited("{\"resources\":{\"core\":{\"remaining\":12}}}"), installer.rate_limited(null) ], [ true, false, false ]);
-    stub.env({ FORKOP_DOWNLOAD_URL: MIRROR });
+    stub.env({ KABANMAX_DOWNLOAD_URL: MIRROR });
     t.eq(installer.release_url("release.json"), MIRROR + "/fefenke/kaban-max/releases/latest/download/release.json");
     stub.restore();
     t.eq(installer.url_host(MIRROR + "/fefenke/kaban-max"), "10.0.2.2");
@@ -254,7 +254,7 @@ function run_with(value, steps, source) {
     write_state(value);
     ubus.__reset();
     uloop.__reset();
-    stub.env({ FORKOP_DOWNLOAD_URL: source == "api" ? null : MIRROR });
+    stub.env({ KABANMAX_DOWNLOAD_URL: source == "api" ? null : MIRROR });
     let result = { status: null };
     uloop.__on_run(() => steps(result));
     result.status = installer.run(value.id ?? "run-1");
@@ -263,7 +263,7 @@ function run_with(value, steps, source) {
 }
 
 function read(offset) {
-    return ubus.__invoke("forkop.installer", "read", { offset }).replied;
+    return ubus.__invoke("kabanmax.installer", "read", { offset }).replied;
 }
 
 // The timers set so far fire once each, and those they set wait for the next call.
@@ -298,18 +298,18 @@ t.test("the runner downloads install.sh, runs it in a terminal and records how i
         t.eq(state().child_pid, "" + child.pid);
 
         seen.running = read(0);
-        seen.typed = ubus.__invoke("forkop.installer", "input", { id: "run-1", data: "2\r" }).replied;
-        seen.other = ubus.__invoke("forkop.installer", "input", { id: "run-0", data: "2\r" }).replied;
+        seen.typed = ubus.__invoke("kabanmax.installer", "input", { id: "run-1", data: "2\r" }).replied;
+        seen.other = ubus.__invoke("kabanmax.installer", "input", { id: "run-0", data: "2\r" }).replied;
         fs.writefile(installer.paths.output, "Готово!\r\n");
         // as apk does: a new file renamed over the old one
-        fs.writefile(installer.paths.package_databases[0] + ".new", "forkop 2.0.1\n");
+        fs.writefile(installer.paths.package_databases[0] + ".new", "kabanmax 2.0.1\n");
         fs.rename(installer.paths.package_databases[0] + ".new", installer.paths.package_databases[0]);
         uloop.__exit(3, 0);
         t.eq(state().finished_at, null, "what install.sh left in its terminal is read first");
         uloop.__raise("SIGTERM");
         uloop.__exit(2, 1);
         seen.finished = read(0);
-        seen.typed_late = ubus.__invoke("forkop.installer", "input", { id: "run-1", data: "x" }).replied;
+        seen.typed_late = ubus.__invoke("kabanmax.installer", "input", { id: "run-1", data: "x" }).replied;
         uloop.__fire("timer");
     });
     t.eq([ seen.running.running, seen.running.interactive ], [ true, true ]);
@@ -328,7 +328,7 @@ t.test("a removal skips the release check, asks nothing and takes the run's file
         let child = uloop.__processes()[2];
         t.eq(slice(child.args, 4), [ installer.paths.script, "--lang", "ru", "--quiet", "--uninstall", "--purge" ]);
         t.contains(child.args[1], "</dev/null");
-        t.eq(ubus.__invoke("forkop.installer", "input", { id: "run-1", data: "y\r" }).replied, { accepted: false });
+        t.eq(ubus.__invoke("kabanmax.installer", "input", { id: "run-1", data: "y\r" }).replied, { accepted: false });
         fs.unlink(installer.paths.cli);
         uloop.__exit(2, 0);
         uloop.__exit(1, 0);
@@ -346,8 +346,8 @@ t.test("a stop ends a download of the run's own and says what install.sh says on
     stub.commands([ [ "kill", (argv) => { push(killed, join(" ", argv)); return { status: 0 }; } ] ]);
     run_with({}, () => {
         t.contains(join(" ", uloop.__processes()[0].args), "-q -T 30 -O");
-        seen.stop = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
-        seen.other = ubus.__invoke("forkop.installer", "stop", { id: "run-0" }).replied;
+        seen.stop = ubus.__invoke("kabanmax.installer", "stop", { id: "run-1" }).replied;
+        seen.other = ubus.__invoke("kabanmax.installer", "stop", { id: "run-0" }).replied;
         seen.stopping = read(0).stop_requested;
         uloop.__exit(0, -15);
         uloop.__fire("timer");
@@ -367,7 +367,7 @@ t.test("a stop interrupts install.sh's whole session as Ctrl+C does, once its tr
     run_with({}, () => {
         uloop.__exit(0, 0);
         uloop.__exit(1, 8);
-        seen.stop = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
+        seen.stop = ubus.__invoke("kabanmax.installer", "stop", { id: "run-1" }).replied;
         seen.early = length(killed);
         sigint(40003, "default");
         fire_once();
@@ -376,7 +376,7 @@ t.test("a stop interrupts install.sh's whole session as Ctrl+C does, once its tr
         fire_once();
         fire_once();
         uloop.__exit(3, 1);
-        seen.late = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
+        seen.late = ubus.__invoke("kabanmax.installer", "stop", { id: "run-1" }).replied;
         uloop.__exit(2, 0);
         uloop.__fire("timer");
     });
@@ -396,7 +396,7 @@ t.test("a stop while install.sh changes packages leaves it to finish, and its en
         uloop.__exit(0, 0);
         uloop.__exit(1, 8);
         sigint(40003, "ignored");
-        seen.stop = ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied;
+        seen.stop = ubus.__invoke("kabanmax.installer", "stop", { id: "run-1" }).replied;
         seen.retries = fire_once();
         uloop.__exit(3, 0);
         uloop.__exit(2, 0);
@@ -413,7 +413,7 @@ t.test("Ctrl+C sent to the terminal is the stop, never the terminal's own SIGINT
     run_with({}, () => {
         uloop.__exit(0, 0);
         uloop.__exit(1, 8);
-        seen.typed = ubus.__invoke("forkop.installer", "input", { id: "run-1", data: "\u0003" }).replied;
+        seen.typed = ubus.__invoke("kabanmax.installer", "input", { id: "run-1", data: "\u0003" }).replied;
         seen.stopping = read(0).stop_requested;
         uloop.__exit(3, 1);
         uloop.__exit(2, 0);
@@ -448,12 +448,12 @@ t.test("install.sh that cannot be downloaded is tried three times and said as in
         "\u001b[1;31m[x]\u001b[0m Не удалось скачать install.sh\r\n\u001b[1;33m[!]\u001b[0m Проверьте, открывается ли api.github.com с роутера\r\n");
 
     run_with({}, () => {
-        fs.writefile(installer.paths.listing, "{\"tag_name\":\"1.0.5\",\"assets\":[{\"name\":\"forkop_1.0.5.apk\",\"url\":\"https://api.github.com/x/1\"}]}");
+        fs.writefile(installer.paths.listing, "{\"tag_name\":\"1.0.5\",\"assets\":[{\"name\":\"kabanmax_1.0.5.apk\",\"url\":\"https://api.github.com/x/1\"}]}");
         uloop.__exit(0, 0);
         uloop.__fire("timer");
     }, "api");
     t.eq([ length(uloop.__processes()), state().exit ], [ 1, 1 ], "nothing is fetched for a file the listing has not got");
-    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе Forkop нет install.sh\r\n",
+    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе KabanMax нет install.sh\r\n",
         "a release that predates install.sh, as 1.0.5 does");
 
     run_with({}, () => {
@@ -474,7 +474,7 @@ t.test("install.sh that cannot be downloaded is tried three times and said as in
         uloop.__exit(1, 0);
         uloop.__fire("timer");
     }, "api");
-    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе Forkop нет install.sh\r\n",
+    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе KabanMax нет install.sh\r\n",
         "an HTTP error with requests left is a missing release");
 
     run_with({}, () => {
@@ -482,7 +482,7 @@ t.test("install.sh that cannot be downloaded is tried three times and said as in
         uloop.__fire("timer");
     });
     t.eq([ length(uloop.__processes()), fs.readfile(installer.paths.output) ],
-        [ 1, "\u001b[1;31m[x]\u001b[0m В последнем релизе Forkop нет install.sh\r\n" ], "a mirror's HTTP error is a missing file");
+        [ 1, "\u001b[1;31m[x]\u001b[0m В последнем релизе KabanMax нет install.sh\r\n" ], "a mirror's HTTP error is a missing file");
 });
 
 t.test("through GitHub's API the run reads the release's listing, then its files at their addresses there", () => {
@@ -512,7 +512,7 @@ t.test("through GitHub's API the run reads the release's listing, then its files
 t.test("a stop between two tries of a download ends the run at once", () => {
     run_with({}, () => {
         uloop.__exit(0, 4);
-        t.eq(ubus.__invoke("forkop.installer", "stop", { id: "run-1" }).replied, { accepted: true });
+        t.eq(ubus.__invoke("kabanmax.installer", "stop", { id: "run-1" }).replied, { accepted: true });
         t.eq(uloop.__fire("timer"), 1, "only the linger: the next try is gone");
     });
     t.eq(fs.readfile(installer.paths.output), "\u001b[1;33m[!]\u001b[0m Прервано, ничего не изменено\r\n");
@@ -527,7 +527,7 @@ t.test("a release that installs only from a console is shown, not installed", ()
         uloop.__fire("timer");
     });
     t.eq(fs.readfile(installer.paths.output),
-        "\u001b[1;33m[!]\u001b[0m Forkop 3.0.0 устанавливается только этой командой в консоли:\r\nsh <(wget -O - https://x/install.sh)\r\n");
+        "\u001b[1;33m[!]\u001b[0m KabanMax 3.0.0 устанавливается только этой командой в консоли:\r\nsh <(wget -O - https://x/install.sh)\r\n");
     t.eq([ state().exit, length(uloop.__processes()) ], [ 1, 2 ]);
 });
 

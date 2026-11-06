@@ -1,5 +1,5 @@
 // Seeds the fake uci from the fixture shape the tests describe a configuration
-// in: { settings: {...}, section: [...], server: [...], ... } for /etc/config/forkop,
+// in: { settings: {...}, section: [...], server: [...], ... } for /etc/config/kabanmax,
 // plus dhcp_dnsmasq for the first dnsmasq section of /etc/config/dhcp.
 
 let fs = require("fs");
@@ -55,7 +55,7 @@ function seed(data) {
                 entry[".name"] = entry[".name"] ?? "settings";
             push(sections, entry);
         }
-    uci.__seed("forkop", sections);
+    uci.__seed("kabanmax", sections);
 
     if (data.dhcp_dnsmasq != null)
         uci.__seed("dhcp", [ { ".type": "dnsmasq", ...data.dhcp_dnsmasq } ]);

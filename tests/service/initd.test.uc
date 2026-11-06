@@ -21,20 +21,20 @@ function fresh(settings) {
     let dir = stub.tmpdir();
     ui.paths.service_actions = dir + "/service-actions";
     ui.paths.service_action_lock = dir + "/service-actions.lock";
-    ui.paths.reload_lock = dir + "/forkop.reload.lock";
+    ui.paths.reload_lock = dir + "/kabanmax.reload.lock";
     ui.paths.pending_reload = dir + "/reload.pending";
-    initd.paths.config = dir + "/forkop.config";
+    initd.paths.config = dir + "/kabanmax.config";
     initd.paths.start_retry = dir + "/start.retry";
     initd.paths.internal_change = dir + "/internal-config-change";
-    initd.paths.autostart = dir + "/S99forkop";
-    fs.writefile(initd.paths.config, "config forkop\n");
+    initd.paths.autostart = dir + "/S99kabanmax";
+    fs.writefile(initd.paths.config, "config kabanmax\n");
     fixture.seed({ settings: settings ?? {} });
     calls = [];
     running = false;
     table = false;
     restored = false;
     lifecycle_status = 0;
-    health.forkop_stably_running = () => running;
+    health.kabanmax_stably_running = () => running;
     nft_state.table_present = () => table;
     lifecycle.restore_routing = () => {
         push(calls, "lifecycle restore routing");
@@ -53,7 +53,7 @@ function fresh(settings) {
 function hooks(registered, extra) {
     stub.commands([
         [ "logger", {} ],
-        [ "ubus call service list", registered == null ? { status: 4 } : { stdout: registered ? "{\"forkop\":{}}" : "{}" } ],
+        [ "ubus call service list", registered == null ? { status: 4 } : { stdout: registered ? "{\"kabanmax\":{}}" : "{}" } ],
         ...(extra ?? [])
     ]);
 }
@@ -72,7 +72,7 @@ function guard(age, config_hash) {
 t.test("a reload the configuration change of a known writer triggered is skipped once", () => {
     fresh();
     running = true;
-    stub.commands([ [ "md5sum", { stdout: "abc  " + initd.paths.config + "\n" } ], [ "ubus call service list", { stdout: "{\"forkop\":{}}" } ], [ "logger", {} ] ]);
+    stub.commands([ [ "md5sum", { stdout: "abc  " + initd.paths.config + "\n" } ], [ "ubus call service list", { stdout: "{\"kabanmax\":{}}" } ], [ "logger", {} ] ]);
     guard(0, "abc");
     t.eq(initd.reload("on_config_change"), { status: 0, sync: false });
     t.eq(calls, []);
@@ -162,19 +162,19 @@ t.test("a failed start leaves a retry for the next WAN-up, and a good one clears
 t.test("a failed start says whether the WAN coming up tries it again", () => {
     fresh();
     let logs = [];
-    stub.commands([ stub.logger(logs), [ "ubus call service list", { stdout: "{\"forkop\":{}}" } ] ]);
+    stub.commands([ stub.logger(logs), [ "ubus call service list", { stdout: "{\"kabanmax\":{}}" } ] ]);
     lifecycle_status = 1;
     stub.capture(() => initd.start(""));
     fs.writefile(initd.paths.autostart, "");
     stub.capture(() => initd.start(""));
     stub.restore();
-    t.eq(logs, [ "[warn] Forkop did not start", "[warn] Forkop did not start; it tries again when the WAN comes up" ]);
+    t.eq(logs, [ "[warn] KabanMax did not start", "[warn] KabanMax did not start; it tries again when the WAN comes up" ]);
 });
 
 t.test("a WAN coming up restarts only a failed start of an enabled service", () => {
     fresh();
     let restarts = 0;
-    hooks(true, [ [ "/etc/init.d/forkop restart triggered", () => { restarts++; return {}; } ] ]);
+    hooks(true, [ [ "/etc/init.d/kabanmax restart triggered", () => { restarts++; return {}; } ] ]);
     lock.mark_request(initd.paths.start_retry, "start_failed");
     running = true;
     initd.retry_start();
@@ -198,7 +198,7 @@ t.test("a WAN coming up restarts only a failed start of an enabled service", () 
 t.test("a monitored WAN coming back reapplies a running configuration", () => {
     fresh({ enable_badwan_interface_monitoring: "1", badwan_monitored_interfaces: "wan wwan" });
     let reloads = [];
-    hooks(true, [ [ "/etc/init.d/forkop reload", (argv) => { push(reloads, argv[2]); return {}; } ] ]);
+    hooks(true, [ [ "/etc/init.d/kabanmax reload", (argv) => { push(reloads, argv[2]); return {}; } ] ]);
     running = true;
     initd.wan_up();
     t.eq(reloads, [ "interface_up:wan" ]);
@@ -213,7 +213,7 @@ t.test("a monitored WAN coming back reapplies a running configuration", () => {
 t.test("a WAN coming up after a network restart puts back the routing under a table that is still there", () => {
     fresh({ enable_badwan_interface_monitoring: "1", badwan_monitored_interfaces: "wan" });
     let commands = [];
-    hooks(true, [ [ "/etc/init.d/forkop", (argv) => { push(commands, argv[1] + " " + argv[2]); return {}; } ] ]);
+    hooks(true, [ [ "/etc/init.d/kabanmax", (argv) => { push(commands, argv[1] + " " + argv[2]); return {}; } ] ]);
     fs.writefile(initd.paths.autostart, "");
     lock.mark_request(initd.paths.start_retry, "start_failed");
     table = true;
@@ -234,7 +234,7 @@ t.test("a WAN coming up after a network restart puts back the routing under a ta
     commands = [];
     table = false;
     initd.wan_up();
-    t.eq(calls, [], "a stopped Forkop has no table and no routing to restore");
+    t.eq(calls, [], "a stopped KabanMax has no table and no routing to restore");
     stub.restore();
 });
 
@@ -242,10 +242,10 @@ t.test("the triggers reload on a config change and on the monitored interfaces",
     fresh({ enable_badwan_interface_monitoring: "1", badwan_monitored_interfaces: "wan wwan lte", badwan_reload_delay: "5000" });
     t.eq(split(initd.triggers(), "\n"), [
         "delay\t5000",
-        "config\tconfig.change\tforkop\t/etc/init.d/forkop\treload\ton_config_change",
-        "interface\tinterface.*.up\twan\t/etc/init.d/forkop\thandle_wan_up\t",
-        "interface\tinterface.*.up\twwan\t/etc/init.d/forkop\treload\tinterface_up:wwan",
-        "interface\tinterface.*.up\tlte\t/etc/init.d/forkop\treload\tinterface_up:lte",
+        "config\tconfig.change\tkabanmax\t/etc/init.d/kabanmax\treload\ton_config_change",
+        "interface\tinterface.*.up\twan\t/etc/init.d/kabanmax\thandle_wan_up\t",
+        "interface\tinterface.*.up\twwan\t/etc/init.d/kabanmax\treload\tinterface_up:wwan",
+        "interface\tinterface.*.up\tlte\t/etc/init.d/kabanmax\treload\tinterface_up:lte",
         ""
     ]);
     fresh({});
@@ -259,7 +259,7 @@ t.test("the triggers reload on a config change and on the monitored interfaces",
 t.test("a restart is one action for whoever asked, with the stop and start inside it", () => {
     fresh();
     let nested = [];
-    hooks(true, [ [ "/etc/init.d/forkop", (argv) => {
+    hooks(true, [ [ "/etc/init.d/kabanmax", (argv) => {
         push(nested, argv[1] + (ui.active_action() == "restart" ? " inside restart" : ""));
         return { status: argv[1] == "start" ? 7 : 0 };
     } ] ]);
