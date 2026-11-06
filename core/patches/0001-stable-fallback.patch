@@ -29,7 +29,7 @@ index 637e484..b37da95 100644
  	URL                       string                 `json:"url,omitempty"`
  	Interval                  badoption.Duration     `json:"interval,omitempty"`
 diff --git a/protocol/group/fallback.go b/protocol/group/fallback.go
-index 4505153..5cc9863 100644
+index 4505153..0dbc370 100644
 --- a/protocol/group/fallback.go
 +++ b/protocol/group/fallback.go
 @@ -59,10 +59,13 @@ type fallbackCandidate struct {
@@ -105,18 +105,18 @@ index 4505153..5cc9863 100644
  }
  
  func (s *Fallback) candidateActive(candidate fallbackCandidate) bool {
-@@ -721,7 +744,9 @@ func (s *Fallback) requestCheck() {
+@@ -720,6 +743,10 @@ func (s *Fallback) requestCheck() {
+ }
  
  func (s *Fallback) loopCheck(ctx context.Context) {
- 	s.checkOutbounds(ctx, 0)
--	go s.startupRetry(ctx)
-+	if s.stable == nil {
-+		go s.startupRetry(ctx)
++	if s.stable != nil {
++		s.loopStableCheck(ctx)
++		return
 +	}
+ 	s.checkOutbounds(ctx, 0)
+ 	go s.startupRetry(ctx)
  	ticker := time.NewTicker(s.interval)
- 	defer ticker.Stop()
- 	for {
-@@ -790,6 +815,10 @@ func (s *Fallback) periodicCheck(ctx context.Context) {
+@@ -790,6 +817,10 @@ func (s *Fallback) periodicCheck(ctx context.Context) {
  }
  
  func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
@@ -127,7 +127,7 @@ index 4505153..5cc9863 100644
  	s.access.RLock()
  	candidates := append([]fallbackCandidate(nil), s.candidates...)
  	s.access.RUnlock()
-@@ -797,6 +826,9 @@ func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
+@@ -797,6 +828,9 @@ func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
  }
  
  func (s *Fallback) URLTest(ctx context.Context) (map[string]uint16, error) {
@@ -139,10 +139,10 @@ index 4505153..5cc9863 100644
  	s.access.RUnlock()
 diff --git a/protocol/group/fallback_stable.go b/protocol/group/fallback_stable.go
 new file mode 100644
-index 0000000..fb955be
+index 0000000..34a8dc6
 --- /dev/null
 +++ b/protocol/group/fallback_stable.go
-@@ -0,0 +1,317 @@
+@@ -0,0 +1,354 @@
 +package group
 +
 +import (
@@ -227,6 +227,43 @@ index 0000000..fb955be
 +		return nil, errors.New("fallback recovery_successes must be between 1 and 10")
 +	}
 +	return &stableFallback{confirmURL: confirm, confirmStatus: expected, recoveryInterval: interval, returnAfter: successes}, nil
++}
++
++// The recovery clock must not be gated by a slower primary health interval.
++// A single resettable timer keeps reserves quiet while the primary is selected.
++func (s *Fallback) stableCheckDelay() time.Duration {
++	s.access.RLock()
++	defer s.access.RUnlock()
++	if s.fixed == "" {
++		for i, c := range s.candidates {
++			if c.tag == s.selected && i > 0 {
++				return min(s.interval, s.stable.recoveryInterval)
++			}
++		}
++	}
++	return s.interval
++}
++
++func (s *Fallback) loopStableCheck(ctx context.Context) {
++	s.checkOutbounds(ctx, 0)
++	timer := time.NewTimer(s.stableCheckDelay())
++	defer timer.Stop()
++	for {
++		select {
++		case <-ctx.Done():
++			return
++		case <-s.wake:
++			s.checkOutbounds(ctx, 0)
++		case <-timer.C:
++			s.access.RLock()
++			active := time.Since(s.lastActive) <= s.idleTimeout
++			s.access.RUnlock()
++			if active {
++				s.periodicCheck(ctx)
++			}
++		}
++		timer.Reset(s.stableCheckDelay())
++	}
 +}
 +
 +// Retain an active reserve while earlier candidates recover. Unchecked nodes
@@ -462,10 +499,10 @@ index 0000000..fb955be
 +}
 diff --git a/protocol/group/fallback_stable_test.go b/protocol/group/fallback_stable_test.go
 new file mode 100644
-index 0000000..ddf52a5
+index 0000000..c262b06
 --- /dev/null
 +++ b/protocol/group/fallback_stable_test.go
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,175 @@
 +package group
 +
 +import (
@@ -613,6 +650,33 @@ index 0000000..ddf52a5
 +	if s.StableStatus().State != "primary" {
 +		t.Fatal("WAN recovery failed")
 +	}
++}
++
++func TestStableFallbackRecoveryTimerIsIndependentOfCheckInterval(t *testing.T) {
++	a, b := newFallbackHealthTestOutbound("primary", false), newFallbackHealthTestOutbound("backup", true)
++	s := stableTestGroup(t, a, b)
++	s.interval = time.Second
++	s.idleTimeout = 5 * time.Second
++	s.lastActive = time.Now()
++	s.stable.recoveryInterval = 25 * time.Millisecond
++	ctx, cancel := context.WithCancel(context.Background())
++	done := make(chan struct{})
++	go func() { defer close(done); s.loopCheck(ctx) }()
++	defer func() { cancel(); <-done }()
++	waitSelected := func(want string, timeout time.Duration) {
++		t.Helper()
++		until := time.Now().Add(timeout)
++		for time.Now().Before(until) {
++			if selectedTag(s) == want {
++				return
++			}
++			time.Sleep(time.Millisecond)
++		}
++		t.Fatalf("selected=%s, want %s within %s", selectedTag(s), want, timeout)
++	}
++	waitSelected("backup", 250*time.Millisecond)
++	a.setAvailable(true)
++	waitSelected("primary", 400*time.Millisecond)
 +}
 diff --git a/release/forkop/package.sh b/release/forkop/package.sh
 index eca4ab7..a13a32a 100755
