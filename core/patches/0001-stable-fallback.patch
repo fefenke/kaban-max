@@ -1,3 +1,85 @@
+diff --git a/common/urltest/coordinator.go b/common/urltest/coordinator.go
+index 9d41b18..e1db143 100644
+--- a/common/urltest/coordinator.go
++++ b/common/urltest/coordinator.go
+@@ -2,11 +2,13 @@ package urltest
+ 
+ import (
+ 	"context"
++	"reflect"
+ 	"strconv"
+ 	"strings"
+ 	"sync"
+ 	"time"
+ 
++	"github.com/sagernet/sing-box/adapter"
+ 	N "github.com/sagernet/sing/common/network"
+ )
+ 
+@@ -28,6 +30,7 @@ type Coordinator struct {
+ // of it because groups probe the same node with different budgets, and a
+ // verdict produced under one budget does not answer for another.
+ type coordinatorKey struct {
++	dialer         any
+ 	tag            string
+ 	link           string
+ 	expectedStatus string
+@@ -49,6 +52,28 @@ func NewCoordinator() *Coordinator {
+ 	}
+ }
+ 
++// ProbeTarget freezes the selected leaf for a measurement, matching MemberTag.
++func ProbeTarget(detour N.Dialer) N.Dialer {
++	for depth := 0; depth < 32; depth++ {
++		group, isGroup := detour.(adapter.OutboundGroup)
++		if !isGroup {
++			break
++		}
++		selected := group.Selected(N.NetworkTCP)
++		if selected == nil {
++			break
++		}
++		detour = selected
++	}
++	return detour
++}
++
++func SameProbeTarget(detour, captured N.Dialer) bool {
++	current := ProbeTarget(detour)
++	kind := reflect.TypeOf(current)
++	return kind == reflect.TypeOf(captured) && (kind == nil || kind.Comparable()) && current == captured
++}
++
+ // Check runs a URL test for tag with the given timeout, unless an identical
+ // test is already running or finished less than maxAge ago; pass maxAge 0 to
+ // force a fresh test. It returns the delay and the time the returned result was
+@@ -57,7 +82,16 @@ func (c *Coordinator) Check(ctx context.Context, link string, expectedStatus Exp
+ 	if err := ctx.Err(); err != nil {
+ 		return 0, time.Now(), err
+ 	}
+-	key := coordinatorKey{tag: tag, link: link, expectedStatus: expectedStatusKey(expectedStatus), timeout: timeout}
++	// A provider may replace an outbound without changing its tag. An old
++	// in-flight/cached result must never describe the replacement instance.
++	probeDialer := ProbeTarget(detour)
++	var identity any = probeDialer
++	// References through selectors still share the actual selected leaf's
++	// checks; a replacement leaf with the same tag gets a new identity.
++	if kind := reflect.TypeOf(identity); kind != nil && !kind.Comparable() {
++		identity = new(byte) // unidentifiable value dialers do not share checks
++	}
++	key := coordinatorKey{dialer: identity, tag: tag, link: link, expectedStatus: expectedStatusKey(expectedStatus), timeout: timeout}
+ 	c.access.Lock()
+ 	for {
+ 		existing, loaded := c.checks[key]
+@@ -97,7 +131,7 @@ func (c *Coordinator) Check(ctx context.Context, link string, expectedStatus Exp
+ 		testErr error
+ 	)
+ 	go func() {
+-		delay, testErr = URLTestWithExpectedStatus(testCtx, link, detour, expectedStatus)
++		delay, testErr = URLTestWithExpectedStatus(testCtx, link, probeDialer, expectedStatus)
+ 		close(testDone)
+ 	}()
+ 	select {
 diff --git a/experimental/clashapi/proxies.go b/experimental/clashapi/proxies.go
 index ab8d455..b8544fb 100644
 --- a/experimental/clashapi/proxies.go
@@ -29,7 +111,7 @@ index 637e484..b37da95 100644
  	URL                       string                 `json:"url,omitempty"`
  	Interval                  badoption.Duration     `json:"interval,omitempty"`
 diff --git a/protocol/group/fallback.go b/protocol/group/fallback.go
-index 4505153..0dbc370 100644
+index 4505153..0cdb833 100644
 --- a/protocol/group/fallback.go
 +++ b/protocol/group/fallback.go
 @@ -59,10 +59,13 @@ type fallbackCandidate struct {
@@ -85,27 +167,51 @@ index 4505153..0dbc370 100644
  	if s.fixed != "" {
  		for _, candidate := range s.candidates {
  			if candidate.tag != s.fixed {
-@@ -508,7 +520,18 @@ func (s *Fallback) candidatesForNetwork(network string) []fallbackCandidate {
+@@ -485,6 +497,16 @@ func (s *Fallback) Fixed() string {
+ func (s *Fallback) candidatesForNetwork(network string) []fallbackCandidate {
+ 	s.access.RLock()
+ 	defer s.access.RUnlock()
++	if s.stable != nil {
++		// Stable mode routes only through the committed group selection. A
++		// destination-specific dial/handshake error is not a health verdict.
++		for _, candidate := range s.candidates {
++			if candidate.tag == s.selected && common.Contains(candidate.outbound.Network(), N.NetworkName(network)) {
++				return []fallbackCandidate{candidate}
++			}
++		}
++		return nil
++	}
+ 	var (
+ 		pinned     []fallbackCandidate
+ 		usable     []fallbackCandidate
+@@ -508,7 +530,8 @@ func (s *Fallback) candidatesForNetwork(network string) []fallbackCandidate {
  	candidates := make([]fallbackCandidate, 0, len(pinned)+len(usable)+len(lastResort))
  	candidates = append(candidates, pinned...)
  	candidates = append(candidates, usable...)
 -	return append(candidates, lastResort...)
 +	candidates = append(candidates, lastResort...)
-+	if s.stable != nil {
-+		// Recovery health alone must not move new traffic before the success threshold.
-+		for i, candidate := range candidates {
-+			if candidate.tag == s.selected && s.usableLocked(candidate) {
-+				copy(candidates[1:i+1], candidates[:i])
-+				candidates[0] = candidate
-+				break
-+			}
-+		}
-+	}
 +	return candidates
  }
  
  func (s *Fallback) candidateActive(candidate fallbackCandidate) bool {
-@@ -720,6 +743,10 @@ func (s *Fallback) requestCheck() {
+@@ -699,6 +722,16 @@ func (s *Fallback) recordDialFailure(candidate fallbackCandidate, err error) {
+ 		return
+ 	}
+ 	check := state.failures.add(time.Now(), err)
++	if s.stable != nil {
++		// Stable mode does not silently retry on a reserve. Wake health after
++		// the first failure, but debounce destination-failure bursts so they
++		// cannot turn into a continuous stream of health requests.
++		now := time.Now()
++		check = now.Sub(s.stable.lastFailureCheck) >= dialFailureWindow
++		if check {
++			s.stable.lastFailureCheck = now
++		}
++	}
+ 	s.health[candidate.tag] = state
+ 	s.access.Unlock()
+ 	if check {
+@@ -720,6 +753,10 @@ func (s *Fallback) requestCheck() {
  }
  
  func (s *Fallback) loopCheck(ctx context.Context) {
@@ -116,7 +222,7 @@ index 4505153..0dbc370 100644
  	s.checkOutbounds(ctx, 0)
  	go s.startupRetry(ctx)
  	ticker := time.NewTicker(s.interval)
-@@ -790,6 +817,10 @@ func (s *Fallback) periodicCheck(ctx context.Context) {
+@@ -790,6 +827,10 @@ func (s *Fallback) periodicCheck(ctx context.Context) {
  }
  
  func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
@@ -127,7 +233,7 @@ index 4505153..0dbc370 100644
  	s.access.RLock()
  	candidates := append([]fallbackCandidate(nil), s.candidates...)
  	s.access.RUnlock()
-@@ -797,6 +828,9 @@ func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
+@@ -797,6 +838,9 @@ func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
  }
  
  func (s *Fallback) URLTest(ctx context.Context) (map[string]uint16, error) {
@@ -137,29 +243,45 @@ index 4505153..0dbc370 100644
  	s.access.RLock()
  	candidates := append([]fallbackCandidate(nil), s.candidates...)
  	s.access.RUnlock()
+@@ -888,7 +932,9 @@ func (c *fallbackEarlyConn) Write(buffer []byte) (int, error) {
+ 		}
+ 		err = c.attempt.fail(err)
+ 		_ = c.Conn.Close()
+-		c.fallback.recordDialFailure(c.candidate, err)
++		if c.fallback.stable == nil || c.ctx.Err() == nil {
++			c.fallback.recordDialFailure(c.candidate, err)
++		}
+ 		if n > 0 || c.ctx.Err() != nil || len(c.remaining) == 0 {
+ 			c.pending = false
+ 			return n, err
 diff --git a/protocol/group/fallback_stable.go b/protocol/group/fallback_stable.go
 new file mode 100644
-index 0000000..34a8dc6
+index 0000000..e373290
 --- /dev/null
 +++ b/protocol/group/fallback_stable.go
-@@ -0,0 +1,354 @@
+@@ -0,0 +1,443 @@
 +package group
 +
 +import (
 +	"context"
 +	"errors"
++	"net"
 +	"net/url"
++	"strconv"
++	"strings"
 +	"sync"
++	"syscall"
 +	"time"
 +
 +	"github.com/sagernet/sing-box/adapter"
 +	"github.com/sagernet/sing-box/common/urltest"
 +	"github.com/sagernet/sing-box/option"
++	N "github.com/sagernet/sing/common/network"
 +	"github.com/sagernet/sing/service"
 +)
 +
-+// stableFallback adds policy to the native fallback; dials and handshakes still
-+// use its existing bounded sequential attempts. No extra daemon or ticker.
++// stableFallback routes through the committed member and confirms health
++// failures before selecting a reserve. No extra daemon is needed.
 +type stableFallback struct {
 +	round            sync.Mutex
 +	confirmURL       string
@@ -167,11 +289,43 @@ index 0000000..34a8dc6
 +	recoveryInterval time.Duration
 +	returnAfter      uint
 +	lastRecovery     time.Time             // protected by Fallback.access
-+	events           []StableFallbackEvent // protected by Fallback.access, bounded to 64
++	lastFailureCheck time.Time             // protected by Fallback.access
++	events           []StableFallbackEvent // protected by Fallback.access, bounded to 32
 +	networkReady     func() bool
 +	noNetwork        bool
 +	roundBudget      time.Duration // zero uses the production 30s bound
 +}
++
++// Record useful failure classes without exposing URLs, credentials or VPS IPs.
++func stableProbeError(err error) string {
++	if err == nil {
++		return "ok"
++	}
++	var networkError net.Error
++	if errors.Is(err, context.DeadlineExceeded) || errors.As(err, &networkError) && networkError.Timeout() {
++		return "timeout"
++	}
++	var dnsError *net.DNSError
++	if errors.As(err, &dnsError) {
++		return "dns_error"
++	}
++	if errors.Is(err, syscall.ECONNREFUSED) {
++		return "connection_refused"
++	}
++	if errors.Is(err, syscall.ENETUNREACH) || errors.Is(err, syscall.EHOSTUNREACH) {
++		return "network_unreachable"
++	}
++	if status, ok := strings.CutPrefix(err.Error(), "unexpected HTTP status: "); ok {
++		if code, parseErr := strconv.Atoi(status); parseErr == nil && code >= 100 && code <= 599 {
++			return "HTTP_" + strconv.Itoa(code)
++		}
++	}
++	if strings.Contains(strings.ToLower(err.Error()), "tls") || strings.Contains(strings.ToLower(err.Error()), "certificate") {
++		return "tls_error"
++	}
++	return "request_failed"
++}
++
 +type StableFallbackEvent struct {
 +	At     time.Time `json:"at"`
 +	From   string    `json:"from"`
@@ -355,27 +509,58 @@ index 0000000..34a8dc6
 +		}
 +	}
 +	// A candidate is committed only while its outbound identity still matches.
++	stale := false
++	probeTargets := make(map[string]N.Dialer)
 +	probe := func(c fallbackCandidate, recovering bool) bool {
-+		if ctx.Err() != nil || !s.candidateActive(c) {
++		if ctx.Err() != nil {
++			return false
++		}
++		if !s.candidateActive(c) {
++			stale = true
 +			return false
 +		}
 +		age := maxAge
 +		if recovering {
 +			age = 0
 +		} // each recovery success must be a fresh observation
-+		delay, at, err := s.coordinator.Check(ctx, s.link, s.expectedStatus, MemberTag(c.outbound), c.outbound, probeTimeout, age)
++		started := time.Now()
++		target := urltest.ProbeTarget(c.outbound)
++		probeTargets[c.tag] = target
++		targetTag := c.tag
++		if outbound, ok := target.(adapter.Outbound); ok {
++			targetTag = outbound.Tag()
++		}
++		delay, at, err := s.coordinator.Check(ctx, s.link, s.expectedStatus, targetTag, target, probeTimeout, age)
++		// A cached failure can start a fresh confirmation, but cannot itself
++		// declare this currently selected node down.
++		if err != nil && age > 0 && at.Before(started) && ctx.Err() == nil {
++			delay, at, err = s.coordinator.Check(ctx, s.link, s.expectedStatus, targetTag, target, probeTimeout, 0)
++		}
++		primaryError := err
++		if !urltest.SameProbeTarget(c.outbound, target) {
++			stale = true
++			s.requestCheck()
++			return false
++		}
 +		if err != nil && ctx.Err() == nil {
-+			delay, at, err = s.coordinator.Check(ctx, s.stable.confirmURL, s.stable.confirmStatus, MemberTag(c.outbound), c.outbound, probeTimeout, 0)
++			delay, at, err = s.coordinator.Check(ctx, s.stable.confirmURL, s.stable.confirmStatus, targetTag, target, probeTimeout, 0)
 +		}
 +		if ctx.Err() != nil {
++			return false
++		}
++		if !urltest.SameProbeTarget(c.outbound, target) {
++			stale = true
++			s.requestCheck()
 +			return false
 +		}
 +		s.access.Lock()
 +		h, ok := s.health[c.tag]
 +		if !ok || h.outbound != c.outbound {
++			stale = true
 +			s.access.Unlock()
 +			return false
 +		}
++		becameUnhealthy := err != nil && (!h.checked || h.alive)
 +		h.checked = true
 +		h.alive = err == nil
 +		h.checkedAt = at
@@ -391,15 +576,18 @@ index 0000000..34a8dc6
 +			result[c.tag] = delay
 +		} else {
 +			h.recoverySuccesses = 0
-+			h.lastError = "Both health targets failed"
++			h.lastError = "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(err)
 +			s.history.DeleteURLTestHistory(MemberTag(c.outbound))
 +		}
 +		s.health[c.tag] = h
 +		s.access.Unlock()
++		if becameUnhealthy {
++			s.logger.Warn("fallback health check rejected ", c.tag, ": ", h.lastError)
++		}
 +		return err == nil
 +	}
 +	activeHealthy := probe(candidates[active], false)
-+	if ctx.Err() != nil {
++	if ctx.Err() != nil || stale {
 +		return result
 +	}
 +	if activeHealthy {
@@ -411,7 +599,7 @@ index 0000000..34a8dc6
 +				if probe(c, true) {
 +					break
 +				} // restore highest recoverable priority, no sweep below it
-+				if ctx.Err() != nil {
++				if ctx.Err() != nil || stale {
 +					return result
 +				}
 +			}
@@ -426,17 +614,35 @@ index 0000000..34a8dc6
 +			if probe(c, false) {
 +				break
 +			}
-+			if ctx.Err() != nil {
++			if ctx.Err() != nil || stale {
 +				return result
 +			}
 +		}
 +	}
 +	s.access.Lock()
++	if s.selected != selected || len(s.candidates) != len(candidates) {
++		s.access.Unlock()
++		return result
++	}
++	for i, c := range candidates {
++		if s.candidates[i].tag != c.tag || s.candidates[i].outbound != c.outbound {
++			s.access.Unlock()
++			return result
++		}
++		if target, checked := probeTargets[c.tag]; checked && !urltest.SameProbeTarget(c.outbound, target) {
++			s.access.Unlock()
++			s.requestCheck()
++			return result
++		}
++	}
 +	old := s.selected
 +	s.selected = s.selectAvailableLocked()
 +	next := s.selected
 +	if old != "" && next != old {
 +		reason := "Confirmed health failure"
++		if failure := s.health[candidates[active].tag].lastError; !activeHealthy && failure != "" {
++			reason += ": " + failure
++		}
 +		if activeHealthy {
 +			reason = "Primary passed recovery threshold"
 +		}
@@ -496,6 +702,295 @@ index 0000000..34a8dc6
 +		status.NextRecovery = &next
 +	}
 +	return status
++}
+diff --git a/protocol/group/fallback_stable_regression_test.go b/protocol/group/fallback_stable_regression_test.go
+new file mode 100644
+index 0000000..c36ecd8
+--- /dev/null
++++ b/protocol/group/fallback_stable_regression_test.go
+@@ -0,0 +1,283 @@
++package group
++
++import (
++	"context"
++	"errors"
++	"github.com/sagernet/sing-box/adapter"
++	M "github.com/sagernet/sing/common/metadata"
++	"io"
++	"net"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++)
++
++type stableMutableGroup struct {
++	*fallbackHealthTestOutbound
++	mu          sync.Mutex
++	selected    adapter.Outbound
++	afterSelect adapter.Outbound
++}
++
++func (o *stableMutableGroup) All() []string                     { return nil }
++func (o *stableMutableGroup) AttachConnection(io.Closer) func() { return func() {} }
++func (o *stableMutableGroup) Selected(string) adapter.Outbound {
++	o.mu.Lock()
++	defer o.mu.Unlock()
++	selected := o.selected
++	if o.afterSelect != nil {
++		o.selected, o.afterSelect = o.afterSelect, nil
++	}
++	return selected
++}
++func (o *stableMutableGroup) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++	return o.Selected(network).DialContext(ctx, network, destination)
++}
++
++func TestStableFallbackCoordinatorFreezesNestedProbeTarget(t *testing.T) {
++	old, replacement := newFallbackHealthTestOutbound("leaf", false), newFallbackHealthTestOutbound("leaf", true)
++	wrapper := &stableMutableGroup{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("wrapper", true), selected: old, afterSelect: replacement}
++	s := stableCandidateGroup(t, fallbackCandidate{tag: wrapper.Tag(), outbound: wrapper})
++	_, _, err := s.coordinator.Check(context.Background(), s.link, s.expectedStatus, old.Tag(), wrapper, time.Second, 0)
++	if err == nil {
++		t.Fatal("probe used replacement after capturing old leaf identity")
++	}
++	_, _, err = s.coordinator.Check(context.Background(), s.link, s.expectedStatus, old.Tag(), old, time.Second, time.Minute)
++	if err == nil {
++		t.Fatal("replacement success polluted old leaf cache")
++	}
++}
++
++func TestStableFallbackDiscardsChangedNestedSelection(t *testing.T) {
++	old := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("leaf", false)}
++	replacement := newFallbackHealthTestOutbound("replacement", true)
++	wrapper := &stableMutableGroup{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", true), selected: old}
++	backup := newFallbackHealthTestOutbound("backup", true)
++	s := stableCandidateGroup(t, fallbackCandidate{tag: wrapper.Tag(), outbound: wrapper}, fallbackCandidate{tag: backup.Tag(), outbound: backup})
++	old.dial = func(context.Context, string, M.Socksaddr) (net.Conn, error) {
++		wrapper.mu.Lock()
++		wrapper.selected = replacement
++		wrapper.mu.Unlock()
++		return nil, errors.New("obsolete leaf failed")
++	}
++	s.checkOutbounds(context.Background(), 0)
++	if s.StableStatus().Active != "primary" || backup.dialCount != 0 {
++		t.Fatal("old nested leaf failure demoted replacement")
++	}
++}
++
++func TestStableFallbackRevalidatesNestedTargetAfterReserveProbe(t *testing.T) {
++	old := newFallbackHealthTestOutbound("leaf", false)
++	replacement := newFallbackHealthTestOutbound("replacement", true)
++	wrapper := &stableMutableGroup{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", true), selected: old}
++	backup := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("backup", true)}
++	s := stableCandidateGroup(t, fallbackCandidate{tag: wrapper.Tag(), outbound: wrapper}, fallbackCandidate{tag: backup.Tag(), outbound: backup})
++	backup.dial = func(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++		wrapper.mu.Lock()
++		wrapper.selected = replacement
++		wrapper.mu.Unlock()
++		return backup.fallbackHealthTestOutbound.DialContext(ctx, network, destination)
++	}
++	s.checkOutbounds(context.Background(), 0)
++	if s.StableStatus().Active != "primary" || len(s.StableStatus().Events) != 0 {
++		t.Fatal("obsolete active result committed after reserve probe")
++	}
++}
++
++type stableTrafficOutbound struct {
++	*fallbackHealthTestOutbound
++	packetCalls        int
++	rejectConfirmation bool
++	dial               func(context.Context, string, M.Socksaddr) (net.Conn, error)
++}
++
++func (o *stableTrafficOutbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++	if o.dial != nil {
++		return o.dial(ctx, network, destination)
++	}
++	if o.rejectConfirmation && destination.Fqdn == "confirm.test" {
++		return nil, errors.New("confirmation refused")
++	}
++	return o.fallbackHealthTestOutbound.DialContext(ctx, network, destination)
++}
++func (o *stableTrafficOutbound) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
++	o.packetCalls++
++	return nil, errors.New("destination refused")
++}
++func stableCandidateGroup(t *testing.T, candidates ...fallbackCandidate) *Fallback {
++	s := newTestFallback(candidates...)
++	template := stableTestGroup(t)
++	s.stable, s.expectedStatus = template.stable, template.expectedStatus
++	return s
++}
++
++func TestStableFallbackDoesNotDialReserveForOneFailedRequest(t *testing.T) {
++	a, b := newFallbackHealthTestOutbound("primary", false), newFallbackHealthTestOutbound("backup", true)
++	s := stableTestGroup(t, a, b)
++	health := s.health["primary"]
++	health.checked, health.alive = true, true
++	s.health["primary"] = health
++	conn, err := s.DialContext(context.Background(), "tcp", M.Socksaddr{})
++	if conn != nil {
++		conn.Close()
++	}
++	if err == nil || b.dialCount != 0 || len(s.StableStatus().Events) != 0 || s.StableStatus().State != "primary" {
++		t.Fatalf("unconfirmed traffic reached reserve: error=%v reserve=%d", err, b.dialCount)
++	}
++	// Only a committed health decision permits new traffic through the reserve.
++	s.checkOutbounds(context.Background(), 0)
++	if selectedTag(s) != "backup" {
++		t.Fatal("confirmed failure did not select backup")
++	}
++	conn, err = s.DialContext(context.Background(), "tcp", M.Socksaddr{})
++	if conn != nil {
++		conn.Close()
++	}
++	if err != nil || b.dialCount != 2 {
++		t.Fatalf("committed reserve unavailable: %v", err)
++	}
++}
++
++func TestStableFallbackCancelledClientDoesNotScheduleHealth(t *testing.T) {
++	a := &fallbackEarlyOutbound{Adapter: newFallbackHealthTestOutbound("primary", true).Adapter}
++	b := newFallbackHealthTestOutbound("backup", true)
++	s := stableCandidateGroup(t, fallbackCandidate{tag: a.Tag(), outbound: a}, fallbackCandidate{tag: b.Tag(), outbound: b})
++	ctx, cancel := context.WithCancel(context.Background())
++	conn, err := s.DialContext(ctx, "tcp", M.Socksaddr{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	cancel()
++	_, _ = conn.Write([]byte("cancelled request"))
++	select {
++	case <-s.wake:
++		t.Fatal("client cancellation was treated as a node failure")
++	default:
++	}
++}
++
++func TestStableFallbackCoordinatorDoesNotJoinReplacedDialer(t *testing.T) {
++	old := &fallbackBlockingOutbound{Adapter: newFallbackHealthTestOutbound("primary", false).Adapter, started: make(chan struct{})}
++	replacement := newFallbackHealthTestOutbound("primary", true)
++	s := stableCandidateGroup(t, fallbackCandidate{tag: old.Tag(), outbound: old})
++	done := make(chan struct{})
++	go func() {
++		defer close(done)
++		_, _, _ = s.coordinator.Check(context.Background(), s.link, s.expectedStatus, old.Tag(), old, 100*time.Millisecond, 0)
++	}()
++	defer func() { <-done }()
++	<-old.started
++	_, _, err := s.coordinator.Check(context.Background(), s.link, s.expectedStatus, replacement.Tag(), replacement, 100*time.Millisecond, 0)
++	if err != nil {
++		t.Fatalf("replacement inherited old instance failure: %v", err)
++	}
++}
++
++func TestStableFallbackDoesNotDialReserveAfterEarlyWriteFailure(t *testing.T) {
++	a := &fallbackBrokenWriteOutbound{Adapter: newFallbackHealthTestOutbound("primary", true).Adapter, early: true}
++	b := newFallbackHealthTestOutbound("backup", true)
++	s := stableCandidateGroup(t, fallbackCandidate{tag: a.Tag(), outbound: a}, fallbackCandidate{tag: b.Tag(), outbound: b})
++	conn, err := s.DialContext(context.Background(), "tcp", M.Socksaddr{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	_, err = conn.Write([]byte("request"))
++	if err == nil || b.dialCount != 0 {
++		t.Fatalf("early write silently used reserve: %v calls=%d", err, b.dialCount)
++	}
++}
++
++func TestStableFallbackDoesNotOpenReservePacketSocket(t *testing.T) {
++	a := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", true)}
++	b := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("backup", true)}
++	s := stableCandidateGroup(t, fallbackCandidate{tag: a.Tag(), outbound: a}, fallbackCandidate{tag: b.Tag(), outbound: b})
++	_, err := s.ListenPacket(context.Background(), M.Socksaddr{})
++	if err == nil || a.packetCalls != 1 || b.packetCalls != 0 {
++		t.Fatalf("UDP silently used reserve: %v calls=%d/%d", err, a.packetCalls, b.packetCalls)
++	}
++}
++
++func TestStableFallbackRechecksCachedFailureBeforeDeclaringNodeDown(t *testing.T) {
++	a := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", false), rejectConfirmation: true}
++	b := newFallbackHealthTestOutbound("backup", true)
++	s := stableCandidateGroup(t, fallbackCandidate{tag: a.Tag(), outbound: a}, fallbackCandidate{tag: b.Tag(), outbound: b})
++	_, _, err := s.coordinator.Check(context.Background(), s.link, s.expectedStatus, MemberTag(a), a, s.timeout, 0)
++	if err == nil {
++		t.Fatal("test needs a cached failure")
++	}
++	a.setAvailable(true)
++	s.checkOutbounds(context.Background(), time.Minute)
++	if s.StableStatus().Active != "primary" || b.dialCount != 0 {
++		t.Fatal("old cached failure demoted a working primary")
++	}
++}
++
++func TestStableFallbackDiscardsReplacedOutboundBeforeFailover(t *testing.T) {
++	a := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", false)}
++	replacement := newFallbackHealthTestOutbound("primary", true)
++	b := newFallbackHealthTestOutbound("backup", true)
++	s := stableCandidateGroup(t, fallbackCandidate{tag: a.Tag(), outbound: a}, fallbackCandidate{tag: b.Tag(), outbound: b})
++	var once sync.Once
++	a.dial = func(context.Context, string, M.Socksaddr) (net.Conn, error) {
++		once.Do(func() {
++			s.access.Lock()
++			defer s.access.Unlock()
++			s.candidates[0].outbound = replacement
++			s.health["primary"] = fallbackHealth{outbound: replacement}
++		})
++		return nil, errors.New("obsolete outbound")
++	}
++	s.checkOutbounds(context.Background(), 0)
++	if s.StableStatus().Active != "primary" || b.dialCount != 0 {
++		t.Fatal("obsolete result caused a failover")
++	}
++}
++
++func TestStableFallbackSwitchReasonIncludesBothProbeResults(t *testing.T) {
++	a, b := newFallbackHealthTestOutbound("primary", false), newFallbackHealthTestOutbound("backup", true)
++	s := stableTestGroup(t, a, b)
++	s.checkOutbounds(context.Background(), 0)
++	events := s.StableStatus().Events
++	if len(events) != 1 || !strings.Contains(events[0].Reason, "primary=request_failed; confirmation=request_failed") {
++		t.Fatalf("failure cause was discarded: %+v", events)
++	}
++}
++
++func TestStableFallbackFailedRequestSchedulesHealthWithoutDialingReserve(t *testing.T) {
++	a, b := newFallbackHealthTestOutbound("primary", false), newFallbackHealthTestOutbound("backup", true)
++	s := stableTestGroup(t, a, b)
++	_, _ = s.DialContext(context.Background(), "tcp", M.Socksaddr{})
++	select {
++	case <-s.wake:
++	default:
++		t.Fatal("first failed connection did not schedule a health check")
++	}
++	_, _ = s.DialContext(context.Background(), "tcp", M.Socksaddr{})
++	select {
++	case <-s.wake:
++		t.Fatal("failure burst scheduled redundant health checks")
++	default:
++	}
++	if b.dialCount != 0 {
++		t.Fatal("failure notification dialed the reserve")
++	}
++}
++
++func TestStableFallbackFailureLabelsDoNotExposeEndpointOrSecret(t *testing.T) {
++	for _, test := range []struct {
++		err  error
++		want string
++	}{
++		{context.DeadlineExceeded, "timeout"},
++		{errors.New("unexpected HTTP status: 403"), "HTTP_403"},
++		{errors.New("tls failure with a private endpoint"), "tls_error"},
++		{errors.New("private-password-at-private-endpoint"), "request_failed"},
++	} {
++		if got := stableProbeError(test.err); got != test.want {
++			t.Fatalf("failure label=%s want %s", got, test.want)
++		}
++	}
 +}
 diff --git a/protocol/group/fallback_stable_test.go b/protocol/group/fallback_stable_test.go
 new file mode 100644
