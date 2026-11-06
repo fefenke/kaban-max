@@ -25,4 +25,4 @@ docker run --rm -v "$PWD:/work" -w /work kabanmax-build bash scripts/build-relea
 
 В `dist/release` создаются пакеты backend, LuCI, RU и ядра base/tiny для aarch64_cortex-a53 в форматах IPK/APK, два манифеста, установщик и SHA256SUMS.
 
-Исходный commit ядра закреплён в `core/UPSTREAM`, изменения — в `core/patches/`. Номер `1.14.4-r4` принадлежит этой сборке. Проверка ядра: `go test -race ./protocol/group -run Fallback -count=1` в исходниках с применённым patch.
+Исходный commit ядра закреплён в `core/UPSTREAM`, изменения — в `core/patches/`. Номер `1.14.4-r5` принадлежит этой сборке. Проверка ядра: `go test -race ./protocol/group -run Fallback -count=1` в исходниках с применённым patch.

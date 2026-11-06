@@ -134,7 +134,7 @@ t.test("the core check names the version the binary reports, and the package's v
     packages.paths.sing_box_version = dir + "/version";
     packages.paths.sing_box_variant = dir + "/variant";
     features.paths.binary = dir + "/sing-box";
-    fs.writefile(packages.paths.sing_box_version, "1.14.4-r4
+    fs.writefile(packages.paths.sing_box_version, "1.14.4-r5
 ");
     fs.writefile(packages.paths.sing_box_variant, "tiny
 ");
@@ -153,9 +153,9 @@ CGO: disabled
         return value;
     };
     let tags = "with_clash_api,with_utls,with_quic";
-    t.eq(core_of("1.14.4-r4", tags), { installed: true, binary: "1.14.4-r4", version: "1.14.4-r4", variant: "tiny",
+    t.eq(core_of("1.14.4-r5", tags), { installed: true, binary: "1.14.4-r5", version: "1.14.4-r5", variant: "tiny",
         outdated: false, required: require("core.constants").SB_REQUIRED_VERSION, problem: "" });
-    t.eq(core_of("1.14.4-r4+72", tags).variant, "tiny", "a build between releases of the package's release");
+    t.eq(core_of("1.14.4-r5+72", tags).variant, "tiny", "a build between releases of the package's release");
     t.eq(core_of("1.14.5-r1", tags).variant, "", "a binary of another build copied over the package's");
 
     let foreign = core_of("1.12.22", tags);
@@ -163,8 +163,8 @@ CGO: disabled
     let old = core_of("1.13.18-extended-2.6.5-f165", tags);
     t.eq([ old.version, old.outdated ], [ "1.13.18-extended-2.6.5-f165", true ], "sing-box-kabanmax older than KabanMax needs");
 
-    t.contains(core_of("1.14.4-r4", "with_utls,with_quic").problem, "sing-box was built without with_clash_api");
-    t.contains(core_of("1.14.4-r4", "with_clash_api,with_wireguard,with_openvpn").problem,
+    t.contains(core_of("1.14.4-r5", "with_utls,with_quic").problem, "sing-box was built without with_clash_api");
+    t.contains(core_of("1.14.4-r5", "with_clash_api,with_wireguard,with_openvpn").problem,
         "sing-box was built with with_wireguard, with_openvpn but without with_gvisor");
 });
 
