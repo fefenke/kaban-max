@@ -43,22 +43,22 @@ async function command(args: string[]): Promise<Zapret2Status> {
 }
 
 export function renderZapret2(): HTMLElement {
-  const status = E('p', {}, _('Loading...'));
-  const details = E(
-    'p',
-    {},
-    _(
-      'Official zapret2 engine and Lua update together. Section strategies are kept.',
-    ),
+  const status = E(
+    'span',
+    { class: 'fkp_components-page__heading-version' },
+    '',
   );
+  const details = E('p', { role: 'status', hidden: true });
   const install = E(
     'button',
     { type: 'button', class: 'cbi-button cbi-button-action' },
     _('Install / Update'),
   ) as HTMLButtonElement;
   const root = E('div', { class: 'fkp_components-page__block' }, [
-    E('b', {}, 'Zapret2'),
-    status,
+    E('div', { class: 'fkp_components-page__heading' }, [
+      E('b', {}, 'Zapret2'),
+      status,
+    ]),
     details,
     install,
   ]);
@@ -81,19 +81,21 @@ export function renderZapret2(): HTMLElement {
     try {
       state = await command(['zapret2_status']);
       busy = Boolean(state.running);
-      status.textContent = `${_('Installed')}: ${state.installed || '\u2014'} \u00b7 ${_('Latest')}: ${state.latest || '\u2014'}${state.architecture ? ` \u00b7 ${state.architecture}` : ''}`;
+      status.textContent = state.installed || '\u2014';
       details.textContent =
         state.success === false || busy
           ? state.message || (busy ? _('in progress') : _('failed'))
           : checked && state.latest
             ? state.latest === state.installed
               ? _('No updates available')
-              : _('Update available')
-            : _('Check for updates before installation');
+              : `${_('Update available')}: ${state.latest}`
+            : '';
+      details.hidden = !details.textContent;
       if (busy && root.isConnected)
         window.setTimeout(() => void refresh(), 1500);
     } catch (error) {
       details.textContent = (error as Error).message;
+      details.hidden = false;
       busy = false;
       checked = false;
     }
@@ -110,6 +112,7 @@ export function renderZapret2(): HTMLElement {
       await refresh();
     } catch (error) {
       details.textContent = (error as Error).message;
+      details.hidden = false;
       busy = false;
       checked = false;
       draw();

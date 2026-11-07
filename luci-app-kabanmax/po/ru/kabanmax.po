@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: KABANMAX\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-07 16:38+0000\n"
-"PO-Revision-Date: 2026-11-07 16:38+0000\n"
+"POT-Creation-Date: 2026-11-07 21:43+0000\n"
+"PO-Revision-Date: 2026-11-07 21:43+0000\n"
 "Last-Translator: K.A.B.A.N.-MAX contributors\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -449,23 +449,29 @@ msgstr "Изменить HTTP-заголовки запроса"
 msgid "Change the parameters of the servers this subscription adds"
 msgstr "Изменить параметры серверов, которые добавляются из этой подписки"
 
+msgid "Check"
+msgstr "Проверка"
+
 msgid "Check after a connection error"
 msgstr "Проверка после ошибки подключения"
 
 msgid "Check again"
 msgstr "Проверить снова"
 
+msgid "Check failures"
+msgstr "Сбои проверок"
+
 msgid "Check for updates"
 msgstr "Проверить обновления"
-
-msgid "Check for updates before installation"
-msgstr "Перед установкой проверьте обновления"
 
 msgid "Check interval"
 msgstr "Интервал проверки"
 
 msgid "Check IP"
 msgstr "Проверить IP"
+
+msgid "Check settings"
+msgstr "Параметры проверок"
 
 msgid "Check the installed build before updating"
 msgstr "Перед обновлением проверьте установленную сборку"
@@ -608,11 +614,14 @@ msgstr "Подключаться к серверу через другую се�
 msgid "Connect to the tunnel server through another section"
 msgstr "Подключаться к серверу туннеля через другую секцию"
 
+msgid "Connection errors"
+msgstr "Ошибки соединений"
+
 msgid "connection failed"
 msgstr "соединение не установлено"
 
-msgid "Connection opening errors"
-msgstr "Ошибки открытия соединений"
+msgid "Connection overview"
+msgstr "Состояние подключений"
 
 msgid "Connection timeout"
 msgstr "Таймаут подключения"
@@ -694,9 +703,6 @@ msgstr "Создавать и получать профили Cloudflare WARP ч
 
 msgid "Created in the Tailscale console under Settings → Keys"
 msgstr "Создаётся в консоли Tailscale: Settings → Keys"
-
-msgid "Current selection duration"
-msgstr "Текущий сервер выбран"
 
 msgid "Currently unavailable"
 msgstr "Временно недоступно"
@@ -956,9 +962,6 @@ msgstr "Экспорт конфига"
 msgid "failed"
 msgstr "ошибка"
 
-msgid "Failed check rounds"
-msgstr "Неудачные циклы проверок"
-
 msgid "Failed to close connection"
 msgstr "Не удалось закрыть подключение"
 
@@ -1009,6 +1012,9 @@ msgstr "Ошибка обновления подписок"
 
 msgid "Failed to upload the file: %s"
 msgstr "Не удалось загрузить файл на роутер: %s"
+
+msgid "Failure retry interval"
+msgstr "Пауза перед повторной проверкой"
 
 msgid "Fallback"
 msgstr "Fallback"
@@ -1157,6 +1163,9 @@ msgstr "Для HeaderProtectionKey нужны S1-S4 от 12"
 msgid "Headers"
 msgstr "Заголовки"
 
+msgid "Health checks failed, but a new connection received data. Server selection was kept."
+msgstr "Контрольные запросы не прошли, но новое подключение получило данные. Сервер не переключён."
+
 msgid "Hide details"
 msgstr "Скрыть подробности"
 
@@ -1246,12 +1255,6 @@ msgstr "Установить"
 
 msgid "Install / Update"
 msgstr "Установить / Обновить"
-
-msgid "Installed"
-msgstr "Установлено"
-
-msgid "Installed versions"
-msgstr "Установленные версии"
 
 msgid "Installer log"
 msgstr "Журнал установщика"
@@ -1466,6 +1469,9 @@ msgstr "key без cert"
 msgid "LAN subnets that tailnet devices can reach"
 msgstr "LAN-подсети, доступные устройствам сети"
 
+msgid "Last 24 hours"
+msgstr "За последние 24 часа"
+
 msgid "Last online %s"
 msgstr "Последний раз в сети %s"
 
@@ -1483,9 +1489,6 @@ msgstr "Не удалось проверить задержку: Clash API не 
 
 msgid "Latency test URL"
 msgstr "URL для тестирования задержки"
-
-msgid "Latest"
-msgstr "Доступная версия"
 
 msgid "Legacy encryption"
 msgstr "Устаревшее шифрование"
@@ -1531,9 +1534,6 @@ msgstr "Загрузка подключений..."
 
 msgid "Loading logs..."
 msgstr "Загрузка логов..."
-
-msgid "Loading..."
-msgstr "Загрузка…"
 
 msgid "Loading…"
 msgstr "Загрузка…"
@@ -1763,9 +1763,6 @@ msgstr "Нет поля tag"
 msgid "No updates available"
 msgstr "Обновлений нет"
 
-msgid "Node"
-msgstr "Сервер"
-
 msgid "Node key"
 msgstr "Ключ узла"
 
@@ -1844,17 +1841,8 @@ msgstr "Параметры обфускации"
 msgid "Obfuscation password"
 msgstr "Пароль обфускации"
 
-msgid "Observation"
-msgstr "Наблюдение"
-
-msgid "Observation since"
-msgstr "Начало наблюдения"
-
 msgid "Off"
 msgstr "Выключено"
-
-msgid "Official zapret2 engine and Lua update together. Section strategies are kept."
-msgstr "Движок zapret2 и Lua обновляются вместе из официального релиза. Стратегии секций сохраняются."
 
 msgid "Offline"
 msgstr "Не в сети"
@@ -2318,6 +2306,9 @@ msgstr "Выберите WAN интерфейсы для мониторинга"
 msgid "Selected"
 msgstr "Выбран"
 
+msgid "Selected for"
+msgstr "Выбран"
+
 msgid "Selects the first available node by priority"
 msgstr "Выбирает первый доступный узел по приоритету"
 
@@ -2455,6 +2446,9 @@ msgstr "Войти"
 
 msgid "Sign in with a certificate, alone or together with the login"
 msgstr "Вход по сертификату, отдельно или вместе с логином"
+
+msgid "Since start"
+msgstr "С момента запуска"
 
 msgid "sing-box %s, not sing-box-kabanmax"
 msgstr "sing-box %s, а не sing-box-kabanmax"
@@ -2600,11 +2594,8 @@ msgstr "Поддерживаются URI: %s"
 msgid "Suspected failure"
 msgstr "Подозрение на сбой"
 
-msgid "Switches away"
-msgstr "Переключений с сервера"
-
-msgid "Switches during observation"
-msgstr "Переключений за время наблюдения"
+msgid "Switches"
+msgstr "Переключения"
 
 msgid "Switching threshold in ms at which to move to a faster server"
 msgstr "Порог переключения в мс, при которой переключаться на более быстрый сервер"
@@ -2822,9 +2813,6 @@ msgstr "Время"
 msgid "Time on backup"
 msgstr "Время на резерве"
 
-msgid "Time selected"
-msgstr "Время выбора сервера"
-
 msgid "TLS (certificates)"
 msgstr "TLS (сертификаты)"
 
@@ -3008,6 +2996,9 @@ msgstr "URLTest: %s"
 msgid "Use --option=value arguments. KabanMax manages the queue, process and packet marks. Empty uses the default strategy."
 msgstr "Параметры в формате --option=value. Очередью, процессом и метками пакетов управляет KabanMax. Пустое поле включает стандартную стратегию."
 
+msgid "Use a duration from 1s to 5m"
+msgstr "Укажите длительность от 1s до 5m"
+
 msgid "Use pin-sha256 instead of a certificate SHA-256"
 msgstr "Нужен pin-sha256, а не SHA-256 сертификата"
 
@@ -3043,6 +3034,9 @@ msgstr "verify-x509-name: тип %s не поддерживается"
 
 msgid "VPN server"
 msgstr "VPN-сервер"
+
+msgid "Wait after both checks fail before checking again. Range: 1s to 5m. Check time is additional."
+msgstr "Пауза после неудачи обеих проверок перед повторной попыткой. От 1s до 5m. Время выполнения самих проверок добавляется отдельно."
 
 msgid "Waiting for approval in the console"
 msgstr "Ждёт одобрения в консоли"

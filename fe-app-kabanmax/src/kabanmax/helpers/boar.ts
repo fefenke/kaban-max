@@ -89,7 +89,7 @@ export function drawBoar(
     ctx.fillStyle = '#87945e';
     ctx.fillRect(x + 2 * scale, y + 8 * scale, 5 * scale, 3 * scale);
   }
-  if (pose === 'running' || pose === 'install')
+  if (pose === 'install')
     drawAcorn(ctx, x + 24 * scale, y + 11 * scale, scale);
 }
 export function drawAcorn(

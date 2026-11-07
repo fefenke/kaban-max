@@ -43,6 +43,7 @@ import {
   addGroupHealthCheckTailOptions,
 } from './healthCheck';
 import { validateRequiredSingBoxDuration } from '../../../validators/validateSingBoxDuration';
+import { validateFailureRetryInterval } from './healthCheck';
 
 function fallbackGroupSettingsKeys() {
   return [
@@ -56,6 +57,7 @@ function fallbackGroupSettingsKeys() {
     'stable',
     'confirm_url',
     'confirm_expected_status',
+    'failure_retry_interval',
     'recovery_interval',
     'recovery_successes',
     'interrupt_exist_connections',
@@ -255,6 +257,11 @@ function addFallbackGroupItemOptions(
   o = itemSection.option(form.Value, 'confirm_expected_status', _('Confirmation HTTP status'));
   o.default = '204';
   o.depends('stable', '1');
+  o = itemSection.option(form.Value, 'failure_retry_interval', _('Failure retry interval'),
+    _('Wait after both checks fail before checking again. Range: 1s to 5m. Check time is additional.'));
+  o.default = '3s';
+  o.depends('stable', '1');
+  o.validate = (_id: string, value: unknown) => validateFailureRetryInterval(value);
   o = itemSection.option(form.Value, 'recovery_interval', _('Recovery interval'));
   o.default = '60s';
   o.depends('stable', '1');

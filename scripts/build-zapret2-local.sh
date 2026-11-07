@@ -3,7 +3,7 @@
 # Needs bash, GNU coreutils/tar, a built frontend and apk-tools v3 for .apk output.
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="${1:-0.1.2}"
+version="${1:-0.1.3}"
 output="${2:-$repo/dist/zapret2-local}"
 [[ "$output" = /* ]] || output="$PWD/$output"
 mkdir -p "$output"

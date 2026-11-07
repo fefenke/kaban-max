@@ -129,6 +129,7 @@ function fallback_fixture() {
 t.test("a Fallback group is one native outbound whose levels claim each node once", () => {
     let config = build(fallback_fixture());
     let group = q.outbound(config, "proxy/Main fallback");
+    t.eq(group.failure_retry_interval, "3s", "default pause before a fresh failure confirmation");
     t.eq([group.stable, group.confirm_url, group.confirm_expected_status, group.recovery_interval, group.recovery_successes],
         [true, "https://cp.cloudflare.com/generate_204", "204", "60s", 3]);
     t.eq([ group.type, length(group.groups), group.levels, group.outbounds, group.exclude_group_members ], [ "fallback", 5, null, null, null ]);
@@ -157,6 +158,12 @@ t.test("a Fallback group is one native outbound whose levels claim each node onc
     for (let outbound in config.outbounds)
         t.ok(index(outbound.tag, "proxy-fallback-pg_main-level-") != 0, "no nested level outbounds");
     t.eq(q.outbound(config, "proxy").default, group.tag, "the selector defaults to its first Fallback group");
+});
+
+t.test("a custom failure retry pause reaches the native fallback outbound", () => {
+    let data = fallback_fixture();
+    data.fallback_group[0].failure_retry_interval = "12s";
+    t.eq(q.outbound(build(data), "proxy/Main fallback").failure_retry_interval, "12s");
 });
 
 t.done();

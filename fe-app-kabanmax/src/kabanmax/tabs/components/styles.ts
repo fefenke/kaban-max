@@ -325,4 +325,25 @@ ${ansiStyles}
         max-height: max(16rem, 55vh);
     }
 }
+/* The control rail stays compact; the playable area takes the available width. */
+.fkp_components-page__controls { display:flex; flex-direction:column; gap:10px; align-self:start; min-width:0; }
+.fkp_components-page__block { display:flex; flex-direction:column; align-items:stretch; gap:10px; padding:14px; border-width:1px; border-color:var(--border-color-low,#e2e6e9); border-radius:8px; }
+.fkp_components-page__block p { margin:0; line-height:1.45; font-size:12px; overflow-wrap:anywhere; }
+.fkp_components-page__block p[hidden] { display:none; }
+.fkp_components-page__heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; }
+.fkp_components-page__heading > span { font-size:12px; color:var(--text-color-medium,#65717d); }
+.fkp_components-page__core { color:var(--text-color-medium,#65717d); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.fkp_components-page__core > span { display:inline; }
+.fkp_components-page__config-buttons { display:flex; gap:8px; flex-wrap:wrap; }
+.fkp_components-page__config-buttons > .fkp-partial-button { flex:1 1 95px; }
+.fkp_components-page__game { min-width:0; align-self:stretch; }
+.fkp_acorn-game { box-sizing:border-box; height:100%; border:1px solid var(--border-color-low,#e2e6e9); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; }
+.fkp_acorn-game__bar { padding:12px; }
+.fkp_acorn-game canvas { width:100%; max-width:840px; height:auto; max-height:none; aspect-ratio:360 / 122; image-rendering:pixelated; touch-action:manipulation; align-self:center; }
+@container (min-width:700px) { .fkp_components-page { grid-template-columns:270px minmax(0,1fr); align-items:start; } .fkp_components-page__controls { grid-column:1; grid-row:1; } .fkp_components-page__game { grid-column:2; grid-row:1; } .fkp_components-page__run { grid-column:1 / -1; } }
+@container (max-width:699px) { .fkp_components-page { grid-template-columns:minmax(0,1fr); } .fkp_components-page__game { grid-row:auto; grid-column:1; min-height:200px; } }
+
+
+.fkp_acorn-game { background:#f2f4dd; }
+.fkp_acorn-game__bar { background:var(--background-color-high,#fff); }
 `;

@@ -31,7 +31,9 @@ const GROUP_LATENCY_SWEEP_OVERSHOOT_MS = 5000;
 const DIRECT_CLASH_API_PROBE_INTERVAL_MS = 30000;
 const DIRECT_CLASH_API_PROBE_TIMEOUT_MS = 2000;
 let clashApiConfigSections: KabanMax.ConfigSection[] = [];
-let clashApiConfigSectionsPromise: Promise<KabanMax.ConfigSection[]> | undefined;
+let clashApiConfigSectionsPromise:
+  | Promise<KabanMax.ConfigSection[]>
+  | undefined;
 let directClashApiSuspended = false;
 let directClashApiReachable = false;
 let directClashApiProbeAt = 0;
@@ -224,13 +226,29 @@ async function requestClashApi<T>(
   timeout?: number,
   // Not retried after a timeout: the router keeps working on anything but a plain read, and a
   // second latency sweep would compete with the first for the same ten test slots.
-  options?: { keepsRunningAfterTimeout?: boolean; summary?: boolean },
+  options?: {
+    keepsRunningAfterTimeout?: boolean;
+    summary?: boolean;
+    coldReadThroughCli?: boolean;
+  },
 ): Promise<KabanMax.MethodResponse<T>> {
   const method = (init?.method || 'GET').toUpperCase();
   const body = typeof init?.body === 'string' ? init.body : '';
   const keepsRunning =
     options?.keepsRunningAfterTimeout ||
     (method !== 'GET' && method !== 'HEAD');
+
+  // A page served over HTTP does not prove that its separate controller port is
+  // reachable (for example, when LuCI is reached through Tailscale). Render cold
+  // dashboard reads through ubus while one shared probe discovers a direct path.
+  if (
+    options?.coldReadThroughCli &&
+    !keepsRunning &&
+    !directClashApiReachable
+  ) {
+    if (canReachClashApiFromBrowser()) void probeDirectClashApi();
+    return fetchClashApiThroughCli<T>(method, path, body, options?.summary);
+  }
 
   if (keepsRunning && canFetchClashApiDirectly() && !directClashApiReachable) {
     await probeDirectClashApi();
@@ -395,6 +413,7 @@ export function getClashApiProxies() {
     '/proxies',
     undefined,
     CLASH_API_FETCH_TIMEOUT_MS,
+    { coldReadThroughCli: true },
   );
 }
 
@@ -427,6 +446,7 @@ export function getClashApiProxyProviders() {
     '/providers/proxies',
     undefined,
     CLASH_API_FETCH_TIMEOUT_MS,
+    { coldReadThroughCli: true },
   );
 }
 
@@ -457,7 +477,7 @@ export async function getClashApiConnectionsSummary(): Promise<
     '/connections',
     undefined,
     CLASH_API_FETCH_TIMEOUT_MS,
-    { summary: true },
+    { summary: true, coldReadThroughCli: true },
   );
 }
 
