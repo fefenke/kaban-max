@@ -176,6 +176,13 @@ async function executeShellCommand({
 }
 
 // src/kabanmax/tabs/components/zapret2.ts
+function zapretAction(state, checked, busy) {
+  const available = checked && state.success !== false && state.latest && state.latest !== state.installed;
+  return {
+    action: available ? state.installed ? "update" : "install" : "check",
+    disabled: busy
+  };
+}
 async function command(args) {
   const reply = await executeShellCommand({
     command: "/usr/bin/kabanmax",
@@ -197,11 +204,6 @@ function renderZapret2() {
       "Official zapret2 engine and Lua update together. Section strategies are kept."
     )
   );
-  const check = textE(
-    "button",
-    { type: "button", class: "cbi-button" },
-    _("Check for updates")
-  );
   const install = textE(
     "button",
     { type: "button", class: "cbi-button cbi-button-action" },
@@ -211,41 +213,50 @@ function renderZapret2() {
     textE("b", {}, "Zapret2"),
     status,
     details,
-    check,
     install
   ]);
-  let busy = false;
+  let busy = true;
+  let state = {};
+  let checked = false;
+  function draw() {
+    const next = zapretAction(state, checked, busy);
+    install.disabled = next.disabled;
+    install.textContent = busy ? _("in progress") : next.action === "update" ? _("Update") : next.action === "install" ? _("Install") : _("Check for updates");
+  }
   async function refresh() {
     try {
-      const state = await command(["zapret2_status"]);
+      state = await command(["zapret2_status"]);
       busy = Boolean(state.running);
-      status.textContent = `Zapret2: ${state.installed || "\u2014"} \xB7 ${state.architecture || "\u2014"}${state.latest ? ` \xB7 ${state.latest}` : ""}`;
-      details.textContent = state.message || _(
-        "Official zapret2 engine and Lua update together. Section strategies are kept."
-      );
+      status.textContent = `${_("Installed")}: ${state.installed || "\u2014"} \xB7 ${_("Latest")}: ${state.latest || "\u2014"}${state.architecture ? ` \xB7 ${state.architecture}` : ""}`;
+      details.textContent = state.success === false || busy ? state.message || (busy ? _("in progress") : _("failed")) : checked && state.latest ? state.latest === state.installed ? _("No updates available") : _("Update available") : _("Check for updates before installation");
       if (busy && root.isConnected)
         window.setTimeout(() => void refresh(), 1500);
     } catch (error) {
       details.textContent = error.message;
       busy = false;
+      checked = false;
     }
-    check.disabled = busy;
-    install.disabled = busy;
+    draw();
   }
   async function run(action) {
+    if (busy) return;
     busy = true;
-    check.disabled = install.disabled = true;
+    draw();
     try {
       await command(["zapret2_update", action]);
+      checked = true;
       await refresh();
     } catch (error) {
       details.textContent = error.message;
       busy = false;
-      check.disabled = install.disabled = false;
+      checked = false;
+      draw();
     }
   }
-  check.onclick = () => void run("check");
-  install.onclick = () => void run("install");
+  install.onclick = () => void run(
+    zapretAction(state, checked, busy).action !== "check" ? "install" : "check"
+  );
+  draw();
   window.setTimeout(() => void refresh(), 0);
   return root;
 }
@@ -3398,7 +3409,7 @@ function parseJson(text8) {
   }
 }
 var installerApi = {
-  async start(action, variant, purge, lang) {
+  async start(action, variant, purge, lang, release) {
     const response = await executeShellCommand({
       command: "/usr/bin/kabanmax",
       args: [
@@ -3406,7 +3417,8 @@ var installerApi = {
         action,
         variant,
         purge ? "1" : "0",
-        lang
+        lang,
+        ...release ? [release] : []
       ],
       timeout: START_TIMEOUT_MS
     });
@@ -3480,6 +3492,23 @@ var installerApi = {
     return reply.success && Boolean(reply.data.accepted);
   }
 };
+
+// src/kabanmax/tabs/components/releaseCheck.ts
+function releaseAction(state) {
+  return state?.success && state.update_available ? "install" : "check";
+}
+async function checkRelease() {
+  const reply = await executeShellCommand({
+    command: "/usr/bin/kabanmax",
+    args: ["release_check"],
+    timeout: 75e3
+  });
+  const state = JSON.parse(reply.stdout || "{}");
+  if (reply.code || !state.success) {
+    throw new Error(state.message || reply.stderr || _("Failed to execute"));
+  }
+  return state;
+}
 
 // src/helpers/isDocumentVisible.ts
 function isDocumentVisible() {
@@ -3698,7 +3727,7 @@ function createInstallerRun(options) {
         chain.start(0);
       }
     },
-    async start(action, variant = "", purge = false) {
+    async start(action, variant = "", purge = false, release) {
       if (state.running || state.starting) {
         return;
       }
@@ -3709,7 +3738,8 @@ function createInstallerRun(options) {
           action,
           variant,
           purge,
-          options.lang()
+          options.lang(),
+          ...release ? [release] : []
         );
         follow(result.id);
         state = {
@@ -4440,19 +4470,26 @@ function initController() {
     logButton,
     copyButton
   ]);
+  const output = textE("details", {}, [
+    textE("summary", {}, _("Operation output")),
+    terminal.element
+  ]);
   part(root, "components-run").append(
     textE("div", { class: "fkp_components-page__run-header" }, [
       textE("div", { class: "fkp_components-page__run-title" }, [
         renderSquareTerminalIcon24(),
-        textE("span", {}, _("Terminal"))
+        textE("span", {}, _("Operation status"))
       ]),
       runSide
     ]),
-    terminal.element
+    output
   );
   let runState = null;
   let runDrawn = "";
   function renderRun(state) {
+    part(root, "components-run").hidden = !state.id && !state.starting;
+    if (state.running && state.interactive && state.action === "variant")
+      output.open = true;
     runSide.hidden = !state.id && !state.starting;
     stopButton.hidden = !state.running || !state.id;
     stopButton.disabled = state.stopping;
@@ -4474,7 +4511,7 @@ function initController() {
     }
     runDrawn = drawn;
     const status = statusOf(state);
-    const after = state.after ? ` \xB7 ${AFTER_RUN_TEXTS[state.after]()}` : "";
+    const after = state.after ? ` \u0420\u2019\u0412\xB7 ${AFTER_RUN_TEXTS[state.after]()}` : "";
     runStatus.className = `fkp_components-page__run-status fkp_components-page__run-status--${status.tone}`;
     runStatus.replaceChildren(
       ...at === null ? [] : [
@@ -4492,7 +4529,10 @@ function initController() {
     logButton.disabled = true;
     try {
       const text8 = await installerApi.log();
-      ui.showModal(_("Installer log"), renderModal(text8, "kabanmax-install-log"));
+      ui.showModal(
+        _("Installer log"),
+        renderModal(text8, "kabanmax-install-log")
+      );
     } catch (error) {
       showToast(
         error instanceof Error ? error.message : String(error),
@@ -4503,11 +4543,33 @@ function initController() {
     }
   }
   let actionsDrawn = "";
+  let release = null;
+  let releaseBusy = false;
+  let releaseError = "";
+  async function checkUpdates() {
+    releaseBusy = true;
+    releaseError = "";
+    renderActions(runState ?? run.state);
+    try {
+      release = await checkRelease();
+    } catch (error) {
+      release = null;
+      releaseError = error instanceof Error ? error.message : String(error);
+    } finally {
+      releaseBusy = false;
+      renderActions(runState ?? run.state);
+    }
+  }
   function renderActions(state) {
     const operation = store.get().serviceState.data.kabanmaxBusy;
     const live = state.starting || state.running;
-    const blocked = live || operation !== null && operation !== "install";
-    const drawn = JSON.stringify([blocked, live && state.action]);
+    const blocked = releaseBusy || live || operation !== null && operation !== "install";
+    const drawn = JSON.stringify([
+      blocked,
+      live && state.action,
+      release,
+      releaseError
+    ]);
     if (drawn === actionsDrawn) {
       return;
     }
@@ -4521,15 +4583,35 @@ function initController() {
       onClick
     });
     part(root, "components-actions").replaceChildren(
-      textE("b", {}, _("Available actions")),
+      textE("b", {}, "KabanMax"),
+      textE(
+        "p",
+        { role: "status" },
+        releaseError || (release ? `${_("Installed")}: ${release.installed || "\u2014"} \xB7 ${_("Latest")}: ${release.latest || "\u2014"} \xB7 sing-box: ${release.core_installed || "\u2014"} \xB7 ${release.core_latest || "\u2014"} \xB7 ${release.update_available ? _("Update available") : _("No updates available")}` : _("Check for updates before installation"))
+      ),
       button(
         "update",
         renderDownloadIcon24,
-        _("Run the installer"),
+        releaseBusy ? _("Checking...") : releaseAction(release) === "install" ? release?.installed ? _("Download and install update") : _("Download and install") : _("Check for updates"),
         ["cbi-button-apply"],
-        () => void run.start("update")
+        () => {
+          if (releaseAction(release) === "install") {
+            const variant = store.get().diagnosticsSystemInfo.sing_box_variant;
+            if (variant !== "base" && variant !== "tiny" && variant !== "full") {
+              showToast(
+                _("Check the installed build before updating"),
+                "error"
+              );
+              return;
+            }
+            void run.start("update", variant, false, release?.release);
+          } else {
+            void checkUpdates();
+          }
+        }
       ),
       button("variant", renderLayersIcon24, _("Change the build"), [], () => {
+        output.open = true;
         void run.start("variant").then(() => terminal.focus());
       }),
       button(
@@ -4764,14 +4846,14 @@ controls at least, growing with its output up to its limit. */
     box-sizing: border-box;
     width: 100%;
     display: grid;
-    grid-template-columns: minmax(17rem, max-content) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     grid-gap: 10px;
 }
 
 .fkp_components-page__controls {
     align-self: start;
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
     grid-row-gap: 10px;
 }
 
@@ -4827,6 +4909,8 @@ controls at least, growing with its output up to its limit. */
     vertical-align: 0.08rem;
 }
 
+.fkp_components-page__run[hidden] { display: none; }
+.fkp_components-page__run summary { padding: 8px 10px; cursor: pointer; }
 .fkp_components-page__run {
     display: flex;
     flex-direction: column;
@@ -4935,8 +5019,8 @@ controls at least, growing with its output up to its limit. */
 .fkp_components-page .fkp_terminal__output {
     box-sizing: border-box;
     flex: 1 1 auto;
-    min-height: 12rem;
-    max-height: max(18rem, 62vh);
+    min-height: 4rem;
+    max-height: 18rem;
     margin: 0;
     padding: 8px 10px;
     overflow-x: hidden;
@@ -24086,6 +24170,12 @@ function showInterfaceSettingsModal(_section_id, itemValue, option2) {
   });
 }
 
+// src/kabanmax/tabs/sections/tlsOptions.ts
+function validateRealityTlsOption(uri, enabled) {
+  if (enabled !== "1") return true;
+  return /^vless:\/\//i.test(uri) && /[?&]security=reality(?:[&#]|$)/i.test(uri) ? true : _("This TLS option requires a VLESS connection with REALITY.");
+}
+
 // src/validators/validateProxyUrl.ts
 var NATIVE_PROXY_SCHEMES = /* @__PURE__ */ new Set([
   "anytls",
@@ -24215,7 +24305,13 @@ function connectionLinkListItemLabel(sectionId, value) {
   );
 }
 function connectionLinkSettingsKeys() {
-  return ["name", "uri", "detour_section"];
+  return [
+    "name",
+    "uri",
+    "detour_section",
+    "tls_record_fragment",
+    "tls_classical"
+  ];
 }
 function writeTrimmed(itemId, value) {
   return form.Value.prototype.write.call(this, itemId, `${value ?? ""}`.trim());
@@ -24244,6 +24340,38 @@ function showConnectionLinkSettingsModal(sectionId, itemValue, option2, widget, 
       o.password = true;
       o.write = writeTrimmed;
       o.validate = required((_itemId, value) => validateConnectionLink(value));
+      o = itemSection.option(
+        form.Flag,
+        "tls_record_fragment",
+        _("Split ClientHello into two TLS records"),
+        _(
+          "Split the initial ClientHello into two approximately equal TLS records. Applies to traffic and availability checks."
+        )
+      );
+      o.default = "0";
+      o.rmempty = true;
+      o.validate = function(itemId, value) {
+        return validateRealityTlsOption(
+          `${currentOptionValue(this, itemId, "uri") || ""}`,
+          value
+        );
+      };
+      o = itemSection.option(
+        form.Flag,
+        "tls_classical",
+        _("Classical key exchange only"),
+        _(
+          "Disable X25519MLKEM768 for traffic and availability checks. This option is independent of TLS record splitting."
+        )
+      );
+      o.default = "0";
+      o.rmempty = true;
+      o.validate = function(itemId, value) {
+        return validateRealityTlsOption(
+          `${currentOptionValue(this, itemId, "uri") || ""}`,
+          value
+        );
+      };
       addCascadeOptions(
         itemSection,
         () => sectionId,

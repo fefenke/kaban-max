@@ -10,7 +10,7 @@ hero:
     alt: K.A.B.A.N.-MAX
   actions:
     - theme: brand
-      text: Установить 0.1.0
+      text: Установить 0.1.1
       link: /guide/install
     - theme: alt
       text: Скачать пакеты
@@ -29,6 +29,6 @@ features:
 
 **Keepalive-Assisted Backend Arbitration Node — MAX Edition.** Правила маршрутизации, VPN и Zapret2 для OpenWrt.
 
-**0.1.0 · предварительная версия.** Пакеты APK и IPK для OpenWrt, архитектура `aarch64_cortex-a53`.
+**0.1.1 · предварительная версия.** Пакеты APK и IPK для OpenWrt, архитектура `aarch64_cortex-a53`.
 
 Основано на Forkop. [Авторы компонентов и лицензии](https://github.com/fefenke/kaban-max/blob/main/CREDITS.md).

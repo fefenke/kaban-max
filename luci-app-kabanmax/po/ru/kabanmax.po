@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: KABANMAX\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-05 18:07+0000\n"
-"PO-Revision-Date: 2026-11-05 18:07+0000\n"
+"POT-Creation-Date: 2026-11-07 12:37+0000\n"
+"PO-Revision-Date: 2026-11-07 12:37+0000\n"
 "Last-Translator: K.A.B.A.N.-MAX contributors\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -446,11 +446,17 @@ msgstr "Проверить снова"
 msgid "Check for updates"
 msgstr "Проверить обновления"
 
+msgid "Check for updates before installation"
+msgstr "Перед установкой проверьте обновления"
+
 msgid "Check interval"
 msgstr "Интервал проверки"
 
 msgid "Check IP"
 msgstr "Проверить IP"
+
+msgid "Check the installed build before updating"
+msgstr "Перед обновлением проверьте установленную сборку"
 
 msgid "Check timeout"
 msgstr "Таймаут проверки"
@@ -463,6 +469,9 @@ msgstr "Проверяются сверху вниз до первого раб�
 
 msgid "Checking, please wait"
 msgstr "Проверяем, пожалуйста, подождите"
+
+msgid "Checking..."
+msgstr "Проверка…"
 
 msgid "Checks"
 msgstr "Проверки"
@@ -487,6 +496,9 @@ msgstr "Запрос к Clash API был отправлен, но истекло
 
 msgid "Clash API response was lost after the request was sent"
 msgstr "Запрос к Clash API был отправлен, но ответ потерян"
+
+msgid "Classical key exchange only"
+msgstr "Только классический обмен ключами"
 
 msgid "Click a node to pin it, and click it again to unpin it."
 msgstr "Нажмите на узел, чтобы закрепить его, и ещё раз, чтобы открепить."
@@ -740,6 +752,9 @@ msgstr "Отключить автостарт"
 msgid "Disable QUIC"
 msgstr "Отключить QUIC"
 
+msgid "Disable X25519MLKEM768 for traffic and availability checks. This option is independent of TLS record splitting."
+msgstr "Отключить X25519MLKEM768 для трафика и проверок доступности. Эта настройка не зависит от разбиения TLS-записей."
+
 msgid "Disables QUIC for compatibility and to fix video streaming"
 msgstr "Отключает QUIC для совместимости и исправления видеостриминга"
 
@@ -805,6 +820,12 @@ msgstr "Входящий"
 
 msgid "Download"
 msgstr "Скачать"
+
+msgid "Download and install"
+msgstr "Скачать и установить"
+
+msgid "Download and install update"
+msgstr "Скачать и установить обновление"
 
 msgid "Download lists through"
 msgstr "Скачивать списки через"
@@ -1013,30 +1034,6 @@ msgstr "Для сервера, который пускает только нек
 msgid "For example 30m, 12h or 1d"
 msgstr "Например: 30m, 12h или 1d"
 
-msgid "KabanMax configuration"
-msgstr "Конфигурация KabanMax"
-
-msgid "KabanMax diagnostic report"
-msgstr "Отчёт диагностики KabanMax"
-
-msgid "KabanMax DNS"
-msgstr "DNS KabanMax"
-
-msgid "KabanMax Error"
-msgstr "Ошибка KabanMax"
-
-msgid "KabanMax ignores these devices entirely: their traffic is not routed and their DNS is not captured"
-msgstr "KabanMax полностью игнорирует эти устройства, их трафик не маршрутизируется, а DNS не перехватывается"
-
-msgid "KabanMax service proxy"
-msgstr "служебный прокси KabanMax"
-
-msgid "KabanMax system logs"
-msgstr "Системные логи KabanMax"
-
-msgid "KabanMax transparent proxy"
-msgstr "прозрачный прокси KabanMax"
-
 msgid "form-entry: format FORM:NAME=VALUE"
 msgstr "form-entry: формат ФОРМА:ИМЯ=ЗНАЧЕНИЕ"
 
@@ -1211,8 +1208,14 @@ msgstr "Учитывает установку соединения и TLS-рук
 msgid "insecure: also MD5 and short keys"
 msgstr "insecure: ещё MD5 и короткие ключи"
 
+msgid "Install"
+msgstr "Установить"
+
 msgid "Install / Update"
 msgstr "Установить / Обновить"
+
+msgid "Installed"
+msgstr "Установлено"
 
 msgid "Installed versions"
 msgstr "Установленные версии"
@@ -1379,6 +1382,30 @@ msgstr "JSON outbound"
 msgid "JSON outbound: %s"
 msgstr "JSON outbound: %s"
 
+msgid "KabanMax configuration"
+msgstr "Конфигурация KabanMax"
+
+msgid "KabanMax diagnostic report"
+msgstr "Отчёт диагностики KabanMax"
+
+msgid "KabanMax DNS"
+msgstr "DNS KabanMax"
+
+msgid "KabanMax Error"
+msgstr "Ошибка KabanMax"
+
+msgid "KabanMax ignores these devices entirely: their traffic is not routed and their DNS is not captured"
+msgstr "KabanMax полностью игнорирует эти устройства, их трафик не маршрутизируется, а DNS не перехватывается"
+
+msgid "KabanMax service proxy"
+msgstr "служебный прокси KabanMax"
+
+msgid "KabanMax system logs"
+msgstr "Системные логи KabanMax"
+
+msgid "KabanMax transparent proxy"
+msgstr "прозрачный прокси KabanMax"
+
 msgid "Keep reserve nodes idle until failure is confirmed. Return after consecutive successful recovery checks."
 msgstr "Проверять резерв только после подтверждения сбоя. Возвращаться после серии успешных проверок восстановления."
 
@@ -1420,6 +1447,9 @@ msgstr "Не удалось проверить задержку: Clash API не 
 
 msgid "Latency test URL"
 msgstr "URL для тестирования задержки"
+
+msgid "Latest"
+msgstr "Доступная версия"
 
 msgid "Legacy encryption"
 msgstr "Устаревшее шифрование"
@@ -1640,9 +1670,6 @@ msgstr "Ни одно устройство сети не одобрено как
 msgid "No domain"
 msgstr "Нет домена"
 
-msgid "No KabanMax release wrote configuration version %s"
-msgstr "Конфигурации версии %s нет ни в одном выпуске KabanMax"
-
 msgid "No gateway"
 msgstr "Не указан шлюз"
 
@@ -1651,6 +1678,9 @@ msgstr "Не указан хост"
 
 msgid "No IPv6 in the tunnel"
 msgstr "Без IPv6 в туннеле"
+
+msgid "No KabanMax release wrote configuration version %s"
+msgstr "Конфигурации версии %s нет ни в одном выпуске KabanMax"
 
 msgid "No logs available"
 msgstr "Логи отсутствуют"
@@ -1681,6 +1711,9 @@ msgstr "Переключений не было"
 
 msgid "No tag field"
 msgstr "Нет поля tag"
+
+msgid "No updates available"
+msgstr "Обновлений нет"
 
 msgid "Node key"
 msgstr "Ключ узла"
@@ -1834,6 +1867,12 @@ msgstr "Открыть порт"
 
 msgid "Opens the port in the router's firewall to connections from the internet"
 msgstr "Открывает порт в файерволе роутера для подключений из интернета"
+
+msgid "Operation output"
+msgstr "Вывод операции"
+
+msgid "Operation status"
+msgstr "Состояние операции"
 
 msgid "Operation timed out"
 msgstr "Время ожидания истекло"
@@ -2147,9 +2186,6 @@ msgstr "Правила"
 msgid "Run Diagnostic"
 msgstr "Запустить диагностику"
 
-msgid "Run the installer"
-msgstr "Запустить установщик"
-
 msgid "running"
 msgstr "работает"
 
@@ -2384,6 +2420,12 @@ msgstr "Сетевой интерфейс источника"
 msgid "Spaces are not allowed"
 msgstr "Пробелы недопустимы"
 
+msgid "Split ClientHello into two TLS records"
+msgstr "Разбить ClientHello на две TLS-записи"
+
+msgid "Split the initial ClientHello into two approximately equal TLS records. Applies to traffic and availability checks."
+msgstr "Разбивать начальный ClientHello на две примерно равные TLS-записи. Применяется к трафику и проверкам доступности."
+
 msgid "SSO and SAML through the sing-box dashboard, which the tunnel waits for at every connection"
 msgstr "SSO и SAML через панель sing-box: туннель будет ждать входа при каждом подключении"
 
@@ -2494,9 +2536,6 @@ msgstr "TAP (уровень 2) не поддерживается, только T
 
 msgid "TCP and UDP"
 msgstr "TCP и UDP"
-
-msgid "Terminal"
-msgstr "Терминал"
 
 msgid "Test all sections"
 msgstr "Тестировать все секции"
@@ -2657,6 +2696,9 @@ msgstr "Это не профиль OpenVPN"
 msgid "This JSON is not an openconnect endpoint"
 msgstr "Этот JSON — не endpoint openconnect"
 
+msgid "This TLS option requires a VLESS connection with REALITY."
+msgstr "Эта настройка TLS требует подключения VLESS с REALITY."
+
 msgid "Time"
 msgstr "Время"
 
@@ -2779,6 +2821,12 @@ msgstr "Ссылка не поддерживается"
 
 msgid "Up to %d characters"
 msgstr "Не длиннее %d символов"
+
+msgid "Update"
+msgstr "Обновить"
+
+msgid "Update available"
+msgstr "Доступно обновление"
 
 msgid "Update interval"
 msgstr "Интервал обновления"

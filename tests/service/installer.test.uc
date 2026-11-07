@@ -92,6 +92,7 @@ t.test("the command line prints install.sh's log, and says when there is none", 
 });
 
 t.test("install.sh gets the language and --quiet, then what the run does; a bare --variant goes last", () => {
+    t.eq(installer.install_arguments("update", "tiny", false, "ru"), [ "--lang", "ru", "--quiet", "--variant", "tiny" ]);
     t.eq(installer.install_arguments("update", "", false, "ru"), [ "--lang", "ru", "--quiet" ]);
     t.eq(installer.install_arguments("variant", "", false, "en"), [ "--lang", "en", "--quiet", "--variant" ]);
     t.eq(installer.install_arguments("variant", "tiny", false, "ru"), [ "--lang", "ru", "--quiet", "--variant", "tiny" ]);
@@ -134,6 +135,8 @@ t.test("the latest release comes through GitHub's API, or from a mirror at githu
     t.eq([ installer.rate_limited("{\"resources\":{\"core\":{\"remaining\":0}}}"),
         installer.rate_limited("{\"resources\":{\"core\":{\"remaining\":12}}}"), installer.rate_limited(null) ], [ true, false, false ]);
     stub.env({ KABANMAX_DOWNLOAD_URL: MIRROR });
+    t.eq(installer.listing_url("0.1.0"), "https://api.github.com/repos/fefenke/kaban-max/releases/tags/0.1.0");
+    t.eq(installer.release_url("release.json", "0.1.0"), MIRROR + "/fefenke/kaban-max/releases/download/0.1.0/release.json");
     t.eq(installer.release_url("release.json"), MIRROR + "/fefenke/kaban-max/releases/latest/download/release.json");
     stub.restore();
     t.eq(installer.url_host(MIRROR + "/fefenke/kaban-max"), "10.0.2.2");
@@ -233,7 +236,7 @@ t.test("a removal asks nothing and carries the settings choice", () => {
 t.test("a start with what install.sh does not take is refused", () => {
     fresh();
     t.contains(t.throws(() => installer.start("dance", "", "0", "ru")).message, "Invalid installer run");
-    t.contains(t.throws(() => installer.start("update", "full", "0", "ru")).message, "Invalid installer run", "a build only with variant");
+    t.contains(t.throws(() => installer.start("update", "huge", "0", "ru")).message, "Invalid installer run", "unknown update variant");
     t.contains(t.throws(() => installer.start("variant", "huge", "0", "ru")).message, "Invalid installer run");
     t.contains(t.throws(() => installer.start("update", "", "0", "de")).message, "Invalid installer run");
     t.eq(state(), null, "nothing recorded");
@@ -592,4 +595,29 @@ t.test("a run another one is not is left alone", () => {
     t.eq(installer.run("run-1"), 1, "a finished run");
 });
 
+t.test("a pinned update fetches selected metadata and runs without terminal input", () => {
+    run_with({ release: "0.1.0", variant: "tiny", interactive: false }, () => {
+        t.eq(uloop.__processes()[0].args[5], MIRROR + "/fefenke/kaban-max/releases/download/0.1.0/install.sh");
+        uloop.__exit(0, 0);
+        fs.writefile(installer.paths.manifest, "{\"schema\":1,\"name\":\"kabanmax\",\"version\":\"0.1.0\",\"tag\":\"0.1.0\"}");
+        uloop.__exit(1, 0);
+        let child = uloop.__processes()[3];
+        t.eq(child.env.KABANMAX_RELEASE, "0.1.0");
+        t.eq(child.env.KABANMAX_REINSTALL, "1");
+        t.contains(child.args[1], "</dev/null");
+        t.eq(child.args[length(child.args) - 1], "tiny");
+        uloop.__exit(3, 0);
+        uloop.__exit(2, 0);
+        uloop.__fire("timer");
+    });
+    t.eq(state().exit, 0);
+});
+
+t.test("variant and uninstall pin the installed numeric release", () => {
+    t.eq(installer.selected_release("variant", "", "0.1.1"), "0.1.1");
+    t.eq(installer.selected_release("uninstall", "", "0.1.1"), "0.1.1");
+    t.eq(installer.selected_release("update", "", "0.1.1"), "");
+    t.eq(installer.selected_release("variant", "0.1.0", "0.1.1"), "0.1.0");
+    t.eq(installer.selected_release("uninstall", "", "__COMPILED_VERSION_VARIABLE__"), "");
+});
 t.done();

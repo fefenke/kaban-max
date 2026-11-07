@@ -29,6 +29,7 @@ import {
   renderImportDialog,
 } from './configFile';
 import { installerApi } from './installerApi';
+import { checkRelease, releaseAction, ReleaseCheck } from './releaseCheck';
 import {
   createInstallerRun,
   InstallerAfterRun,
@@ -141,21 +142,28 @@ export function initController(): void {
     logButton,
     copyButton,
   ]);
+  const output = E('details', {}, [
+    E('summary', {}, _('Operation output')),
+    terminal.element,
+  ]) as HTMLDetailsElement;
   part(root, 'components-run').append(
     E('div', { class: 'fkp_components-page__run-header' }, [
       E('div', { class: 'fkp_components-page__run-title' }, [
         renderSquareTerminalIcon24(),
-        E('span', {}, _('Terminal')),
+        E('span', {}, _('Operation status')),
       ]),
       runSide,
     ]),
-    terminal.element,
+    output,
   );
 
   let runState: InstallerRunState | null = null;
   let runDrawn = '';
 
   function renderRun(state: InstallerRunState) {
+    part(root, 'components-run').hidden = !state.id && !state.starting;
+    if (state.running && state.interactive && state.action === 'variant')
+      output.open = true;
     runSide.hidden = !state.id && !state.starting;
     stopButton.hidden = !state.running || !state.id;
     stopButton.disabled = state.stopping;
@@ -177,7 +185,7 @@ export function initController(): void {
     }
     runDrawn = drawn;
     const status = statusOf(state);
-    const after = state.after ? ` · ${AFTER_RUN_TEXTS[state.after]()}` : '';
+    const after = state.after ? ` Р’В· ${AFTER_RUN_TEXTS[state.after]()}` : '';
     runStatus.className = `fkp_components-page__run-status fkp_components-page__run-status--${status.tone}`;
     runStatus.replaceChildren(
       ...(at === null
@@ -198,7 +206,10 @@ export function initController(): void {
     logButton.disabled = true;
     try {
       const text = await installerApi.log();
-      ui.showModal(_('Installer log'), renderModal(text, 'kabanmax-install-log'));
+      ui.showModal(
+        _('Installer log'),
+        renderModal(text, 'kabanmax-install-log'),
+      );
     } catch (error) {
       showToast(
         error instanceof Error ? error.message : String(error),
@@ -211,13 +222,37 @@ export function initController(): void {
 
   // Redrawn only when they change: a button replaced between press and release loses the click.
   let actionsDrawn = '';
+  let release: ReleaseCheck | null = null;
+  let releaseBusy = false;
+  let releaseError = '';
+
+  async function checkUpdates() {
+    releaseBusy = true;
+    releaseError = '';
+    renderActions(runState ?? run.state);
+    try {
+      release = await checkRelease();
+    } catch (error) {
+      release = null;
+      releaseError = error instanceof Error ? error.message : String(error);
+    } finally {
+      releaseBusy = false;
+      renderActions(runState ?? run.state);
+    }
+  }
 
   function renderActions(state: InstallerRunState) {
     const operation = store.get().serviceState.data.kabanmaxBusy;
     const live = state.starting || state.running;
     // a start, stop or apply in progress leaves install.sh nothing safe to stop
-    const blocked = live || (operation !== null && operation !== 'install');
-    const drawn = JSON.stringify([blocked, live && state.action]);
+    const blocked =
+      releaseBusy || live || (operation !== null && operation !== 'install');
+    const drawn = JSON.stringify([
+      blocked,
+      live && state.action,
+      release,
+      releaseError,
+    ]);
     if (drawn === actionsDrawn) {
       return;
     }
@@ -239,15 +274,48 @@ export function initController(): void {
       });
 
     part(root, 'components-actions').replaceChildren(
-      E('b', {}, _('Available actions')),
+      E('b', {}, 'KabanMax'),
+      E(
+        'p',
+        { role: 'status' },
+        releaseError ||
+          (release
+            ? `${_('Installed')}: ${release.installed || '\u2014'} \u00b7 ${_('Latest')}: ${release.latest || '\u2014'} \u00b7 sing-box: ${release.core_installed || '\u2014'} \u00b7 ${release.core_latest || '\u2014'} \u00b7 ${release.update_available ? _('Update available') : _('No updates available')}`
+            : _('Check for updates before installation')),
+      ),
       button(
         'update',
         renderDownloadIcon24,
-        _('Run the installer'),
+        releaseBusy
+          ? _('Checking...')
+          : releaseAction(release) === 'install'
+            ? release?.installed
+              ? _('Download and install update')
+              : _('Download and install')
+            : _('Check for updates'),
         ['cbi-button-apply'],
-        () => void run.start('update'),
+        () => {
+          if (releaseAction(release) === 'install') {
+            const variant = store.get().diagnosticsSystemInfo.sing_box_variant;
+            if (
+              variant !== 'base' &&
+              variant !== 'tiny' &&
+              variant !== 'full'
+            ) {
+              showToast(
+                _('Check the installed build before updating'),
+                'error',
+              );
+              return;
+            }
+            void run.start('update', variant, false, release?.release);
+          } else {
+            void checkUpdates();
+          }
+        },
       ),
       button('variant', renderLayersIcon24, _('Change the build'), [], () => {
+        output.open = true;
         void run.start('variant').then(() => terminal.focus());
       }),
       button(
