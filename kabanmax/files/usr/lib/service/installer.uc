@@ -236,7 +236,7 @@ function install_arguments(action, variant, purge, lang) {
         if (purge)
             push(argv, "--purge");
     }
-    else if (action == "variant") {
+    else if (action == "variant" || (action == "update" && variant != "")) {
         push(argv, "--variant");
         if (variant != "")
             push(argv, variant);
@@ -250,13 +250,13 @@ function mirror_url() {
 }
 
 // The latest release's file at the mirror.
-function release_url(file) {
-    return mirror_url() + "/" + constants.KABANMAX_RELEASE_REPO + "/releases/latest/download/" + file;
+function release_url(file, release) {
+    return mirror_url() + "/" + constants.KABANMAX_RELEASE_REPO + (release ? "/releases/download/" + release + "/" : "/releases/latest/download/") + file;
 }
 
 // GitHub's account of the latest release, which gives each file's address in the API.
-function listing_url() {
-    return API_URL + "/repos/" + constants.KABANMAX_RELEASE_REPO + "/releases/latest";
+function listing_url(release) {
+    return API_URL + "/repos/" + constants.KABANMAX_RELEASE_REPO + "/releases/" + (release ? "tags/" + release : "latest");
 }
 
 function asset_url(listing, file) {
@@ -368,7 +368,7 @@ function install_command(manifest) {
 
 function valid_run(action, variant, lang) {
     return index(ACTIONS, action) >= 0 && index(LANGUAGES, lang) >= 0 &&
-        (variant == "" || (action == "variant" && index(VARIANTS, variant) >= 0));
+        (variant == "" || ((action == "variant" || action == "update") && index(VARIANTS, variant) >= 0));
 }
 
 function new_id() {
@@ -404,8 +404,21 @@ function wait_for_runner(id) {
     return read_state();
 }
 
+// Variant switches and removals use the installed release's installer, including
+// installations from a prerelease that GitHub's /latest endpoint cannot see.
+function selected_release(action, release, installed_version) {
+    release = common.as_string(release);
+    if (release == "" && (action == "variant" || action == "uninstall") &&
+        require("service.release").valid_tag(installed_version))
+        return installed_version;
+    return release;
+}
+
 // Starts a run unless one goes on: { id, started }, the id of the run the page then follows.
-function start(action, variant, purge, lang) {
+function start(action, variant, purge, lang, release) {
+    release = selected_release(action, release, constants.KABANMAX_VERSION);
+    if (release != "" && !require("service.release").valid_tag(release))
+        die("Invalid release tag");
     action = common.as_string(action);
     variant = common.as_string(variant);
     lang = common.as_string(lang);
@@ -434,10 +447,11 @@ function start(action, variant, purge, lang) {
         schema: SCHEMA,
         id,
         action,
-        variant: action == "variant" ? variant : null,
+        variant: action == "variant" || action == "update" ? variant : null,
+        release: release || null,
         purge: action == "uninstall" && (purge === true || purge == "1"),
         lang,
-        interactive: action != "uninstall",
+        interactive: action != "uninstall" && !(release != "" && variant != ""),
         starter_pid: owner,
         runner_pid: null,
         child_pid: null,
@@ -474,6 +488,14 @@ function run(id) {
 
     let packages_before = package_signature();
     let env = child_environment();
+    if (state.release)
+        env.KABANMAX_RELEASE = state.release;
+    else
+        delete env.KABANMAX_RELEASE;
+    if (state.release && state.action == "update")
+        env.KABANMAX_REINSTALL = "1";
+    else
+        delete env.KABANMAX_REINSTALL;
     let terminal = null;
     let child = null;
     let pump = null;
@@ -611,6 +633,11 @@ function run(id) {
     }
 
     function check_release(code) {
+        if (state.release) {
+            let manifest = code == 0 ? common.parse_json(fs.readfile(paths.manifest)) : null;
+            if (!require("service.release").valid_manifest(manifest, "kabanmax", state.release))
+                return fail_with([ mark_line("error", "Invalid or unavailable selected release metadata") ]);
+        }
         let found = code == 0 ? install_command(fs.readfile(paths.manifest)) : null;
         if (found == null)
             return start_install();
@@ -642,7 +669,7 @@ function run(id) {
     // A file of the latest release, from the mirror or at its address in the API's listing.
     function fetch(file, path, done) {
         if (mirror_url())
-            return fetch_url(release_url(file), path, null, done);
+            return fetch_url(release_url(file, state.release), path, null, done);
         let url = asset_url(fs.readfile(paths.listing), file);
         if (url == null)
             return done(FILE_MISSING);
@@ -734,7 +761,7 @@ function run(id) {
     if (mirror_url())
         fetch("install.sh", paths.script, on_script);
     else
-        fetch_url(listing_url(), paths.listing, null, (code) => code == 0 ? fetch("install.sh", paths.script, on_script) : download_failed(code));
+        fetch_url(listing_url(state.release), paths.listing, null, (code) => code == 0 ? fetch("install.sh", paths.script, on_script) : download_failed(code));
     uloop.run();
     if (connection != null)
         connection.disconnect();
@@ -768,6 +795,7 @@ return {
     drain_script,
     install_command,
     unsigned,
+    selected_release,
     start,
     run
 };

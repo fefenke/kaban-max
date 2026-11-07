@@ -1,3 +1,4 @@
+import { validateRealityTlsOption } from './tlsOptions';
 import { KABANMAX_UCI_PACKAGE } from '../../../constants';
 import { getProxyUrlName } from '../../../helpers/getProxyUrlName';
 import { nextNumberedName } from '../../../helpers/nextNumberedName';
@@ -9,6 +10,7 @@ import { required } from '../../cbi/required';
 import { E } from '../../../helpers/element';
 import { addCascadeOptions } from './cascade';
 import { validateConnectionUriCore } from './coreSupport';
+import { currentOptionValue } from './subscriptions/model';
 import {
   refreshLiveChoiceWidgets,
   sectionChildNames,
@@ -78,7 +80,13 @@ export function connectionLinkListItemLabel(sectionId: string, value: string) {
 }
 
 function connectionLinkSettingsKeys() {
-  return ['name', 'uri', 'detour_section'];
+  return [
+    'name',
+    'uri',
+    'detour_section',
+    'tls_record_fragment',
+    'tls_classical',
+  ];
 }
 
 function writeTrimmed(this: CBIOption, itemId: string, value: unknown) {
@@ -117,6 +125,40 @@ export function showConnectionLinkSettingsModal(
       o.password = true;
       o.write = writeTrimmed;
       o.validate = required((_itemId, value) => validateConnectionLink(value));
+
+      o = itemSection.option(
+        form.Flag,
+        'tls_record_fragment',
+        _('Split ClientHello into two TLS records'),
+        _(
+          'Split the initial ClientHello into two approximately equal TLS records. Applies to traffic and availability checks.',
+        ),
+      );
+      o.default = '0';
+      o.rmempty = true;
+      o.validate = function (itemId: string, value: unknown) {
+        return validateRealityTlsOption(
+          `${currentOptionValue(this, itemId, 'uri') || ''}`,
+          value,
+        );
+      };
+
+      o = itemSection.option(
+        form.Flag,
+        'tls_classical',
+        _('Classical key exchange only'),
+        _(
+          'Disable X25519MLKEM768 for traffic and availability checks. This option is independent of TLS record splitting.',
+        ),
+      );
+      o.default = '0';
+      o.rmempty = true;
+      o.validate = function (itemId: string, value: unknown) {
+        return validateRealityTlsOption(
+          `${currentOptionValue(this, itemId, 'uri') || ''}`,
+          value,
+        );
+      };
 
       addCascadeOptions(
         itemSection,

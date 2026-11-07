@@ -10,6 +10,22 @@ interface Zapret2Status {
   message?: string;
 }
 
+export function zapretAction(
+  state: Zapret2Status,
+  checked: boolean,
+  busy: boolean,
+) {
+  const available =
+    checked &&
+    state.success !== false &&
+    state.latest &&
+    state.latest !== state.installed;
+  return {
+    action: available ? (state.installed ? 'update' : 'install') : 'check',
+    disabled: busy,
+  };
+}
+
 async function command(args: string[]): Promise<Zapret2Status> {
   const reply = await executeShellCommand({
     command: '/usr/bin/kabanmax',
@@ -35,11 +51,6 @@ export function renderZapret2(): HTMLElement {
       'Official zapret2 engine and Lua update together. Section strategies are kept.',
     ),
   );
-  const check = E(
-    'button',
-    { type: 'button', class: 'cbi-button' },
-    _('Check for updates'),
-  ) as HTMLButtonElement;
   const install = E(
     'button',
     { type: 'button', class: 'cbi-button cbi-button-action' },
@@ -49,45 +60,68 @@ export function renderZapret2(): HTMLElement {
     E('b', {}, 'Zapret2'),
     status,
     details,
-    check,
     install,
   ]);
-  let busy = false;
+  let busy = true;
+  let state: Zapret2Status = {};
+  let checked = false;
+  function draw() {
+    const next = zapretAction(state, checked, busy);
+    install.disabled = next.disabled;
+    install.textContent = busy
+      ? _('in progress')
+      : next.action === 'update'
+        ? _('Update')
+        : next.action === 'install'
+          ? _('Install')
+          : _('Check for updates');
+  }
 
   async function refresh() {
     try {
-      const state = await command(['zapret2_status']);
+      state = await command(['zapret2_status']);
       busy = Boolean(state.running);
-      status.textContent = `Zapret2: ${state.installed || '—'} · ${state.architecture || '—'}${state.latest ? ` · ${state.latest}` : ''}`;
+      status.textContent = `${_('Installed')}: ${state.installed || '\u2014'} \u00b7 ${_('Latest')}: ${state.latest || '\u2014'}${state.architecture ? ` \u00b7 ${state.architecture}` : ''}`;
       details.textContent =
-        state.message ||
-        _(
-          'Official zapret2 engine and Lua update together. Section strategies are kept.',
-        );
+        state.success === false || busy
+          ? state.message || (busy ? _('in progress') : _('failed'))
+          : checked && state.latest
+            ? state.latest === state.installed
+              ? _('No updates available')
+              : _('Update available')
+            : _('Check for updates before installation');
       if (busy && root.isConnected)
         window.setTimeout(() => void refresh(), 1500);
     } catch (error) {
       details.textContent = (error as Error).message;
       busy = false;
+      checked = false;
     }
-    check.disabled = busy;
-    install.disabled = busy;
+    draw();
   }
 
   async function run(action: string) {
+    if (busy) return;
     busy = true;
-    check.disabled = install.disabled = true;
+    draw();
     try {
       await command(['zapret2_update', action]);
+      checked = true;
       await refresh();
     } catch (error) {
       details.textContent = (error as Error).message;
       busy = false;
-      check.disabled = install.disabled = false;
+      checked = false;
+      draw();
     }
   }
-  check.onclick = () => void run('check');
-  install.onclick = () => void run('install');
+  install.onclick = () =>
+    void run(
+      zapretAction(state, checked, busy).action !== 'check'
+        ? 'install'
+        : 'check',
+    );
+  draw();
   window.setTimeout(() => void refresh(), 0);
   return root;
 }
