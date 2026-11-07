@@ -79,14 +79,17 @@ controls at least, growing with its output up to its limit. */
 
 .fkp_components-page__block > .fkp-partial-button,
 .fkp_components-page__config-buttons > .fkp-partial-button {
-    width: 100%;
+    width: auto;
     min-width: 0;
     margin: 0;
+    justify-self: start;
 }
 
 .fkp_components-page__config-buttons {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     grid-gap: 10px;
 }
 
@@ -265,6 +268,19 @@ controls at least, growing with its output up to its limit. */
     pointer-events: none;
 }
 
+.fkp_components-page__game { min-width: 0; }
+.fkp_acorn-game { border: 1px solid var(--background-color-low, #ddd); border-radius: 8px; overflow: hidden; background: var(--background-color-high, #fafbf7); }
+.fkp_acorn-game__bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 10px 0; min-height: 25px; font-size: 12px; }
+.fkp_acorn-game__bar > span:first-child { margin-right: auto; font-variant-numeric: tabular-nums; }
+.fkp_acorn-game__bar .btn { margin: 0; padding: 3px 7px; font-size: 12px; }
+.fkp_acorn-game canvas { display: block; width: 100%; max-height: 122px; aspect-ratio: 360 / 122; image-rendering: pixelated; touch-action: manipulation; cursor: pointer; }
+.fkp_acorn-game canvas:focus-visible { outline: 2px solid var(--primary-color-medium, #7d8d55); outline-offset: -2px; }
+@container (min-width: 820px) {
+ .fkp_components-page { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; }
+ .fkp_components-page__controls { grid-column: 1; }
+ .fkp_components-page__game { grid-column: 2; grid-row: 1; }
+ .fkp_components-page__run { grid-column: 1 / -1; }
+}
 ${ansiStyles}
 
 .fkp_terminal__inverse:not([class*="fkp_terminal__bg-"]) {

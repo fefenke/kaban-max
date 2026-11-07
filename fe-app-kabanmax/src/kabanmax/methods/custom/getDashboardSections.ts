@@ -779,9 +779,15 @@ function buildFallbackInfo({
         type: getOutboundDisplayType(childEntry),
         selected: selectedCode === childCode,
         pinned: pinnedCode === childCode,
-        healthState: entry?.value.stable?.members.find((m) => m.name === childCode)?.state,
-        lastCheck: entry?.value.stable?.members.find((m) => m.name === childCode)?.last_check,
-        recoverySuccesses: entry?.value.stable?.members.find((m) => m.name === childCode)?.recovery_successes,
+        healthState: entry?.value.stable?.members.find(
+          (m) => m.name === childCode,
+        )?.state,
+        lastCheck: entry?.value.stable?.members.find(
+          (m) => m.name === childCode,
+        )?.last_check,
+        recoverySuccesses: entry?.value.stable?.members.find(
+          (m) => m.name === childCode,
+        )?.recovery_successes,
         levelIndex,
         levelName: level.displayName,
         levelId: level.id,
@@ -1044,94 +1050,87 @@ function getSubscriptionMetadata(
   return items.length ? items : undefined;
 }
 
-export async function getDashboardSections(): Promise<IGetDashboardSectionsResponse> {
+export async function getDashboardSections(
+  onUpdate?: (response: IGetDashboardSectionsResponse) => void,
+): Promise<IGetDashboardSectionsResponse> {
   const configSections = hydrateConfigSections(await getConfigSections());
   setClashApiConfigSections(configSections);
   const hasSubscriptions = configSections.some(hasSubscriptionSources);
   const remoteLists = configSections.some(hasRemoteLists);
-  const [clashProxies, clashProviders] = await Promise.all([
-    getClashApiProxies(),
-    hasSubscriptions
-      ? getClashApiProxyProviders()
-      : Promise.resolve({
-          success: true as const,
-          data: { providers: {} },
-        }),
-  ]);
+  // Fetch provider metadata only after the small proxy listing has been rendered. Starting both
+  // shell calls in one LuCI batch holds the listing until the larger provider reply completes.
+  const clashProxies = await getClashApiProxies();
 
   if (!clashProxies.success || !clashProxies.data?.proxies) {
-    return {
-      success: false,
-      data: [],
-      hasRemoteLists: remoteLists,
-    };
+    return { success: false, data: [], hasRemoteLists: remoteLists };
   }
 
-  const proxies = Object.entries(clashProxies.data.proxies).map(
-    ([key, value]) => ({
-      code: key,
-      value,
-    }),
-  );
-  const providers = clashProviders.success
-    ? clashProviders.data?.providers || {}
-    : {};
-  const activeSections = configSections.filter(
-    (section) => section.enabled !== '0' && isConnectionAction(section.action),
-  );
-  const data = activeSections.map((section) => {
-    const displayName = getDisplayName(section);
-    const sectionName = section['.name'];
-    const sectionAction = section.action;
-    const proxyConfigType = getSectionProxyConfigType(section);
+  const build = (
+    providers: Record<string, ClashAPI.ProxyProvider>,
+  ): IGetDashboardSectionsResponse => {
+    const proxies = Object.entries(clashProxies.data.proxies).map(
+      ([key, value]) => ({ code: key, value }),
+    );
+    const activeSections = configSections.filter(
+      (section) =>
+        section.enabled !== '0' && isConnectionAction(section.action),
+    );
+    const data = activeSections.map((section) => {
+      const displayName = getDisplayName(section);
+      const sectionName = section['.name'];
+      const sectionAction = section.action;
+      const proxyConfigType = getSectionProxyConfigType(section);
 
-    if (isConnectionAction(sectionAction) && shouldUseProxyGroup(section)) {
-      const subscriptionSourceCount = getSubscriptionSourceCount(section);
-      const subscriptionEnabled = subscriptionSourceCount > 0;
-      const subscriptionTags = getSectionSubscriptionTags(section, providers);
-      const subscriptionMetadata = subscriptionEnabled
-        ? getSubscriptionMetadata(
-            section,
-            subscriptionSourceCount,
-            subscriptionTags,
-            providers,
-          )
-        : undefined;
-      const { selector, outbounds } = buildProxyGroupOutbounds(
-        section,
-        proxies,
-        subscriptionTags,
-      );
-
+      if (isConnectionAction(sectionAction) && shouldUseProxyGroup(section)) {
+        const subscriptionSourceCount = getSubscriptionSourceCount(section);
+        const subscriptionEnabled = subscriptionSourceCount > 0;
+        const subscriptionTags = getSectionSubscriptionTags(section, providers);
+        const subscriptionMetadata = subscriptionEnabled
+          ? getSubscriptionMetadata(
+              section,
+              subscriptionSourceCount,
+              subscriptionTags,
+              providers,
+            )
+          : undefined;
+        const { selector, outbounds } = buildProxyGroupOutbounds(
+          section,
+          proxies,
+          subscriptionTags,
+        );
+        return {
+          withTagSelect: true,
+          code: selector?.code || displayName,
+          sectionName,
+          displayName,
+          action: sectionAction,
+          proxyConfigType,
+          subscriptionSourceCount,
+          subscriptionProviderTags: subscriptionTags.map(
+            (item) => item.runtimeTag,
+          ),
+          subscriptionMetadata,
+          outbounds,
+        };
+      }
       return {
-        withTagSelect: true,
-        code: selector?.code || displayName,
+        withTagSelect: false,
+        code: displayName,
         sectionName,
         displayName,
         action: sectionAction,
-        proxyConfigType,
-        subscriptionSourceCount,
-        subscriptionProviderTags: subscriptionTags.map(
-          (item) => item.runtimeTag,
-        ),
-        subscriptionMetadata,
-        outbounds,
+        outbounds: [],
       };
-    }
-
-    return {
-      withTagSelect: false,
-      code: displayName,
-      sectionName,
-      displayName,
-      action: sectionAction,
-      outbounds: [],
-    };
-  });
-
-  return {
-    success: true,
-    data,
-    hasRemoteLists: remoteLists,
+    });
+    return { success: true, data, hasRemoteLists: remoteLists };
   };
+  const initial = build({});
+  if (!hasSubscriptions) return initial;
+  onUpdate?.(initial);
+  const clashProviders = await getClashApiProxyProviders().catch(() => ({
+    success: false as const,
+  }));
+  return build(
+    clashProviders.success ? clashProviders.data?.providers || {} : {},
+  );
 }

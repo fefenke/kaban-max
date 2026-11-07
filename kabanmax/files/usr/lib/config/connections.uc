@@ -664,8 +664,8 @@ function fallback_stability(section, value) {
     let group = fallback_group_child(section, value);
     return {
         stable: bool_option(group, "stable", true),
-        confirm_url: option(group, "confirm_url", "https://www.cloudflare.com/cdn-cgi/trace"),
-        confirm_expected_status: option(group, "confirm_expected_status", "200"),
+        confirm_url: option(group, "confirm_url", "https://cp.cloudflare.com/generate_204"),
+        confirm_expected_status: option(group, "confirm_expected_status", "204"),
         recovery_interval: option(group, "recovery_interval", "60s"),
         recovery_successes: int(option(group, "recovery_successes", "3"))
     };

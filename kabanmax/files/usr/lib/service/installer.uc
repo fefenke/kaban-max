@@ -209,6 +209,7 @@ function snapshot(state, offset) {
         variant: state.variant,
         purge: state.purge,
         interactive: state.interactive,
+        phase: state.phase,
         running: running(state),
         exit: state.exit,
         interrupted: state.interrupted === true,
@@ -449,6 +450,7 @@ function start(action, variant, purge, lang, release) {
         action,
         variant: action == "variant" || action == "update" ? variant : null,
         release: release || null,
+        phase: "download",
         purge: action == "uninstall" && (purge === true || purge == "1"),
         lang,
         interactive: action != "uninstall" && !(release != "" && variant != ""),
@@ -628,7 +630,7 @@ function run(id) {
         size_watch = uloop.interval(1000, () => cap_output(fd));
         child = uloop.process("/bin/sh", [ "-c", child_script(state.interactive), "sh", terminal.tty, paths.script,
             ...install_arguments(state.action, state.variant ?? "", state.purge, state.lang) ], env, on_child_exit);
-        state = { ...state, child_pid: common.as_string(child.pid()) };
+        state = { ...state, phase: "install", child_pid: common.as_string(child.pid()) };
         write_state(state);
     }
 

@@ -1,4 +1,8 @@
-import { getServiceStatusDisplay } from '../helpers/serviceStatusDisplay';
+import { createBoar } from '../helpers/boar';
+import {
+  getServiceStatusDisplay,
+  getServiceStatusTitle,
+} from '../helpers/serviceStatusDisplay';
 import { store } from '../services/store.service';
 import type { StoreType } from '../services/store.service';
 
@@ -8,6 +12,7 @@ export function renderPageStatus(
   state: StoreType['serviceState'],
 ) {
   if (state.loading || state.failed) {
+    node.title = '';
     node.className = '';
     node.replaceChildren();
     return;
@@ -17,8 +22,14 @@ export function renderPageStatus(
     running: Boolean(state.data.kabanmaxRunning),
     busy: state.data.kabanmaxBusy,
   });
-  const dot = document.createElement('span');
-  dot.className = 'fkp_page-status__dot';
+  const pose =
+    state.data.kabanmaxBusy ||
+    (state.data.kabanmaxRunning ? 'running' : 'stopped');
+  const dot = createBoar(pose);
+  node.title = getServiceStatusTitle(
+    Boolean(state.data.kabanmaxRunning),
+    state.data.kabanmaxBusy,
+  );
 
   node.className = `fkp_page-status fkp_page-status--${display.tone}`;
   node.replaceChildren(dot, display.label);

@@ -19,6 +19,7 @@ export interface InstallerRunState {
   // empty while no run is known
   id: string;
   action: KabanMax.InstallerAction | null;
+  phase?: 'download' | 'install' | null;
   loaded: boolean;
   starting: boolean;
   running: boolean;
@@ -40,6 +41,7 @@ export interface InstallerRunState {
 const INITIAL: InstallerRunState = {
   id: '',
   action: null,
+  phase: null,
   loaded: false,
   starting: false,
   running: false,
@@ -123,6 +125,7 @@ export function createInstallerRun(options: {
       ...state,
       id: snapshot.id,
       action: snapshot.action ?? null,
+      phase: snapshot.phase ?? null,
       loaded: true,
       running: snapshot.running,
       interactive: Boolean(snapshot.interactive),
@@ -221,6 +224,7 @@ export function createInstallerRun(options: {
           ...state,
           id: result.id,
           action: result.started ? action : null,
+          phase: null,
           starting: false,
           running: true,
           interactive: result.started ? action !== 'uninstall' : false,

@@ -43,8 +43,11 @@ import type { CoreUsageReading } from './coreUsage';
 import { resolveOutboundProxyLink } from './resolveOutboundProxyLink';
 import { showTailscaleDetailsModal } from '../servers/tailscale';
 import { E } from '../../../helpers/element';
+import { fallbackStateLabel, lastFallbackSwitch, recentFallbackEvents, renderFallbackObservation } from './fallbackObservation';
+import { withTimeout } from '../../../helpers/withTimeout';
 
 const SECTIONS_REFRESH_INTERVAL_MS = 10000;
+const DASHBOARD_READ_TIMEOUT_MS = 12000;
 const COLLAPSED_SECTIONS_STORAGE_KEY = 'kabanmax:dashboard-collapsed-sections:v1';
 // While a latency test runs the router fills its delay records one at a time, so the sections
 // refresh keeps up with it; the duty ceiling still applies.
@@ -152,9 +155,41 @@ async function fetchDashboardSectionsOnce(mountId: number) {
     },
   });
 
+  let acceptingUpdates = true;
+  const apply = (
+    response: Awaited<
+      ReturnType<typeof CustomKabanMaxMethods.getDashboardSections>
+    >,
+  ) => {
+    if (
+      !acceptingUpdates ||
+      !dashboardMounted ||
+      mountId !== dashboardMountId ||
+      !response.success
+    ) {
+      return;
+    }
+    store.set({
+      sectionsWidget: {
+        ...store.get().sectionsWidget,
+        loading: false,
+        failed: false,
+        data: response.data,
+        hasRemoteLists: response.hasRemoteLists,
+      },
+    });
+  };
   try {
-    const { data, success, hasRemoteLists } =
-      await CustomKabanMaxMethods.getDashboardSections();
+    const response = await withTimeout(
+      CustomKabanMaxMethods.getDashboardSections((response) => {
+        // Keep the previous complete render during later refreshes; only first paint needs the
+        // early reply without subscription metadata.
+        if (!store.get().sectionsWidget.data.length) apply(response);
+      }),
+      DASHBOARD_READ_TIMEOUT_MS,
+      'dashboard sections',
+    );
+    const { success } = response;
 
     if (!dashboardMounted || mountId !== dashboardMountId) {
       return false;
@@ -164,17 +199,7 @@ async function fetchDashboardSectionsOnce(mountId: number) {
       throw new Error('failed to fetch dashboard sections');
     }
 
-    const current = store.get().sectionsWidget;
-
-    store.set({
-      sectionsWidget: {
-        ...current,
-        loading: false,
-        failed: false,
-        data,
-        hasRemoteLists,
-      },
-    });
+    apply(response);
 
     return true;
   } catch (error) {
@@ -196,6 +221,8 @@ async function fetchDashboardSectionsOnce(mountId: number) {
     });
 
     return false;
+  } finally {
+    acceptingUpdates = false;
   }
 }
 
@@ -348,7 +375,11 @@ async function pollWidgetsSnapshot(dataUpdatesId: number) {
   const startedAt = Date.now();
 
   try {
-    const response = await CustomKabanMaxMethods.getClashApiConnectionsSummary();
+    const response = await withTimeout(
+      CustomKabanMaxMethods.getClashApiConnectionsSummary(),
+      DASHBOARD_READ_TIMEOUT_MS,
+      'dashboard widgets',
+    );
 
     lastWidgetsPollDurationMs = Date.now() - startedAt;
 
@@ -1383,8 +1414,8 @@ function renderFallbackInfoModal(info?: KabanMax.FallbackInfo) {
   if (!info) {
     return [E('div', {}, _('Fallback details are unavailable'))];
   }
-  const events = info.stableStatus?.events || [];
-  const lastSwitch = events[events.length - 1];
+  const events = recentFallbackEvents(info.stableStatus?.events);
+  const lastSwitch = lastFallbackSwitch(events);
 
   const fields: Array<{
     label: string;
@@ -1392,9 +1423,10 @@ function renderFallbackInfoModal(info?: KabanMax.FallbackInfo) {
     children?: Array<HTMLElement | string>;
   }> = [
     ...(info.stableStatus ? [
-      {label: _('Fallback state'), value: info.stableStatus.state},
+      {label: _('Fallback state'), value: fallbackStateLabel(info.stableStatus.state)},
       {label: _('Last switch'), value: lastSwitch
-        ? `${new Date(lastSwitch.at).toLocaleString()} · ${lastSwitch.reason}` : _('No switches')},
+        ? `${new Date(lastSwitch.at).toLocaleString()} · ${lastSwitch.reason}` : info.stableStatus.stats?.switches_total ? _('No recent switches') : _('No switches')},
+      ...(info.stableStatus.next_confirmation ? [{label: _('Repeated check due'), value: new Date(info.stableStatus.next_confirmation).toLocaleString()}] : []),
       {label: _('Recovery due'), value: info.stableStatus.next_recovery ? new Date(info.stableStatus.next_recovery).toLocaleString() : '—'},
     ] : []),
     {
@@ -1434,6 +1466,7 @@ function renderFallbackInfoModal(info?: KabanMax.FallbackInfo) {
         ]),
       ),
     ),
+    ...renderFallbackObservation(info),
     E('div', { class: 'fkp_dashboard-page__urltest-details__outbounds' }, [
       E(
         'div',

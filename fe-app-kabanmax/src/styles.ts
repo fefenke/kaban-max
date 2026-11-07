@@ -1,3 +1,4 @@
+import { boarStyles } from './kabanmax/helpers/boar';
 // language=CSS
 import { ComponentsTab } from './kabanmax/tabs/components';
 import { DashboardTab } from './kabanmax/tabs/dashboard';
@@ -15,6 +16,7 @@ ${MonitoringTab.styles}
 ${LogsTab.styles}
 ${ComponentsTab.styles}
 ${PartialStyles}
+${boarStyles}
 
 
 /* The theme draws h2 small in its lowest text colour, nearly black on black in its dark variant. */
@@ -25,7 +27,7 @@ ${PartialStyles}
 
 .fkp_page-status {
     margin-left: 0.4em;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .fkp_page-status__dot {

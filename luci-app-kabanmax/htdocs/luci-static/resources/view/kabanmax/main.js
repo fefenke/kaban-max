@@ -105,6 +105,111 @@ var DOMAIN_LIST_INCLUDES = {
 var COMMAND_TIMEOUT = 1e4;
 var MONOSPACE_FONT = 'ui-monospace, "Cascadia Mono", "SF Mono", SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace';
 
+// src/kabanmax/helpers/boar.ts
+var BODY = [
+  "       cc c           ",
+  "      ccccccc         ",
+  "    ccccccccccc c     ",
+  "   cdddddddddddcc     ",
+  "  cdddddddddddddcc    ",
+  " cdddddddddddddddc    ",
+  " cdddddddddddddddc    ",
+  " cddddddddddddedddccc ",
+  " cddddddddddddddddssc",
+  "  cdddddddddddddddsns",
+  "   cdddddddddddddtssc",
+  "    ccddddddddddttcc ",
+  "     ccc cc  ccc     ",
+  "     cc  cc  cc      "
+];
+var PALETTE = {
+  c: "#303337",
+  d: "#505359",
+  e: "#f4cf80",
+  s: "#77797b",
+  n: "#343638",
+  t: "#eee3c8"
+};
+function drawBoar(ctx, x, y, scale = 1, pose = "running", frame = 0) {
+  ctx.save();
+  ctx.translate(Math.round(x), Math.round(y));
+  ctx.scale(scale, scale);
+  if (pose === "stopped") {
+    ctx.translate(0, 4);
+    ctx.scale(1, 0.72);
+  }
+  if (pose === "apply" || pose === "check") {
+    ctx.translate(0, -2);
+    ctx.rotate(0.12);
+  }
+  if (pose === "restart") {
+    ctx.translate(0, 2);
+    ctx.scale(1.08, 0.9);
+  }
+  if (pose === "stop") {
+    ctx.translate(22, 0);
+    ctx.scale(-1, 1);
+  }
+  for (let row2 = 0; row2 < BODY.length; row2++) {
+    for (let col = 0; col < BODY[row2].length; col++) {
+      const color = PALETTE[BODY[row2][col]];
+      if (!color) continue;
+      ctx.fillStyle = pose === "stopped" && BODY[row2][col] === "e" ? "#303337" : color;
+      ctx.fillRect(
+        col,
+        row2 + (row2 > 11 && frame % 2 ? col % 2 ? -1 : 0 : 0),
+        1,
+        1
+      );
+    }
+  }
+  if (pose === "download" || pose === "install") {
+    ctx.fillStyle = "#9e7845";
+    ctx.fillRect(4, 3, 7, 5);
+    ctx.fillStyle = "#d1aa60";
+    ctx.fillRect(5, 2, 5, 2);
+  }
+  ctx.restore();
+  if (pose === "start") {
+    ctx.fillStyle = "#68784a";
+    ctx.fillRect(x, y + 10 * scale, 8 * scale, 4 * scale);
+    ctx.fillStyle = "#87945e";
+    ctx.fillRect(x + 2 * scale, y + 8 * scale, 5 * scale, 3 * scale);
+  }
+  if (pose === "running" || pose === "install")
+    drawAcorn(ctx, x + 24 * scale, y + 11 * scale, scale);
+}
+function drawAcorn(ctx, x, y, scale = 1) {
+  ctx.fillStyle = "#b58a4d";
+  ctx.fillRect(x + scale, y + scale, 3 * scale, 4 * scale);
+  ctx.fillStyle = "#6f713f";
+  ctx.fillRect(x, y, 5 * scale, 2 * scale);
+  ctx.fillRect(x + 2 * scale, y - scale, scale, scale);
+}
+function createBoar(pose) {
+  const node = document.createElement("span");
+  node.className = `fkp_boar fkp_boar--${pose}`;
+  node.setAttribute?.("aria-hidden", "true");
+  const sheet = document.createElement("canvas");
+  sheet.width = 60;
+  sheet.height = 72;
+  sheet.className = "fkp_boar__sheet";
+  const ctx = sheet.getContext?.("2d");
+  if (ctx) {
+    drawBoar(ctx, 1, 3, 2, pose);
+    drawBoar(ctx, 1, 39, 2, pose, 1);
+  }
+  node.replaceChildren(sheet);
+  return node;
+}
+var boarStyles = `
+.fkp_boar { width: 40px; height: 24px; display: inline-block; overflow: hidden; vertical-align: middle; flex: 0 0 auto; }
+.fkp_boar__sheet { display: block; width: 40px; height: 48px; image-rendering: pixelated; max-width: none; }
+.fkp_boar--start .fkp_boar__sheet, .fkp_boar--restart .fkp_boar__sheet, .fkp_boar--stop .fkp_boar__sheet, .fkp_boar--apply .fkp_boar__sheet, .fkp_boar--check .fkp_boar__sheet, .fkp_boar--download .fkp_boar__sheet, .fkp_boar--install .fkp_boar__sheet { animation: fkp_boar-step .8s steps(1,end) infinite; }
+@keyframes fkp_boar-step { 50% { transform: translateY(-24px); } }
+@media (prefers-reduced-motion: reduce) { .fkp_boar__sheet { animation: none !important; } }
+`;
+
 // src/helpers/element.ts
 function element(...args) {
   if (args.length >= 3 && (typeof args[2] === "string" || typeof args[2] === "number")) {
@@ -296,10 +401,214 @@ function render() {
         }),
         renderZapret2()
       ]),
+      textE("div", { id: "components-game", class: "fkp_components-page__game" }),
       textE("div", { id: "components-run", class: "fkp_components-page__run" })
     ]
   );
   return pageRoot;
+}
+
+// src/kabanmax/tabs/components/acornPhysics.ts
+var GROUND = 102;
+function newRunner() {
+  return {
+    y: 0,
+    velocity: 0,
+    elapsed: 0,
+    spawnIn: 0.9,
+    score: 0,
+    over: false,
+    items: []
+  };
+}
+function jumpRunner(state) {
+  if (!state.over && state.y === 0) state.velocity = 280;
+}
+function stepRunner(state, seconds3, random = Math.random) {
+  if (state.over) return;
+  const dt = Math.min(0.04, Math.max(0, seconds3));
+  state.elapsed += dt;
+  state.velocity -= 780 * dt;
+  state.y = Math.max(0, state.y + state.velocity * dt);
+  if (state.y === 0) state.velocity = 0;
+  const speed = Math.min(180, 96 + state.elapsed * 0.8);
+  state.spawnIn -= dt;
+  if (state.spawnIn <= 0) {
+    state.items.push({ x: 365, kind: random() < 0.55 ? "log" : "acorn" });
+    state.spawnIn = 1.25 + random() * 0.6;
+  }
+  for (const item of state.items) {
+    item.x -= speed * dt;
+    if (item.x < 75 && item.x + 14 > 46) {
+      if (item.kind === "log" && state.y < 17) state.over = true;
+      if (item.kind === "acorn" && state.y > 15 && state.y < 65) {
+        state.score++;
+        item.x = -30;
+      }
+    }
+  }
+  state.items = state.items.filter((item) => item.x > -30);
+}
+
+// src/kabanmax/tabs/components/acornGame.ts
+var BEST_KEY = "kabanmax-acorn-best";
+function createAcornGame() {
+  const canvas = textE("canvas", {
+    width: 360,
+    height: 122,
+    tabindex: 0,
+    "aria-label": _("Jump over logs and collect acorns. Click or press Space.")
+  });
+  const score = textE("span", {});
+  const message2 = textE("span", { role: "status" });
+  const button = textE(
+    "button",
+    { type: "button", class: "btn cbi-button" },
+    _("Go for acorns!")
+  );
+  const element3 = textE("section", { class: "fkp_acorn-game" }, [
+    textE("div", { class: "fkp_acorn-game__bar" }, [score, message2, button]),
+    canvas
+  ]);
+  const ctx = canvas.getContext("2d");
+  let state = newRunner();
+  let active = false;
+  let shown2 = true;
+  let frame = 0;
+  let previous = 0;
+  let disposed = false;
+  let mounted = false;
+  let best = 0;
+  try {
+    best = Math.max(
+      0,
+      Math.min(999999, Number(localStorage.getItem(BEST_KEY)) || 0)
+    );
+  } catch {
+  }
+  function draw() {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, 360, 122);
+    ctx.fillStyle = "#8a9865";
+    ctx.fillRect(0, GROUND + 1, 360, 1);
+    ctx.fillStyle = "#758453";
+    for (let x = 8; x < 360; x += 43) ctx.fillRect(x, GROUND + 4, 6, 2);
+    drawBoar(
+      ctx,
+      38,
+      GROUND - 28 - state.y,
+      2,
+      state.over ? "stopped" : "running",
+      Math.floor(state.elapsed * 8)
+    );
+    for (const item of state.items) {
+      if (item.kind === "acorn")
+        drawAcorn(ctx, Math.round(item.x), GROUND - 37, 2);
+      else {
+        ctx.fillStyle = "#78583b";
+        ctx.fillRect(Math.round(item.x), GROUND - 15, 18, 15);
+        ctx.fillStyle = "#ba945e";
+        ctx.fillRect(Math.round(item.x) + 13, GROUND - 13, 5, 11);
+        ctx.fillStyle = "#97754c";
+        ctx.fillRect(Math.round(item.x) + 2, GROUND - 11, 10, 2);
+      }
+    }
+    score.textContent = `${_("Acorns")}: ${state.score}${best ? ` / ${_("Best")}: ${best}` : ""}`;
+  }
+  function pause() {
+    if (!active) return;
+    active = false;
+    cancelAnimationFrame(frame);
+    frame = 0;
+    button.hidden = false;
+    button.textContent = _("Continue");
+    message2.textContent = _("Paused");
+  }
+  function tick(now) {
+    frame = 0;
+    if (!active || disposed) return;
+    if (!shown2 || document.hidden || !element3.isConnected) {
+      pause();
+      return;
+    }
+    stepRunner(state, previous ? (now - previous) / 1e3 : 0);
+    previous = now;
+    draw();
+    if (state.over) {
+      active = false;
+      if (state.score > best) {
+        best = state.score;
+        try {
+          localStorage.setItem(BEST_KEY, String(best));
+        } catch {
+        }
+      }
+      message2.textContent = _("You are a boar");
+      button.textContent = _("More acorns!");
+      button.hidden = false;
+      draw();
+      return;
+    }
+    frame = requestAnimationFrame(tick);
+  }
+  function start() {
+    if (disposed || document.hidden || !shown2 || !element3.isConnected || !ctx)
+      return;
+    if (state.over) state = newRunner();
+    active = true;
+    previous = 0;
+    button.hidden = true;
+    message2.textContent = "";
+    canvas.focus();
+    if (!frame) frame = requestAnimationFrame(tick);
+  }
+  const visibility = () => {
+    if (document.hidden) pause();
+  };
+  const keydown = (event) => {
+    if (event.code !== "Space" || event.repeat || !active || document.activeElement !== canvas)
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    jumpRunner(state);
+  };
+  const pointer = () => {
+    if (active) {
+      canvas.focus();
+      jumpRunner(state);
+    }
+  };
+  const blur = () => pause();
+  button.addEventListener("click", start);
+  canvas.addEventListener("keydown", keydown);
+  canvas.addEventListener("pointerdown", pointer);
+  canvas.addEventListener("blur", blur);
+  document.addEventListener("visibilitychange", visibility);
+  const observer = new MutationObserver(() => {
+    if (element3.isConnected) mounted = true;
+    else if (mounted) dispose();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  function dispose() {
+    if (disposed) return;
+    pause();
+    disposed = true;
+    observer.disconnect();
+    button.removeEventListener("click", start);
+    canvas.removeEventListener("keydown", keydown);
+    canvas.removeEventListener("pointerdown", pointer);
+    canvas.removeEventListener("blur", blur);
+    document.removeEventListener("visibilitychange", visibility);
+  }
+  draw();
+  return {
+    element: element3,
+    dispose,
+    setShown(value) {
+      shown2 = value;
+      if (!shown2) pause();
+    }
+  };
 }
 
 // src/helpers/showToast.ts
@@ -1698,12 +2007,23 @@ var KABANMAX_WAIT_TIMEOUT_MS = 2e4;
 var KABANMAX_WAIT_RETRY_MS = 3e3;
 
 // src/kabanmax/methods/custom/getConfigSections.ts
-async function getConfigSections() {
+var configRequest;
+function getConfigSections() {
+  if (!configRequest) {
+    configRequest = readConfigSections().finally(() => {
+      configRequest = void 0;
+    });
+  }
+  return configRequest;
+}
+async function readConfigSections() {
   const applied = await callUbus({
     object: KABANMAX_SERVICE_OBJECT,
     method: "config",
     timeoutMs: KABANMAX_CALL_TIMEOUT_MS,
-    retryUnavailable: false
+    retryUnavailable: false,
+    // Config and the secret must not wait for a simultaneous connections snapshot or shell job.
+    nobatch: true
   });
   if (applied.success) {
     return applied.data.sections;
@@ -2828,9 +3148,15 @@ function buildFallbackInfo({
         type: getOutboundDisplayType(childEntry),
         selected: selectedCode === childCode,
         pinned: pinnedCode === childCode,
-        healthState: entry?.value.stable?.members.find((m) => m.name === childCode)?.state,
-        lastCheck: entry?.value.stable?.members.find((m) => m.name === childCode)?.last_check,
-        recoverySuccesses: entry?.value.stable?.members.find((m) => m.name === childCode)?.recovery_successes,
+        healthState: entry?.value.stable?.members.find(
+          (m) => m.name === childCode
+        )?.state,
+        lastCheck: entry?.value.stable?.members.find(
+          (m) => m.name === childCode
+        )?.last_check,
+        recoverySuccesses: entry?.value.stable?.members.find(
+          (m) => m.name === childCode
+        )?.recovery_successes,
         levelIndex,
         levelName: level.displayName,
         levelId: level.id
@@ -3007,84 +3333,77 @@ function getSubscriptionMetadata(section2, sourceCount, subscriptionTags, provid
   });
   return items.length ? items : void 0;
 }
-async function getDashboardSections() {
+async function getDashboardSections(onUpdate) {
   const configSections = hydrateConfigSections(await getConfigSections());
   setClashApiConfigSections(configSections);
   const hasSubscriptions = configSections.some(hasSubscriptionSources);
   const remoteLists = configSections.some(hasRemoteLists);
-  const [clashProxies, clashProviders] = await Promise.all([
-    getClashApiProxies(),
-    hasSubscriptions ? getClashApiProxyProviders() : Promise.resolve({
-      success: true,
-      data: { providers: {} }
-    })
-  ]);
+  const clashProxies = await getClashApiProxies();
   if (!clashProxies.success || !clashProxies.data?.proxies) {
-    return {
-      success: false,
-      data: [],
-      hasRemoteLists: remoteLists
-    };
+    return { success: false, data: [], hasRemoteLists: remoteLists };
   }
-  const proxies = Object.entries(clashProxies.data.proxies).map(
-    ([key, value]) => ({
-      code: key,
-      value
-    })
-  );
-  const providers = clashProviders.success ? clashProviders.data?.providers || {} : {};
-  const activeSections = configSections.filter(
-    (section2) => section2.enabled !== "0" && isConnectionAction(section2.action)
-  );
-  const data = activeSections.map((section2) => {
-    const displayName = getDisplayName(section2);
-    const sectionName = section2[".name"];
-    const sectionAction = section2.action;
-    const proxyConfigType = getSectionProxyConfigType(section2);
-    if (isConnectionAction(sectionAction) && shouldUseProxyGroup(section2)) {
-      const subscriptionSourceCount = getSubscriptionSourceCount(section2);
-      const subscriptionEnabled = subscriptionSourceCount > 0;
-      const subscriptionTags = getSectionSubscriptionTags(section2, providers);
-      const subscriptionMetadata = subscriptionEnabled ? getSubscriptionMetadata(
-        section2,
-        subscriptionSourceCount,
-        subscriptionTags,
-        providers
-      ) : void 0;
-      const { selector, outbounds } = buildProxyGroupOutbounds(
-        section2,
-        proxies,
-        subscriptionTags
-      );
+  const build = (providers) => {
+    const proxies = Object.entries(clashProxies.data.proxies).map(
+      ([key, value]) => ({ code: key, value })
+    );
+    const activeSections = configSections.filter(
+      (section2) => section2.enabled !== "0" && isConnectionAction(section2.action)
+    );
+    const data = activeSections.map((section2) => {
+      const displayName = getDisplayName(section2);
+      const sectionName = section2[".name"];
+      const sectionAction = section2.action;
+      const proxyConfigType = getSectionProxyConfigType(section2);
+      if (isConnectionAction(sectionAction) && shouldUseProxyGroup(section2)) {
+        const subscriptionSourceCount = getSubscriptionSourceCount(section2);
+        const subscriptionEnabled = subscriptionSourceCount > 0;
+        const subscriptionTags = getSectionSubscriptionTags(section2, providers);
+        const subscriptionMetadata = subscriptionEnabled ? getSubscriptionMetadata(
+          section2,
+          subscriptionSourceCount,
+          subscriptionTags,
+          providers
+        ) : void 0;
+        const { selector, outbounds } = buildProxyGroupOutbounds(
+          section2,
+          proxies,
+          subscriptionTags
+        );
+        return {
+          withTagSelect: true,
+          code: selector?.code || displayName,
+          sectionName,
+          displayName,
+          action: sectionAction,
+          proxyConfigType,
+          subscriptionSourceCount,
+          subscriptionProviderTags: subscriptionTags.map(
+            (item) => item.runtimeTag
+          ),
+          subscriptionMetadata,
+          outbounds
+        };
+      }
       return {
-        withTagSelect: true,
-        code: selector?.code || displayName,
+        withTagSelect: false,
+        code: displayName,
         sectionName,
         displayName,
         action: sectionAction,
-        proxyConfigType,
-        subscriptionSourceCount,
-        subscriptionProviderTags: subscriptionTags.map(
-          (item) => item.runtimeTag
-        ),
-        subscriptionMetadata,
-        outbounds
+        outbounds: []
       };
-    }
-    return {
-      withTagSelect: false,
-      code: displayName,
-      sectionName,
-      displayName,
-      action: sectionAction,
-      outbounds: []
-    };
-  });
-  return {
-    success: true,
-    data,
-    hasRemoteLists: remoteLists
+    });
+    return { success: true, data, hasRemoteLists: remoteLists };
   };
+  const initial = build({});
+  if (!hasSubscriptions) return initial;
+  onUpdate?.(initial);
+  const clashProviders = await getClashApiProxyProviders().catch(() => ({
+    success: false
+  }));
+  return build(
+    clashProviders.success ? clashProviders.data?.providers || {} : {}
+  );
 }
 
 // src/kabanmax/methods/custom/index.ts
@@ -3597,6 +3916,7 @@ var AFTER_RUN_MS = 3e3;
 var INITIAL = {
   id: "",
   action: null,
+  phase: null,
   loaded: false,
   starting: false,
   running: false,
@@ -3660,6 +3980,7 @@ function createInstallerRun(options) {
       ...state,
       id: snapshot.id,
       action: snapshot.action ?? null,
+      phase: snapshot.phase ?? null,
       loaded: true,
       running: snapshot.running,
       interactive: Boolean(snapshot.interactive),
@@ -3746,6 +4067,7 @@ function createInstallerRun(options) {
           ...state,
           id: result.id,
           action: result.started ? action : null,
+          phase: null,
           starting: false,
           running: true,
           interactive: result.started ? action !== "uninstall" : false,
@@ -4403,6 +4725,10 @@ function statusOf(state) {
       text8 = _("no answer from the router");
     } else if (state.stopping) {
       text8 = _("stopping...");
+    } else if (state.phase === "download") {
+      text8 = _("The boar gathers supplies...");
+    } else if (state.phase === "install" && state.action !== "uninstall") {
+      text8 = _("The boar updates its homestead...");
     }
     return { tone: "progress", icon: renderLoaderCircleIcon24, text: text8 };
   }
@@ -4425,6 +4751,9 @@ function initController() {
   }
   controllerInitialized = true;
   const root = pageRoot;
+  const game = createAcornGame();
+  part(root, "components-game").append(game.element);
+  game.setShown(componentsTabShown());
   const terminal = createTerminal({
     label: _("Installer output"),
     onInput: (data) => void run.input(data),
@@ -4504,14 +4833,15 @@ function initController() {
       state.interrupted,
       state.stopping,
       state.lost,
-      state.after
+      state.after,
+      state.phase
     ]);
     if (drawn === runDrawn) {
       return;
     }
     runDrawn = drawn;
     const status = statusOf(state);
-    const after = state.after ? ` \u0420\u2019\u0412\xB7 ${AFTER_RUN_TEXTS[state.after]()}` : "";
+    const after = state.after ? ` \xB7 ${AFTER_RUN_TEXTS[state.after]()}` : "";
     runStatus.className = `fkp_components-page__run-status fkp_components-page__run-status--${status.tone}`;
     runStatus.replaceChildren(
       ...at === null ? [] : [
@@ -4521,8 +4851,18 @@ function initController() {
           formatRunTime(at)
         )
       ],
-      status.icon(),
-      textE("span", {}, status.text + after)
+      ...state.starting || state.running ? [
+        createBoar(
+          state.action === "uninstall" ? "stop" : state.phase === "download" ? "download" : "install"
+        )
+      ] : [status.icon()],
+      textE(
+        "span",
+        {
+          title: (state.starting || state.running) && !state.lost && !state.stopping ? _("in progress") : status.text
+        },
+        status.text + after
+      )
     );
   }
   async function openLog() {
@@ -4587,12 +4927,12 @@ function initController() {
       textE(
         "p",
         { role: "status" },
-        releaseError || (release ? `${_("Installed")}: ${release.installed || "\u2014"} \xB7 ${_("Latest")}: ${release.latest || "\u2014"} \xB7 sing-box: ${release.core_installed || "\u2014"} \xB7 ${release.core_latest || "\u2014"} \xB7 ${release.update_available ? _("Update available") : _("No updates available")}` : _("Check for updates before installation"))
+        releaseBusy ? [createBoar("check"), _("The boar looks for fresh acorns...")] : releaseError || (release ? `${_("Installed")}: ${release.installed || "\u2014"} \xB7 ${_("Latest")}: ${release.latest || "\u2014"} \xB7 sing-box: ${release.core_installed || "\u2014"} \xB7 ${release.core_latest || "\u2014"} \xB7 ${release.update_available ? _("Update available") : _("No updates available")}` : _("Check for updates before installation"))
       ),
       button(
         "update",
         renderDownloadIcon24,
-        releaseBusy ? _("Checking...") : releaseAction(release) === "install" ? release?.installed ? _("Download and install update") : _("Download and install") : _("Check for updates"),
+        releaseBusy ? _("The boar looks for fresh acorns...") : releaseAction(release) === "install" ? release?.installed ? _("Download and install update") : _("Download and install") : _("Check for updates"),
         ["cbi-button-apply"],
         () => {
           if (releaseAction(release) === "install") {
@@ -4667,13 +5007,13 @@ function initController() {
       textE("div", { class: "fkp_components-page__config-buttons" }, [
         renderButton({
           icon: renderFileDownIcon24,
-          text: _("Download"),
+          text: _("Export config"),
           loading: configBusy === "download",
           onClick: () => void saveConfig()
         }),
         renderButton({
           icon: renderFileUpIcon24,
-          text: _("Upload"),
+          text: _("Import config"),
           loading: configBusy === "upload",
           // install.sh may replace the configuration under the staged changes
           disabled: live,
@@ -4784,6 +5124,7 @@ function initController() {
   store.subscribeKey("diagnosticsSystemInfo", renderVersions);
   store.subscribeKey("tabService", () => {
     run.setShown(componentsTabShown());
+    game.setShown(componentsTabShown());
     if (componentsTabShown()) {
       void ensureSystemInfo();
     }
@@ -4875,14 +5216,17 @@ controls at least, growing with its output up to its limit. */
 
 .fkp_components-page__block > .fkp-partial-button,
 .fkp_components-page__config-buttons > .fkp-partial-button {
-    width: 100%;
+    width: auto;
     min-width: 0;
     margin: 0;
+    justify-self: start;
 }
 
 .fkp_components-page__config-buttons {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     grid-gap: 10px;
 }
 
@@ -5061,6 +5405,19 @@ controls at least, growing with its output up to its limit. */
     pointer-events: none;
 }
 
+.fkp_components-page__game { min-width: 0; }
+.fkp_acorn-game { border: 1px solid var(--background-color-low, #ddd); border-radius: 8px; overflow: hidden; background: var(--background-color-high, #fafbf7); }
+.fkp_acorn-game__bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 10px 0; min-height: 25px; font-size: 12px; }
+.fkp_acorn-game__bar > span:first-child { margin-right: auto; font-variant-numeric: tabular-nums; }
+.fkp_acorn-game__bar .btn { margin: 0; padding: 3px 7px; font-size: 12px; }
+.fkp_acorn-game canvas { display: block; width: 100%; max-height: 122px; aspect-ratio: 360 / 122; image-rendering: pixelated; touch-action: manipulation; cursor: pointer; }
+.fkp_acorn-game canvas:focus-visible { outline: 2px solid var(--primary-color-medium, #7d8d55); outline-offset: -2px; }
+@container (min-width: 820px) {
+ .fkp_components-page { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; }
+ .fkp_components-page__controls { grid-column: 1; }
+ .fkp_components-page__game { grid-column: 2; grid-row: 1; }
+ .fkp_components-page__run { grid-column: 1 / -1; }
+}
 ${ansiStyles}
 
 .fkp_terminal__inverse:not([class*="fkp_terminal__bg-"]) {
@@ -7144,7 +7501,8 @@ function readCoreUsage() {
     object: KABANMAX_SERVICE_OBJECT,
     method: "usage",
     timeoutMs: KABANMAX_CALL_TIMEOUT_MS,
-    retryUnavailable: false
+    retryUnavailable: false,
+    nobatch: true
   });
 }
 
@@ -7273,11 +7631,11 @@ function readTlv(bytes, offset, limit) {
   let length = bytes[offset + 1];
   let start = offset + 2;
   if (length & 128) {
-    const count = length & 127;
-    if (count === 0 || count > 4 || start + count > limit) return null;
+    const count2 = length & 127;
+    if (count2 === 0 || count2 > 4 || start + count2 > limit) return null;
     length = 0;
-    for (let i = 0; i < count; i += 1) length = length * 256 + bytes[start + i];
-    start += count;
+    for (let i = 0; i < count2; i += 1) length = length * 256 + bytes[start + i];
+    start += count2;
   }
   const end = start + length;
   return end <= limit ? { tag, start, end } : null;
@@ -10314,8 +10672,153 @@ function showTailscaleServerDetailsModal(sectionId) {
   );
 }
 
+// src/kabanmax/tabs/dashboard/fallbackObservation.ts
+var DAY_MS2 = 24 * 60 * 60 * 1e3;
+var count = (value) => Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+function recentFallbackEvents(events, now = Date.now()) {
+  return (events || []).filter(
+    (event) => Number.isFinite(Date.parse(event.at)) && Date.parse(event.at) >= now - DAY_MS2
+  ).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).slice(-50);
+}
+function lastFallbackSwitch(events) {
+  return [...events].reverse().find((event) => event.from && event.to && event.from !== event.to);
+}
+function observationSummary(status, now = Date.now()) {
+  const stats = status.stats;
+  if (!stats) return null;
+  return {
+    since: stats.since,
+    selectedSeconds: count((now - Date.parse(stats.selected_since)) / 1e3),
+    switches: count(stats.switches_total),
+    backupSeconds: count(stats.backup_seconds),
+    connectionErrors: stats.members.reduce(
+      (sum, member) => sum + count(member.connection_errors),
+      0
+    ),
+    failedChecks: stats.members.reduce(
+      (sum, member) => sum + count(member.failed_checks),
+      0
+    )
+  };
+}
+function fallbackStateLabel(state) {
+  switch (state) {
+    case "primary":
+      return _("Primary");
+    case "backup":
+      return _("Backup");
+    case "suspect":
+      return _("Suspected failure");
+    case "no_network":
+      return _("No network");
+    case "degraded":
+      return _("Degraded");
+    default:
+      return _("Not checked");
+  }
+}
+function checkReason(reason) {
+  switch (reason) {
+    case "periodic":
+      return _("Scheduled check");
+    case "dial_failure":
+      return _("Check after a connection error");
+    case "recovery":
+      return _("Recovery check");
+    case "confirmation":
+      return _("Repeated failure confirmation");
+    default:
+      return "";
+  }
+}
+function renderFallbackObservation(info) {
+  const status = info.stableStatus;
+  if (!status?.stats) return [];
+  const summary = observationSummary(status);
+  const events = recentFallbackEvents(status.events);
+  const name = (code) => info.outbounds.find((member) => member.code === code)?.displayName || code.split("/").pop() || code;
+  const row2 = (label, value) => textE(
+    "div",
+    {
+      style: "display:flex;justify-content:space-between;gap:12px;padding:3px 0"
+    },
+    [textE("span", {}, label), textE("strong", {}, String(value))]
+  );
+  return [
+    textE(
+      "section",
+      {
+        class: "fkp-fallback-observation",
+        style: "margin:14px 0;overflow-x:auto"
+      },
+      [
+        textE("h4", {}, _("Observation")),
+        row2(_("Observation since"), new Date(summary.since).toLocaleString()),
+        row2(
+          _("Current selection duration"),
+          formatDuration(summary.selectedSeconds)
+        ),
+        row2(_("Switches during observation"), summary.switches),
+        row2(_("Time on backup"), formatDuration(summary.backupSeconds)),
+        row2(_("Failed check rounds"), summary.failedChecks),
+        row2(_("Connection opening errors"), summary.connectionErrors),
+        textE("table", { style: "width:100%;margin-top:8px" }, [
+          textE(
+            "thead",
+            {},
+            textE(
+              "tr",
+              {},
+              [
+                _("Node"),
+                _("Time selected"),
+                _("Failed check rounds"),
+                _("Connection opening errors"),
+                _("Switches away")
+              ].map((text8) => textE("th", {}, text8))
+            )
+          ),
+          textE(
+            "tbody",
+            {},
+            status.stats.members.map(
+              (member) => textE(
+                "tr",
+                {},
+                [
+                  name(member.name),
+                  formatDuration(member.selected_seconds),
+                  member.failed_checks,
+                  member.connection_errors,
+                  member.switches_away
+                ].map((value) => textE("td", {}, String(value)))
+              )
+            )
+          )
+        ]),
+        textE("details", { style: "margin-top:10px" }, [
+          textE("summary", {}, _("Recent events (up to 24 hours)")),
+          events.length ? textE(
+            "ol",
+            { style: "padding-left:20px" },
+            [...events].reverse().map(
+              (event) => textE("li", { style: "padding:4px 0" }, [
+                textE("time", {}, new Date(event.at).toLocaleString()),
+                ` \xB7 ${checkReason(event.check_reason)}${event.check_reason ? " \xB7 " : ""}`,
+                event.from && event.to && event.from !== event.to ? `${name(event.from)} \u2192 ${name(event.to)} \xB7 ` : "",
+                event.reason
+              ])
+            )
+          ) : textE("p", {}, _("No recent events"))
+        ])
+      ]
+    )
+  ];
+}
+
 // src/kabanmax/tabs/dashboard/initController.ts
 var SECTIONS_REFRESH_INTERVAL_MS = 1e4;
+var DASHBOARD_READ_TIMEOUT_MS = 12e3;
 var COLLAPSED_SECTIONS_STORAGE_KEY = "kabanmax:dashboard-collapsed-sections:v1";
 var SECTIONS_LATENCY_REFRESH_INTERVAL_MS = 2e3;
 var SECTIONS_REFRESH_BACKOFF_MAX_MS = 6e4;
@@ -10398,24 +10901,37 @@ async function fetchDashboardSectionsOnce(mountId) {
       loading: prev.loading && !hasRenderedData
     }
   });
+  let acceptingUpdates = true;
+  const apply = (response) => {
+    if (!acceptingUpdates || !dashboardMounted || mountId !== dashboardMountId || !response.success) {
+      return;
+    }
+    store.set({
+      sectionsWidget: {
+        ...store.get().sectionsWidget,
+        loading: false,
+        failed: false,
+        data: response.data,
+        hasRemoteLists: response.hasRemoteLists
+      }
+    });
+  };
   try {
-    const { data, success, hasRemoteLists: hasRemoteLists2 } = await CustomKabanMaxMethods.getDashboardSections();
+    const response = await withTimeout(
+      CustomKabanMaxMethods.getDashboardSections((response2) => {
+        if (!store.get().sectionsWidget.data.length) apply(response2);
+      }),
+      DASHBOARD_READ_TIMEOUT_MS,
+      "dashboard sections"
+    );
+    const { success } = response;
     if (!dashboardMounted || mountId !== dashboardMountId) {
       return false;
     }
     if (!success) {
       throw new Error("failed to fetch dashboard sections");
     }
-    const current = store.get().sectionsWidget;
-    store.set({
-      sectionsWidget: {
-        ...current,
-        loading: false,
-        failed: false,
-        data,
-        hasRemoteLists: hasRemoteLists2
-      }
-    });
+    apply(response);
     return true;
   } catch (error) {
     logger.error("[DASHBOARD]", "fetchDashboardSections: failed", error);
@@ -10432,6 +10948,8 @@ async function fetchDashboardSectionsOnce(mountId) {
       }
     });
     return false;
+  } finally {
+    acceptingUpdates = false;
   }
 }
 async function fetchDashboardSections(options = {}) {
@@ -10545,7 +11063,11 @@ function reportWidgetsFailure() {
 async function pollWidgetsSnapshot(dataUpdatesId) {
   const startedAt = Date.now();
   try {
-    const response = await CustomKabanMaxMethods.getClashApiConnectionsSummary();
+    const response = await withTimeout(
+      CustomKabanMaxMethods.getClashApiConnectionsSummary(),
+      DASHBOARD_READ_TIMEOUT_MS,
+      "dashboard widgets"
+    );
     lastWidgetsPollDurationMs = Date.now() - startedAt;
     if (!widgetsPoll.active || dataUpdatesId !== dashboardDataUpdatesId) {
       return;
@@ -11347,12 +11869,13 @@ function renderFallbackInfoModal(info) {
   if (!info) {
     return [textE("div", {}, _("Fallback details are unavailable"))];
   }
-  const events = info.stableStatus?.events || [];
-  const lastSwitch = events[events.length - 1];
+  const events = recentFallbackEvents(info.stableStatus?.events);
+  const lastSwitch = lastFallbackSwitch(events);
   const fields = [
     ...info.stableStatus ? [
-      { label: _("Fallback state"), value: info.stableStatus.state },
-      { label: _("Last switch"), value: lastSwitch ? `${new Date(lastSwitch.at).toLocaleString()} \xB7 ${lastSwitch.reason}` : _("No switches") },
+      { label: _("Fallback state"), value: fallbackStateLabel(info.stableStatus.state) },
+      { label: _("Last switch"), value: lastSwitch ? `${new Date(lastSwitch.at).toLocaleString()} \xB7 ${lastSwitch.reason}` : info.stableStatus.stats?.switches_total ? _("No recent switches") : _("No switches") },
+      ...info.stableStatus.next_confirmation ? [{ label: _("Repeated check due"), value: new Date(info.stableStatus.next_confirmation).toLocaleString() }] : [],
       { label: _("Recovery due"), value: info.stableStatus.next_recovery ? new Date(info.stableStatus.next_recovery).toLocaleString() : "\u2014" }
     ] : [],
     {
@@ -11391,6 +11914,7 @@ function renderFallbackInfoModal(info) {
         ])
       )
     ),
+    ...renderFallbackObservation(info),
     textE("div", { class: "fkp_dashboard-page__urltest-details__outbounds" }, [
       textE(
         "div",
@@ -15622,7 +16146,7 @@ function renderFilters() {
     selectedRouteFilter
   );
 }
-function renderTab(tab, label, count, active) {
+function renderTab(tab, label, count2, active) {
   if (!tab) {
     return;
   }
@@ -15631,7 +16155,7 @@ function renderTab(tab, label, count, active) {
     textE("a", { href: "#" }, [
       label,
       " ",
-      textE("span", { class: "fkp_monitoring-page__tab-count" }, String(count))
+      textE("span", { class: "fkp_monitoring-page__tab-count" }, String(count2))
     ])
   );
 }
@@ -17083,6 +17607,7 @@ ${MonitoringTab.styles}
 ${LogsTab.styles}
 ${ComponentsTab.styles}
 ${PartialStyles}
+${boarStyles}
 
 
 /* The theme draws h2 small in its lowest text colour, nearly black on black in its dark variant. */
@@ -17093,7 +17618,7 @@ ${PartialStyles}
 
 .fkp_page-status {
     margin-left: 0.4em;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .fkp_page-status__dot {
@@ -23846,11 +24371,11 @@ function addFallbackGroupItemOptions(itemSection, options = {}) {
     _("Confirmation URL"),
     _("A different HTTPS target, checked only when the primary check fails")
   );
-  o.default = "https://www.cloudflare.com/cdn-cgi/trace";
+  o.default = "https://cp.cloudflare.com/generate_204";
   o.depends("stable", "1");
   o.validate = (_id, value) => validateUrlField(value);
   o = itemSection.option(form.Value, "confirm_expected_status", _("Confirmation HTTP status"));
-  o.default = "200";
+  o.default = "204";
   o.depends("stable", "1");
   o = itemSection.option(form.Value, "recovery_interval", _("Recovery interval"));
   o.default = "60s";
@@ -30144,11 +30669,11 @@ function configureGridSection(sectionRef, type, title, addTitle, onSectionAdded)
 
 // src/kabanmax/helpers/serviceStatusDisplay.ts
 var BUSY_LABELS = {
-  start: () => _("starting..."),
-  stop: () => _("stopping..."),
-  restart: () => _("restarting..."),
-  apply: () => _("applying..."),
-  install: () => _("installer running...")
+  start: () => _("The boar comes out of the bushes..."),
+  stop: () => _("The boar wraps up the hunt..."),
+  restart: () => _("The boar stretches its hooves..."),
+  apply: () => _("The boar tidies up its grounds..."),
+  install: () => _("The boar updates its homestead...")
 };
 function getServiceStatusDisplay({
   running,
@@ -30157,12 +30682,29 @@ function getServiceStatusDisplay({
   if (busy) {
     return { label: BUSY_LABELS[busy](), tone: "progress" };
   }
-  return running ? { label: _("running"), tone: "success" } : { label: _("stopped"), tone: "error" };
+  return running ? { label: _("The boar keeps the acorns in check"), tone: "success" } : { label: _("The boar rests"), tone: "error" };
+}
+function getServiceStatusTitle(running, busy) {
+  switch (busy) {
+    case "start":
+      return _("starting...");
+    case "stop":
+      return _("stopping...");
+    case "restart":
+      return _("restarting...");
+    case "apply":
+      return _("applying...");
+    case "install":
+      return _("installer running...");
+    default:
+      return running ? _("running") : _("stopped");
+  }
 }
 
 // src/kabanmax/entry/pageStatus.ts
 function renderPageStatus(node, state) {
   if (state.loading || state.failed) {
+    node.title = "";
     node.className = "";
     node.replaceChildren();
     return;
@@ -30171,8 +30713,12 @@ function renderPageStatus(node, state) {
     running: Boolean(state.data.kabanmaxRunning),
     busy: state.data.kabanmaxBusy
   });
-  const dot = document.createElement("span");
-  dot.className = "fkp_page-status__dot";
+  const pose = state.data.kabanmaxBusy || (state.data.kabanmaxRunning ? "running" : "stopped");
+  const dot = createBoar(pose);
+  node.title = getServiceStatusTitle(
+    Boolean(state.data.kabanmaxRunning),
+    state.data.kabanmaxBusy
+  );
   node.className = `fkp_page-status fkp_page-status--${display.tone}`;
   node.replaceChildren(dot, display.label);
 }

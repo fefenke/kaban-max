@@ -1,3 +1,5 @@
+import { createAcornGame } from './acornGame';
+import { createBoar } from '../../helpers/boar';
 import { copyToClipboard } from '../../../helpers/copyToClipboard';
 import { E } from '../../../helpers/element';
 import { showToast } from '../../../helpers/showToast';
@@ -71,6 +73,10 @@ function statusOf(state: InstallerRunState): {
       text = _('no answer from the router');
     } else if (state.stopping) {
       text = _('stopping...');
+    } else if (state.phase === 'download') {
+      text = _('The boar gathers supplies...');
+    } else if (state.phase === 'install' && state.action !== 'uninstall') {
+      text = _('The boar updates its homestead...');
     }
     return { tone: 'progress', icon: renderLoaderCircleIcon24, text };
   }
@@ -95,6 +101,9 @@ export function initController(): void {
   }
   controllerInitialized = true;
   const root = pageRoot;
+  const game = createAcornGame();
+  part(root, 'components-game').append(game.element);
+  game.setShown(componentsTabShown());
 
   const terminal = createTerminal({
     label: _('Installer output'),
@@ -179,13 +188,16 @@ export function initController(): void {
       state.stopping,
       state.lost,
       state.after,
+      state.phase,
     ]);
     if (drawn === runDrawn) {
       return;
     }
     runDrawn = drawn;
     const status = statusOf(state);
-    const after = state.after ? ` Р’В· ${AFTER_RUN_TEXTS[state.after]()}` : '';
+    const after = state.after
+      ? ` \u00b7 ${AFTER_RUN_TEXTS[state.after]()}`
+      : '';
     runStatus.className = `fkp_components-page__run-status fkp_components-page__run-status--${status.tone}`;
     runStatus.replaceChildren(
       ...(at === null
@@ -197,8 +209,27 @@ export function initController(): void {
               formatRunTime(at),
             ),
           ]),
-      status.icon(),
-      E('span', {}, status.text + after),
+      ...(state.starting || state.running
+        ? [
+            createBoar(
+              state.action === 'uninstall'
+                ? 'stop'
+                : state.phase === 'download'
+                  ? 'download'
+                  : 'install',
+            ),
+          ]
+        : [status.icon()]),
+      E(
+        'span',
+        {
+          title:
+            (state.starting || state.running) && !state.lost && !state.stopping
+              ? _('in progress')
+              : status.text,
+        },
+        status.text + after,
+      ),
     );
   }
 
@@ -278,16 +309,18 @@ export function initController(): void {
       E(
         'p',
         { role: 'status' },
-        releaseError ||
-          (release
-            ? `${_('Installed')}: ${release.installed || '\u2014'} \u00b7 ${_('Latest')}: ${release.latest || '\u2014'} \u00b7 sing-box: ${release.core_installed || '\u2014'} \u00b7 ${release.core_latest || '\u2014'} \u00b7 ${release.update_available ? _('Update available') : _('No updates available')}`
-            : _('Check for updates before installation')),
+        releaseBusy
+          ? [createBoar('check'), _('The boar looks for fresh acorns...')]
+          : releaseError ||
+              (release
+                ? `${_('Installed')}: ${release.installed || '\u2014'} \u00b7 ${_('Latest')}: ${release.latest || '\u2014'} \u00b7 sing-box: ${release.core_installed || '\u2014'} \u00b7 ${release.core_latest || '\u2014'} \u00b7 ${release.update_available ? _('Update available') : _('No updates available')}`
+                : _('Check for updates before installation')),
       ),
       button(
         'update',
         renderDownloadIcon24,
         releaseBusy
-          ? _('Checking...')
+          ? _('The boar looks for fresh acorns...')
           : releaseAction(release) === 'install'
             ? release?.installed
               ? _('Download and install update')
@@ -377,13 +410,13 @@ export function initController(): void {
       E('div', { class: 'fkp_components-page__config-buttons' }, [
         renderButton({
           icon: renderFileDownIcon24,
-          text: _('Download'),
+          text: _('Export config'),
           loading: configBusy === 'download',
           onClick: () => void saveConfig(),
         }),
         renderButton({
           icon: renderFileUpIcon24,
-          text: _('Upload'),
+          text: _('Import config'),
           loading: configBusy === 'upload',
           // install.sh may replace the configuration under the staged changes
           disabled: live,
@@ -502,6 +535,7 @@ export function initController(): void {
   store.subscribeKey('diagnosticsSystemInfo', renderVersions);
   store.subscribeKey('tabService', () => {
     run.setShown(componentsTabShown());
+    game.setShown(componentsTabShown());
     if (componentsTabShown()) {
       void ensureSystemInfo();
     }
