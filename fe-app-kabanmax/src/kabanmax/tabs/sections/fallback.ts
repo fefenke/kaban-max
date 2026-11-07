@@ -249,11 +249,11 @@ function addFallbackGroupItemOptions(
   o.default = '1';
   o = itemSection.option(form.Value, 'confirm_url', _('Confirmation URL'),
     _('A different HTTPS target, checked only when the primary check fails'));
-  o.default = 'https://www.cloudflare.com/cdn-cgi/trace';
+  o.default = 'https://cp.cloudflare.com/generate_204';
   o.depends('stable', '1');
   o.validate = (_id: string, value: unknown) => validateUrlField(value);
   o = itemSection.option(form.Value, 'confirm_expected_status', _('Confirmation HTTP status'));
-  o.default = '200';
+  o.default = '204';
   o.depends('stable', '1');
   o = itemSection.option(form.Value, 'recovery_interval', _('Recovery interval'));
   o.default = '60s';

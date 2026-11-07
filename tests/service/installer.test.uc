@@ -620,4 +620,12 @@ t.test("variant and uninstall pin the installed numeric release", () => {
     t.eq(installer.selected_release("variant", "0.1.0", "0.1.1"), "0.1.0");
     t.eq(installer.selected_release("uninstall", "", "__COMPILED_VERSION_VARIABLE__"), "");
 });
+t.test("the page sees download and install phases without parsing terminal output", () => {
+    fresh();
+    for (let phase in [ "download", "install" ]) {
+        write_state({ phase });
+        t.eq(installer.snapshot(installer.read_state(), 0).phase, phase);
+    }
+});
+
 t.done();

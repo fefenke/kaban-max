@@ -40,6 +40,7 @@ export function render() {
         }),
         renderZapret2(),
       ]),
+      E('div', { id: 'components-game', class: 'fkp_components-page__game' }),
       E('div', { id: 'components-run', class: 'fkp_components-page__run' }),
     ],
   );

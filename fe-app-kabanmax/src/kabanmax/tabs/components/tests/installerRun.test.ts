@@ -11,6 +11,7 @@ import {
 interface Router {
   id: string;
   action: KabanMax.InstallerAction;
+  phase?: 'download' | 'install';
   running: boolean;
   interactive: boolean;
   exit: number | null;
@@ -21,7 +22,10 @@ interface Router {
   reachable: boolean;
 }
 
-function snapshotOf(router: Router, offset: number): KabanMax.InstallerSnapshot {
+function snapshotOf(
+  router: Router,
+  offset: number,
+): KabanMax.InstallerSnapshot {
   if (!router.id) {
     return { id: '', running: false };
   }
@@ -29,6 +33,7 @@ function snapshotOf(router: Router, offset: number): KabanMax.InstallerSnapshot 
   return {
     id: router.id,
     action: router.action,
+    phase: router.phase,
     running: router.running,
     interactive: router.interactive,
     exit: router.exit,
@@ -106,6 +111,19 @@ afterEach(() => {
 });
 
 describe('following a run of install.sh', () => {
+  it('follows only the phase the router reports and clears it when absent', async () => {
+    const page = setup({ phase: 'download' });
+    page.run.setShown(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(page.state().phase).toBe('download');
+    page.router.phase = 'install';
+    await vi.advanceTimersByTimeAsync(401);
+    expect(page.state().phase).toBe('install');
+    page.router.phase = undefined;
+    await vi.advanceTimersByTimeAsync(401);
+    expect(page.state().phase).toBeNull();
+  });
+
   it('reads an idle router once and stops', async () => {
     const page = setup({ id: '' });
     page.run.setShown(true);

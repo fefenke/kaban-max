@@ -9,12 +9,26 @@ import {
 // The configuration the core runs, which its tags and the Clash API key come from: rpcd lays the
 // session's unsaved changes over every uci read of the page.
 // The backend refuses a configuration holding a section type ConfigSection does not list.
-export async function getConfigSections(): Promise<KabanMax.ConfigSection[]> {
+let configRequest: Promise<KabanMax.ConfigSection[]> | undefined;
+
+// Share only an in-flight read: a later call must see the latest applied configuration.
+export function getConfigSections(): Promise<KabanMax.ConfigSection[]> {
+  if (!configRequest) {
+    configRequest = readConfigSections().finally(() => {
+      configRequest = undefined;
+    });
+  }
+  return configRequest;
+}
+
+async function readConfigSections(): Promise<KabanMax.ConfigSection[]> {
   const applied = await callUbus<{ sections: KabanMax.ConfigSection[] }>({
     object: KABANMAX_SERVICE_OBJECT,
     method: 'config',
     timeoutMs: KABANMAX_CALL_TIMEOUT_MS,
     retryUnavailable: false,
+    // Config and the secret must not wait for a simultaneous connections snapshot or shell job.
+    nobatch: true,
   });
   if (applied.success) {
     return applied.data.sections;

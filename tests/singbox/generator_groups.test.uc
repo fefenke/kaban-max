@@ -130,7 +130,7 @@ t.test("a Fallback group is one native outbound whose levels claim each node onc
     let config = build(fallback_fixture());
     let group = q.outbound(config, "proxy/Main fallback");
     t.eq([group.stable, group.confirm_url, group.confirm_expected_status, group.recovery_interval, group.recovery_successes],
-        [true, "https://www.cloudflare.com/cdn-cgi/trace", "200", "60s", 3]);
+        [true, "https://cp.cloudflare.com/generate_204", "204", "60s", 3]);
     t.eq([ group.type, length(group.groups), group.levels, group.outbounds, group.exclude_group_members ], [ "fallback", 5, null, null, null ]);
     let levels = group.groups;
     t.eq(levels[0].outbounds, [ "proxy/Beta" ]);

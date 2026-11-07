@@ -36,8 +36,34 @@ describe('the configuration the runtime views read', () => {
 
     expect(await getConfigSections()).toEqual(applied);
     expect(mocks.callUbus).toHaveBeenCalledWith(
-      expect.objectContaining({ object: 'kabanmax', method: 'config' }),
+      expect.objectContaining({
+        object: 'kabanmax',
+        method: 'config',
+        nobatch: true,
+      }),
     );
+  });
+
+  it('shares concurrent reads, then reads fresh applied config next time', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.callUbus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const first = getConfigSections();
+    const second = getConfigSections();
+    expect(mocks.callUbus).toHaveBeenCalledTimes(1);
+    finish({ success: true, data: { sections: applied } });
+    expect(await first).toEqual(applied);
+    expect(await second).toEqual(applied);
+    mocks.callUbus.mockResolvedValueOnce({
+      success: true,
+      data: { sections: unsaved },
+    });
+    expect(await getConfigSections()).toEqual(unsaved);
+    expect(mocks.callUbus).toHaveBeenCalledTimes(2);
   });
 
   it('is the session view when no state service answers for it', async () => {

@@ -47,5 +47,6 @@ export function readCoreUsage() {
     method: 'usage',
     timeoutMs: KABANMAX_CALL_TIMEOUT_MS,
     retryUnavailable: false,
+    nobatch: true,
   });
 }
