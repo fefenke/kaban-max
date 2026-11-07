@@ -81,98 +81,179 @@ function checkReason(reason?: string) {
   }
 }
 
+export function observationPeriod(since: string, now = Date.now()) {
+  const seconds = count((now - Date.parse(since)) / 1000);
+  return { fullDay: seconds >= 86400, seconds: Math.min(86400, seconds) };
+}
+
+function metric(label: string, value: string | number, warning = false) {
+  return E(
+    'div',
+    {
+      class: `kaban-observation__metric${warning ? ' kaban-observation__metric--warning' : ''}`,
+    },
+    [
+      E('span', { class: 'kaban-observation__metric-label' }, label),
+      E('strong', { class: 'kaban-observation__metric-value' }, String(value)),
+    ],
+  );
+}
+
 export function renderFallbackObservation(info: KabanMax.FallbackInfo) {
   const status = info.stableStatus;
   if (!status?.stats) return [];
   const summary = observationSummary(status)!;
-  const events = recentFallbackEvents(status.events);
+  const period = observationPeriod(summary.since);
+  const selected = info.outbounds.find(
+    (member) => member.code === status.active,
+  );
+  return [
+    E('section', { class: 'kaban-observation' }, [
+      E('header', { class: 'kaban-observation__heading' }, [
+        E('div', {}, [
+          E('h4', {}, _('Connection overview')),
+          E(
+            'span',
+            { class: 'kaban-observation__period' },
+            period.fullDay
+              ? _('Last 24 hours')
+              : `${_('Since start')} · ${formatDuration(period.seconds)}`,
+          ),
+        ]),
+        E(
+          'span',
+          {
+            class: `kaban-observation__state kaban-observation__state--${status.state}`,
+          },
+          fallbackStateLabel(status.state),
+        ),
+      ]),
+      E('div', { class: 'kaban-observation__selected' }, [
+        E('span', { class: 'kaban-observation__dot', 'aria-hidden': 'true' }),
+        E('strong', {}, selected?.displayName || status.active || '—'),
+        E(
+          'span',
+          {},
+          `${_('Selected for')} ${formatDuration(Math.min(summary.selectedSeconds, period.seconds))}`,
+        ),
+      ]),
+      ...(status.check_state === 'probe_only_failure'
+        ? [
+            E(
+              'p',
+              { class: 'kaban-observation__probe-notice' },
+              _(
+                'Health checks failed, but a new connection received data. Server selection was kept.',
+              ),
+            ),
+          ]
+        : []),
+      E('div', { class: 'kaban-observation__metrics' }, [
+        metric(_('Switches'), summary.switches),
+        metric(_('Time on backup'), formatDuration(summary.backupSeconds)),
+        metric(
+          _('Connection errors'),
+          summary.connectionErrors,
+          summary.connectionErrors > 0,
+        ),
+        metric(
+          _('Check failures'),
+          summary.failedChecks,
+          summary.failedChecks > 0,
+        ),
+      ]),
+    ]),
+  ];
+}
+
+export function renderMemberObservation(
+  info: KabanMax.FallbackInfo,
+  code: string,
+) {
+  const member = info.stableStatus?.stats?.members.find(
+    (item) => item.name === code,
+  );
+  if (!member) return [];
+  const item = (label: string, value: string | number, warning = false) =>
+    E(
+      'span',
+      {
+        class: warning
+          ? 'kaban-observation__node-stat kaban-observation__node-stat--warning'
+          : 'kaban-observation__node-stat',
+      },
+      [E('span', {}, `${label} `), E('b', {}, String(value))],
+    );
+  return [
+    E('div', { class: 'kaban-observation__node-stats' }, [
+      item(_('Selected for'), formatDuration(count(member.selected_seconds))),
+      item(
+        _('Connection errors'),
+        count(member.connection_errors),
+        member.connection_errors > 0,
+      ),
+      item(
+        _('Check failures'),
+        count(member.failed_checks),
+        member.failed_checks > 0,
+      ),
+      item(_('Switches'), count(member.switches_away)),
+    ]),
+  ];
+}
+
+export function renderFallbackEvents(info: KabanMax.FallbackInfo) {
+  if (!info.stableStatus?.stats) return [];
+  const events = recentFallbackEvents(info.stableStatus.events);
   const name = (code: string) =>
     info.outbounds.find((member) => member.code === code)?.displayName ||
     code.split('/').pop() ||
     code;
-  const row = (label: string, value: string | number) =>
-    E(
-      'div',
-      {
-        style:
-          'display:flex;justify-content:space-between;gap:12px;padding:3px 0',
-      },
-      [E('span', {}, label), E('strong', {}, String(value))],
-    );
   return [
-    E(
-      'section',
-      {
-        class: 'fkp-fallback-observation',
-        style: 'margin:14px 0;overflow-x:auto',
-      },
-      [
-        E('h4', {}, _('Observation')),
-        row(_('Observation since'), new Date(summary.since).toLocaleString()),
-        row(
-          _('Current selection duration'),
-          formatDuration(summary.selectedSeconds),
+    E('details', { class: 'kaban-observation__events' }, [
+      E('summary', {}, [
+        E('span', {}, _('Recent events (up to 24 hours)')),
+        E(
+          'span',
+          { class: 'kaban-observation__event-count' },
+          String(events.length),
         ),
-        row(_('Switches during observation'), summary.switches),
-        row(_('Time on backup'), formatDuration(summary.backupSeconds)),
-        row(_('Failed check rounds'), summary.failedChecks),
-        row(_('Connection opening errors'), summary.connectionErrors),
-        E('table', { style: 'width:100%;margin-top:8px' }, [
-          E(
-            'thead',
-            {},
-            E(
-              'tr',
-              {},
-              [
-                _('Node'),
-                _('Time selected'),
-                _('Failed check rounds'),
-                _('Connection opening errors'),
-                _('Switches away'),
-              ].map((text) => E('th', {}, text)),
-            ),
-          ),
-          E(
-            'tbody',
-            {},
-            status.stats.members.map((member) =>
-              E(
-                'tr',
-                {},
-                [
-                  name(member.name),
-                  formatDuration(member.selected_seconds),
-                  member.failed_checks,
-                  member.connection_errors,
-                  member.switches_away,
-                ].map((value) => E('td', {}, String(value))),
-              ),
-            ),
-          ),
-        ]),
-        E('details', { style: 'margin-top:10px' }, [
-          E('summary', {}, _('Recent events (up to 24 hours)')),
-          events.length
-            ? E(
-                'ol',
-                { style: 'padding-left:20px' },
-                [...events]
-                  .reverse()
-                  .map((event) =>
-                    E('li', { style: 'padding:4px 0' }, [
-                      E('time', {}, new Date(event.at).toLocaleString()),
-                      ` · ${checkReason(event.check_reason)}${event.check_reason ? ' · ' : ''}`,
-                      event.from && event.to && event.from !== event.to
-                        ? `${name(event.from)} → ${name(event.to)} · `
-                        : '',
-                      event.reason,
-                    ]),
+      ]),
+      events.length
+        ? E(
+            'ol',
+            { class: 'kaban-observation__timeline' },
+            [...events].reverse().map((event) =>
+              E('li', {}, [
+                E(
+                  'time',
+                  {
+                    dateTime: event.at,
+                    title: new Date(event.at).toLocaleString(),
+                  },
+                  new Date(event.at).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }),
+                ),
+                E('div', {}, [
+                  E(
+                    'strong',
+                    {},
+                    event.from && event.to && event.from !== event.to
+                      ? `${name(event.from)} → ${name(event.to)}`
+                      : checkReason(event.check_reason) || _('Check'),
                   ),
-              )
-            : E('p', {}, _('No recent events')),
-        ]),
-      ],
-    ),
+                  E(
+                    'span',
+                    { class: 'kaban-observation__event-reason' },
+                    event.reason,
+                  ),
+                ]),
+              ]),
+            ),
+          )
+        : E('p', { class: 'kaban-observation__empty' }, _('No recent events')),
+    ]),
   ];
 }

@@ -449,4 +449,11 @@ t.test("a Fallback group refuses bad timings, statuses and server groups", () =>
     ]), "has more than one server group named 'Servers'");
 });
 
+t.test("fallback retry pause must be between one second and five minutes", () => {
+    for (let value in [ "500ms", "0s", "301s", "later" ])
+        v.refuses(fallback({ failure_retry_interval: value }), "Failure retry interval");
+    for (let value in [ "1s", "3s", "12s", "5m" ])
+        v.accepts(fallback({ failure_retry_interval: value }));
+});
+
 t.done();

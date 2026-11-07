@@ -43,12 +43,20 @@ import type { CoreUsageReading } from './coreUsage';
 import { resolveOutboundProxyLink } from './resolveOutboundProxyLink';
 import { showTailscaleDetailsModal } from '../servers/tailscale';
 import { E } from '../../../helpers/element';
-import { fallbackStateLabel, lastFallbackSwitch, recentFallbackEvents, renderFallbackObservation } from './fallbackObservation';
+import {
+  fallbackStateLabel,
+  lastFallbackSwitch,
+  recentFallbackEvents,
+  renderFallbackObservation,
+  renderMemberObservation,
+  renderFallbackEvents,
+} from './fallbackObservation';
 import { withTimeout } from '../../../helpers/withTimeout';
 
 const SECTIONS_REFRESH_INTERVAL_MS = 10000;
 const DASHBOARD_READ_TIMEOUT_MS = 12000;
-const COLLAPSED_SECTIONS_STORAGE_KEY = 'kabanmax:dashboard-collapsed-sections:v1';
+const COLLAPSED_SECTIONS_STORAGE_KEY =
+  'kabanmax:dashboard-collapsed-sections:v1';
 // While a latency test runs the router fills its delay records one at a time, so the sections
 // refresh keeps up with it; the duty ceiling still applies.
 const SECTIONS_LATENCY_REFRESH_INTERVAL_MS = 2000;
@@ -1296,7 +1304,10 @@ function fallbackPinRequestKey(code: string, memberCode: string) {
   return `${code}:${memberCode}`;
 }
 
-async function handleFallbackPin(code: string, member: KabanMax.FallbackMember) {
+async function handleFallbackPin(
+  code: string,
+  member: KabanMax.FallbackMember,
+) {
   const requestKey = fallbackPinRequestKey(code, member.code);
 
   if (fallbackPinRequests.has(requestKey)) {
@@ -1343,6 +1354,7 @@ function renderFallbackMemberRow(
     {
       class: [
         'fkp_dashboard-page__urltest-details__row',
+        'kaban-observation__node',
         'fkp_dashboard-page__urltest-details__row--selectable',
         member.selected
           ? 'fkp_dashboard-page__urltest-details__row--active'
@@ -1396,14 +1408,25 @@ function renderFallbackMemberRow(
             ]
           : []),
       ]),
+      ...renderMemberObservation(info, member.code),
       E('div', { class: 'fkp_dashboard-page__urltest-details__row-meta' }, [
         E(
           'span',
-          { class: member.healthState === 'standby' ? '' : latencyClassName(member.latency),
-            title: member.lastCheck && !member.lastCheck.startsWith('0001-') ? new Date(member.lastCheck).toLocaleString() : '' },
-          member.healthState === 'standby' ? _('Standby') : member.healthState === 'recovering'
-            ? `${_('Recovering')} (${member.recoverySuccesses || 0})`
-            : formatUrlTestLatency(member.latency),
+          {
+            class:
+              member.healthState === 'standby'
+                ? ''
+                : latencyClassName(member.latency),
+            title:
+              member.lastCheck && !member.lastCheck.startsWith('0001-')
+                ? new Date(member.lastCheck).toLocaleString()
+                : '',
+          },
+          member.healthState === 'standby'
+            ? _('Standby')
+            : member.healthState === 'recovering'
+              ? `${_('Recovering')} (${member.recoverySuccesses || 0})`
+              : formatUrlTestLatency(member.latency),
         ),
       ]),
     ],
@@ -1422,13 +1445,38 @@ function renderFallbackInfoModal(info?: KabanMax.FallbackInfo) {
     value?: unknown;
     children?: Array<HTMLElement | string>;
   }> = [
-    ...(info.stableStatus ? [
-      {label: _('Fallback state'), value: fallbackStateLabel(info.stableStatus.state)},
-      {label: _('Last switch'), value: lastSwitch
-        ? `${new Date(lastSwitch.at).toLocaleString()} · ${lastSwitch.reason}` : info.stableStatus.stats?.switches_total ? _('No recent switches') : _('No switches')},
-      ...(info.stableStatus.next_confirmation ? [{label: _('Repeated check due'), value: new Date(info.stableStatus.next_confirmation).toLocaleString()}] : []),
-      {label: _('Recovery due'), value: info.stableStatus.next_recovery ? new Date(info.stableStatus.next_recovery).toLocaleString() : '—'},
-    ] : []),
+    ...(info.stableStatus
+      ? [
+          {
+            label: _('Fallback state'),
+            value: fallbackStateLabel(info.stableStatus.state),
+          },
+          {
+            label: _('Last switch'),
+            value: lastSwitch
+              ? `${new Date(lastSwitch.at).toLocaleString()} · ${lastSwitch.reason}`
+              : info.stableStatus.stats?.switches_total
+                ? _('No recent switches')
+                : _('No switches'),
+          },
+          ...(info.stableStatus.next_confirmation
+            ? [
+                {
+                  label: _('Repeated check due'),
+                  value: new Date(
+                    info.stableStatus.next_confirmation,
+                  ).toLocaleString(),
+                },
+              ]
+            : []),
+          {
+            label: _('Recovery due'),
+            value: info.stableStatus.next_recovery
+              ? new Date(info.stableStatus.next_recovery).toLocaleString()
+              : '—',
+          },
+        ]
+      : []),
     {
       label: _('Selected'),
       children: [renderFallbackSelectedValue(info)],
@@ -1452,20 +1500,6 @@ function renderFallbackInfoModal(info?: KabanMax.FallbackInfo) {
   ];
 
   return [
-    E(
-      'dl',
-      { class: 'fkp_dashboard-page__urltest-details__params' },
-      fields.map(({ label, value, children }) =>
-        E('div', { class: 'fkp_dashboard-page__urltest-details__param' }, [
-          E('dt', {}, label),
-          E(
-            'dd',
-            {},
-            children || [E('span', {}, formatUrlTestModalValue(value))],
-          ),
-        ]),
-      ),
-    ),
     ...renderFallbackObservation(info),
     E('div', { class: 'fkp_dashboard-page__urltest-details__outbounds' }, [
       E(
@@ -1492,6 +1526,24 @@ function renderFallbackInfoModal(info?: KabanMax.FallbackInfo) {
                 _('Node list is empty'),
               ),
             ],
+      ),
+    ]),
+    ...renderFallbackEvents(info),
+    E('details', { class: 'kaban-observation__parameters' }, [
+      E('summary', {}, _('Check settings')),
+      E(
+        'dl',
+        { class: 'fkp_dashboard-page__urltest-details__params' },
+        fields.map(({ label, value, children }) =>
+          E('div', { class: 'fkp_dashboard-page__urltest-details__param' }, [
+            E('dt', {}, label),
+            E(
+              'dd',
+              {},
+              children || [E('span', {}, formatUrlTestModalValue(value))],
+            ),
+          ]),
+        ),
       ),
     ]),
     renderDetailsFooter(),
@@ -1537,12 +1589,28 @@ function refreshDetailsModal() {
     return;
   }
 
-  const table = '.fkp_dashboard-page__urltest-details__table';
-  const scrollTop = modal.container.querySelector(table)?.scrollTop ?? 0;
+  const scrollPositions = [
+    '.fkp_dashboard-page__urltest-details__table',
+    '.kaban-observation__timeline',
+  ].map((selector) => ({
+    selector,
+    top: modal.container.querySelector(selector)?.scrollTop ?? 0,
+  }));
+  const expandedSections = [
+    '.kaban-observation__events',
+    '.kaban-observation__parameters',
+  ].filter(
+    (selector) =>
+      modal.container.querySelector<HTMLDetailsElement>(selector)?.open,
+  );
   modal.container.replaceChildren(...modal.render());
-  const redrawn = modal.container.querySelector(table);
-  if (redrawn) {
-    redrawn.scrollTop = scrollTop;
+  for (const selector of expandedSections) {
+    const section = modal.container.querySelector<HTMLDetailsElement>(selector);
+    if (section) section.open = true;
+  }
+  for (const { selector, top } of scrollPositions) {
+    const redrawn = modal.container.querySelector(selector);
+    if (redrawn) redrawn.scrollTop = top;
   }
 }
 

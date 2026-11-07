@@ -24,6 +24,7 @@ export namespace ClashAPI {
 
   export interface StableFallbackStatus {
     state: string;
+    check_state?: 'probe_only_failure';
     active: string;
     members: Array<{name:string; state:string; last_check?:string; recovery_successes:number}>;
     events: Array<{at:string; from:string; to:string; reason:string; check_reason?:string}>;

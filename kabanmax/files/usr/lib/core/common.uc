@@ -145,7 +145,7 @@ function strip_internal_fields(value) {
 }
 
 // Go duration syntax ("3m", "1h30m", "1.5s") as whole seconds, or null.
-function duration_to_seconds(value) {
+function duration_to_seconds_precise(value) {
     let rest = as_string(value);
     if (rest == "")
         return null;
@@ -170,7 +170,12 @@ function duration_to_seconds(value) {
         rest = substr(rest, length(matched[0]));
     }
 
-    return total <= 0 ? null : int(total + 0.5);
+    return total <= 0 ? null : total;
+}
+
+function duration_to_seconds(value) {
+    let exact = duration_to_seconds_precise(value);
+    return exact == null ? null : int(exact + 0.5);
 }
 
 function parse_number(value) {
@@ -265,6 +270,7 @@ return {
     monotonic_ms,
     strip_internal_fields,
     duration_to_seconds,
+    duration_to_seconds_precise,
     parse_number,
     option,
     words,

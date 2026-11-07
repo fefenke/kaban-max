@@ -299,7 +299,7 @@ index 0000000..492b461
 +}
 diff --git a/cmd/sing-box/stable_observation_reload_test.go b/cmd/sing-box/stable_observation_reload_test.go
 new file mode 100644
-index 0000000..ee9b835
+index 0000000..5823ddd
 --- /dev/null
 +++ b/cmd/sing-box/stable_observation_reload_test.go
 @@ -0,0 +1,68 @@
@@ -338,7 +338,7 @@ index 0000000..ee9b835
 +	member, _ := instance.Outbound().Outbound("g")
 +	stable := member.(*group.Fallback)
 +	since := time.Now().Add(-time.Hour)
-+	stable.RestoreStableObservation(&group.StableFallbackObservationSnapshot{Stats: group.StableFallbackStats{Since: since, SwitchesTotal: 7}})
++	stable.RestoreStableObservation(&group.StableFallbackObservationSnapshot{Stats: group.StableFallbackStats{Since: since, SwitchesTotal: 7, Members: []group.StableFallbackMemberStats{{Name: "a", SwitchesAway: 7}}}})
 +	snapshots := captureStableReloadObservations(instance, options)
 +	var data map[string]any
 +	stdjson.Unmarshal(raw, &data)
@@ -689,10 +689,10 @@ index ab8d455..b8544fb 100644
  	return &info
  }
 diff --git a/option/group.go b/option/group.go
-index 637e484..b37da95 100644
+index 637e484..85c2109 100644
 --- a/option/group.go
 +++ b/option/group.go
-@@ -20,6 +20,11 @@ type URLTestOutboundOptions struct {
+@@ -20,6 +20,12 @@ type URLTestOutboundOptions struct {
  
  type FallbackOutboundOptions struct {
  	GroupCommonOption
@@ -701,6 +701,7 @@ index 637e484..b37da95 100644
 +	ConfirmExpectedStatus     string                 `json:"confirm_expected_status,omitempty"`
 +	RecoveryInterval          badoption.Duration     `json:"recovery_interval,omitempty"`
 +	RecoverySuccesses         uint                   `json:"recovery_successes,omitempty"`
++	FailureRetryInterval      badoption.Duration     `json:"failure_retry_interval,omitempty"`
  	Groups                    []FallbackGroupOptions `json:"groups,omitempty"`
  	URL                       string                 `json:"url,omitempty"`
  	Interval                  badoption.Duration     `json:"interval,omitempty"`
@@ -718,7 +719,7 @@ index db916c8..28f6aa6 100644
 +	TLSClassical      bool   `json:"tls_classical,omitempty"`
  }
 diff --git a/protocol/group/fallback.go b/protocol/group/fallback.go
-index 4505153..ef74ed5 100644
+index 4505153..e0a69c3 100644
 --- a/protocol/group/fallback.go
 +++ b/protocol/group/fallback.go
 @@ -59,10 +59,13 @@ type fallbackCandidate struct {
@@ -817,16 +818,35 @@ index 4505153..ef74ed5 100644
  }
  
  func (s *Fallback) candidateActive(candidate fallbackCandidate) bool {
-@@ -699,6 +724,22 @@ func (s *Fallback) recordDialFailure(candidate fallbackCandidate, err error) {
+@@ -531,6 +556,11 @@ func (s *Fallback) touch() {
+ func (s *Fallback) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+ 	s.touch()
+ 	candidates := s.candidatesForNetwork(network)
++	createdAt := time.Now()
++	var userTarget N.Dialer
++	if s.stable != nil && N.NetworkName(network) == N.NetworkTCP && len(candidates) > 0 {
++		userTarget = urltest.ProbeTarget(candidates[0].outbound)
++	}
+ 	connectionContext, closeCancel := context.WithCancel(ctx)
+ 	conn, candidate, remaining, attempt, err := s.dialCandidates(connectionContext, network, destination, candidates)
+ 	if err != nil {
+@@ -553,6 +583,9 @@ func (s *Fallback) DialContext(ctx context.Context, network string, destination
+ 	} else {
+ 		closeCancel()
+ 	}
++	if userTarget != nil && len(candidates) > 0 && candidate.outbound == candidates[0].outbound {
++		conn = s.observeStableUserConn(conn, candidate, userTarget, createdAt)
++	}
+ 	return s.interruptGroup.NewConn(conn, interrupt.IsExternalConnectionFromContext(ctx)), nil
+ }
+ 
+@@ -699,6 +732,19 @@ func (s *Fallback) recordDialFailure(candidate fallbackCandidate, err error) {
  		return
  	}
  	check := state.failures.add(time.Now(), err)
 +	if s.stable != nil {
 +		s.initStableStatsLocked(time.Now())
-+		m := s.stable.memberStats[candidate.tag]
-+		m.Name = candidate.tag
-+		m.ConnectionErrors++
-+		s.stable.memberStats[candidate.tag] = m
++		s.stable.recordCount(time.Now(), candidate.tag, 1, 0, 0)
 +		s.stable.pendingReason = "dial_failure"
 +		// Stable mode does not silently retry on a reserve. Wake health after
 +		// the first failure, but debounce destination-failure bursts so they
@@ -840,7 +860,7 @@ index 4505153..ef74ed5 100644
  	s.health[candidate.tag] = state
  	s.access.Unlock()
  	if check {
-@@ -720,6 +761,10 @@ func (s *Fallback) requestCheck() {
+@@ -720,6 +766,10 @@ func (s *Fallback) requestCheck() {
  }
  
  func (s *Fallback) loopCheck(ctx context.Context) {
@@ -851,7 +871,7 @@ index 4505153..ef74ed5 100644
  	s.checkOutbounds(ctx, 0)
  	go s.startupRetry(ctx)
  	ticker := time.NewTicker(s.interval)
-@@ -790,6 +835,10 @@ func (s *Fallback) periodicCheck(ctx context.Context) {
+@@ -790,6 +840,10 @@ func (s *Fallback) periodicCheck(ctx context.Context) {
  }
  
  func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
@@ -862,7 +882,7 @@ index 4505153..ef74ed5 100644
  	s.access.RLock()
  	candidates := append([]fallbackCandidate(nil), s.candidates...)
  	s.access.RUnlock()
-@@ -797,6 +846,9 @@ func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
+@@ -797,6 +851,9 @@ func (s *Fallback) checkOutbounds(ctx context.Context, maxAge time.Duration) {
  }
  
  func (s *Fallback) URLTest(ctx context.Context) (map[string]uint16, error) {
@@ -872,7 +892,7 @@ index 4505153..ef74ed5 100644
  	s.access.RLock()
  	candidates := append([]fallbackCandidate(nil), s.candidates...)
  	s.access.RUnlock()
-@@ -851,6 +903,7 @@ func (s *Fallback) checkCandidates(ctx context.Context, candidates []fallbackCan
+@@ -851,6 +908,7 @@ func (s *Fallback) checkCandidates(ctx context.Context, candidates []fallbackCan
  	}
  	s.selected = s.selectAvailableLocked()
  	newSelected := s.selected
@@ -880,7 +900,7 @@ index 4505153..ef74ed5 100644
  	s.access.Unlock()
  	s.interruptSelection(oldSelected, newSelected)
  	return resultMap, nil
-@@ -888,7 +941,9 @@ func (c *fallbackEarlyConn) Write(buffer []byte) (int, error) {
+@@ -888,7 +946,9 @@ func (c *fallbackEarlyConn) Write(buffer []byte) (int, error) {
  		}
  		err = c.attempt.fail(err)
  		_ = c.Conn.Close()
@@ -893,10 +913,10 @@ index 4505153..ef74ed5 100644
  			return n, err
 diff --git a/protocol/group/fallback_stable.go b/protocol/group/fallback_stable.go
 new file mode 100644
-index 0000000..3c85279
+index 0000000..cef9780
 --- /dev/null
 +++ b/protocol/group/fallback_stable.go
-@@ -0,0 +1,547 @@
+@@ -0,0 +1,594 @@
 +package group
 +
 +import (
@@ -921,17 +941,19 @@ index 0000000..3c85279
 +// failures before selecting a reserve. No extra daemon is needed.
 +type stableFallback struct {
 +	stableObservation
-+	round            sync.Mutex
-+	confirmURL       string
-+	confirmStatus    urltest.ExpectedStatus
-+	recoveryInterval time.Duration
-+	returnAfter      uint
-+	lastRecovery     time.Time             // protected by Fallback.access
-+	lastFailureCheck time.Time             // protected by Fallback.access
-+	events           []StableFallbackEvent // protected by Fallback.access, bounded to 50, retained for 24h
-+	networkReady     func() bool
-+	noNetwork        bool
-+	roundBudget      time.Duration // zero uses the production 30s bound
++	stableUserObservation
++	round                sync.Mutex
++	confirmURL           string
++	confirmStatus        urltest.ExpectedStatus
++	recoveryInterval     time.Duration
++	failureRetryInterval time.Duration
++	returnAfter          uint
++	lastRecovery         time.Time             // protected by Fallback.access
++	lastFailureCheck     time.Time             // protected by Fallback.access
++	events               []StableFallbackEvent // protected by Fallback.access, bounded to 50, retained for 24h
++	networkReady         func() bool
++	noNetwork            bool
++	roundBudget          time.Duration // zero uses the production 30s bound
 +}
 +
 +// Record useful failure classes without exposing URLs, credentials or VPS IPs.
@@ -978,6 +1000,7 @@ index 0000000..3c85279
 +	RecoverySuccesses uint      `json:"recovery_successes"`
 +}
 +type StableFallbackStatus struct {
++	CheckState       string                 `json:"check_state,omitempty"`
 +	Stats            StableFallbackStats    `json:"stats"`
 +	NextConfirmation *time.Time             `json:"next_confirmation,omitempty"`
 +	State            string                 `json:"state"`
@@ -1014,6 +1037,13 @@ index 0000000..3c85279
 +	if interval < time.Second {
 +		return nil, errors.New("fallback recovery_interval must be at least 1s")
 +	}
++	retryInterval := time.Duration(o.FailureRetryInterval)
++	if retryInterval == 0 {
++		retryInterval = 3 * time.Second
++	}
++	if retryInterval < time.Second || retryInterval > 5*time.Minute {
++		return nil, errors.New("fallback failure_retry_interval must be between 1s and 5m")
++	}
 +	successes := o.RecoverySuccesses
 +	if successes == 0 {
 +		successes = 3
@@ -1021,7 +1051,7 @@ index 0000000..3c85279
 +	if successes > 10 {
 +		return nil, errors.New("fallback recovery_successes must be between 1 and 10")
 +	}
-+	return &stableFallback{stableObservation: stableObservation{since: time.Now()}, confirmURL: confirm, confirmStatus: expected, recoveryInterval: interval, returnAfter: successes}, nil
++	return &stableFallback{stableObservation: stableObservation{since: time.Now()}, confirmURL: confirm, confirmStatus: expected, recoveryInterval: interval, failureRetryInterval: retryInterval, returnAfter: successes}, nil
 +}
 +
 +// The recovery clock must not be gated by a slower primary health interval.
@@ -1158,6 +1188,23 @@ index 0000000..3c85279
 +	if !ready {
 +		return result
 +	}
++	roundStarted := time.Now()
++	s.access.Lock()
++	s.stable.userDataAt = time.Time{}
++	s.stable.userCreatedAt = time.Time{}
++	s.stable.userOutbound = nil
++	s.stable.userTarget = nil
++	s.stable.userRoundOpen = true
++	s.stable.userRoundStarted = roundStarted
++	s.stable.checkState = ""
++	s.access.Unlock()
++	defer func() {
++		s.access.Lock()
++		s.stable.userRoundOpen = false
++		s.stable.userOutbound = nil
++		s.stable.userTarget = nil
++		s.access.Unlock()
++	}()
 +	// A large or completely dead subscription must not occupy the loop forever.
 +	budget := s.stable.roundBudget
 +	if budget == 0 {
@@ -1245,21 +1292,25 @@ index 0000000..3c85279
 +		}
 +		previouslySuspect := s.stable.suspect == c.tag
 +		if err != nil {
-+			m := s.stable.memberStats[c.tag]
-+			m.Name = c.tag
-+			m.FailedChecks++
-+			s.stable.memberStats[c.tag] = m
++			s.stable.recordCount(time.Now(), c.tag, 0, 1, 0)
++		}
++		if c.tag == selected && err != nil && s.freshStableUserDataLocked(c, target, roundStarted) {
++			detail := "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(err)
++			s.vetoStableProbeFailureLocked(c, at, probeReason, detail)
++			s.access.Unlock()
++			s.logger.Warn("fallback health test probe-only failure [", probeReason, "] ", c.tag, ": ", detail, "; fresh received data on a new user connection, selection unchanged")
++			return true
 +		}
 +		if c.tag == selected && err != nil {
 +			if s.stable.suspect != c.tag || s.stable.suspectOutbound != c.outbound {
 +				s.stable.suspect = c.tag
 +				s.stable.suspectOutbound = c.outbound
-+				s.stable.confirmAfter = time.Now().Add(3 * time.Second)
++				s.stable.confirmAfter = time.Now().Add(s.stable.failureRetryDelay())
 +				h.lastError = "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(err)
 +				s.health[c.tag] = h
 +				s.appendStableEventLocked(StableFallbackEvent{At: time.Now(), From: c.tag, To: c.tag, Reason: "Suspected check failure: " + h.lastError, CheckReason: probeReason})
 +				s.access.Unlock()
-+				s.logger.Warn("fallback health test suspect [", probeReason, "] ", c.tag, ": ", h.lastError, "; repeating in 3s, traffic selection unchanged")
++				s.logger.Warn("fallback health test suspect [", probeReason, "] ", c.tag, ": ", h.lastError, "; repeating in ", s.stable.failureRetryDelay(), ", traffic selection unchanged")
 +				return false
 +			}
 +			s.stable.suspect = ""
@@ -1377,6 +1428,13 @@ index 0000000..3c85279
 +			return result
 +		}
 +	}
++	if !activeHealthy && s.freshStableUserDataLocked(candidates[active], probeTargets[candidates[active].tag], roundStarted) {
++		detail := s.health[candidates[active].tag].lastError
++		s.vetoStableProbeFailureLocked(candidates[active], time.Now(), checkReason, detail)
++		s.access.Unlock()
++		s.logger.Warn("fallback health test probe-only failure [", checkReason, "] ", selected, "; fresh received data during this round, selection unchanged")
++		return result
++	}
 +	old := s.selected
 +	s.selected = s.selectAvailableLocked()
 +	next := s.selected
@@ -1403,7 +1461,7 @@ index 0000000..3c85279
 +	s.access.Lock()
 +	defer s.access.Unlock()
 +	s.purgeStableEventsLocked(time.Now())
-+	status := &StableFallbackStatus{Stats: s.stableStatsLocked(time.Now()), Active: s.selected, State: "degraded", Events: append([]StableFallbackEvent(nil), s.stable.events...)}
++	status := &StableFallbackStatus{CheckState: s.stable.checkState, Stats: s.stableStatsLocked(time.Now()), Active: s.selected, State: "degraded", Events: append([]StableFallbackEvent(nil), s.stable.events...)}
 +	for i, c := range s.candidates {
 +		h := s.health[c.tag]
 +		state := "standby"
@@ -1444,12 +1502,21 @@ index 0000000..3c85279
 +	}
 +	return status
 +}
++
++// failureRetryDelay starts after the first failed pair has completed. A zero
++// value retains the default for groups constructed outside the option factory.
++func (s *stableFallback) failureRetryDelay() time.Duration {
++	if s.failureRetryInterval == 0 {
++		return 3 * time.Second
++	}
++	return s.failureRetryInterval
++}
 diff --git a/protocol/group/fallback_stable_observation.go b/protocol/group/fallback_stable_observation.go
 new file mode 100644
-index 0000000..3c47b80
+index 0000000..a0af31a
 --- /dev/null
 +++ b/protocol/group/fallback_stable_observation.go
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,315 @@
 +package group
 +
 +import "time"
@@ -1474,9 +1541,7 @@ index 0000000..3c47b80
 +	accountedAt     time.Time
 +	statsSelected   string
 +	statsBackup     bool
-+	switchesTotal   uint64
-+	backupSeconds   float64
-+	memberStats     map[string]StableFallbackMemberStats
++	buckets         map[string][]stableStatsBucket
 +	suspect         string
 +	suspectOutbound any
 +	confirmAfter    time.Time
@@ -1488,20 +1553,17 @@ index 0000000..3c47b80
 +	if o.since.IsZero() {
 +		o.since = now
 +	}
-+	if o.memberStats == nil {
-+		o.memberStats = make(map[string]StableFallbackMemberStats)
++	if o.buckets == nil {
++		o.buckets = make(map[string][]stableStatsBucket)
 +	}
-+	// Keep bookkeeping proportional to current members when providers replace tags.
-+	if len(o.memberStats) > len(s.candidates)+1 {
-+		allowed := make(map[string]bool, len(s.candidates)+1)
-+		allowed[o.statsSelected] = true
-+		for _, candidate := range s.candidates {
-+			allowed[candidate.tag] = true
-+		}
-+		for tag := range o.memberStats {
-+			if !allowed[tag] {
-+				delete(o.memberStats, tag)
-+			}
++	allowed := make(map[string]bool, len(s.candidates)+1)
++	allowed[o.statsSelected] = true
++	for _, c := range s.candidates {
++		allowed[c.tag] = true
++	}
++	for tag := range o.buckets {
++		if len(s.candidates) > 0 && !allowed[tag] {
++			delete(o.buckets, tag)
 +		}
 +	}
 +	if o.statsSelected == "" && s.selected != "" {
@@ -1525,16 +1587,8 @@ index 0000000..3c47b80
 +		o.statsBackup = s.stableIsBackupLocked(s.selected)
 +		return
 +	}
-+	elapsed := o.elapsedSelected(now)
-+	old := o.memberStats[o.statsSelected]
-+	old.Name = o.statsSelected
-+	old.SelectedSeconds += elapsed
-+	old.SwitchesAway++
-+	o.memberStats[o.statsSelected] = old
-+	if o.statsBackup {
-+		o.backupSeconds += elapsed
-+	}
-+	o.switchesTotal++
++	o.accountSelected(now)
++	o.recordCount(now, o.statsSelected, 0, 0, 1)
 +	o.statsSelected = s.selected
 +	o.selectedSince = now
 +	o.accountedAt = time.Time{}
@@ -1543,25 +1597,106 @@ index 0000000..3c47b80
 +	o.suspectOutbound = nil
 +	o.confirmAfter = time.Time{}
 +}
++
++// Minute buckets bound memory independently of request/switch frequency. Counts
++// in the partially overlapping oldest minute are excluded, so no older event is
++// included; boundary undercount is less than one minute. Historical selection
++// duration uses the same conservative boundary. Active intervals clip exactly.
++const stableStatsBucketCount = 1441
++
++type stableStatsBucket struct {
++	minute           int64
++	selectedSeconds  float64
++	backupSeconds    float64
++	connectionErrors uint64
++	failedChecks     uint64
++	switchesAway     uint64
++}
++
++func (o *stableObservation) bucket(at time.Time, tag string) *stableStatsBucket {
++	if o.buckets == nil {
++		o.buckets = make(map[string][]stableStatsBucket)
++	}
++	buckets := o.buckets[tag]
++	if buckets == nil {
++		buckets = make([]stableStatsBucket, stableStatsBucketCount)
++		o.buckets[tag] = buckets
++	}
++	minute := at.Unix() / 60
++	b := &buckets[minute%stableStatsBucketCount]
++	if b.minute != minute {
++		*b = stableStatsBucket{minute: minute}
++	}
++	return b
++}
++func (o *stableObservation) recordCount(now time.Time, tag string, errors, checks, switches uint64) {
++	b := o.bucket(now, tag)
++	b.connectionErrors += errors
++	b.failedChecks += checks
++	b.switchesAway += switches
++}
++func (o *stableObservation) accountSelected(now time.Time) {
++	start := o.selectedSince
++	if o.accountedAt.After(start) {
++		start = o.accountedAt
++	}
++	if cutoff := now.Add(-24 * time.Hour); start.Before(cutoff) {
++		start = cutoff
++	}
++	for start.Before(now) {
++		end := start.Truncate(time.Minute).Add(time.Minute)
++		if end.After(now) {
++			end = now
++		}
++		b := o.bucket(start, o.statsSelected)
++		seconds := end.Sub(start).Seconds()
++		b.selectedSeconds += seconds
++		if o.statsBackup {
++			b.backupSeconds += seconds
++		}
++		start = end
++	}
++	o.accountedAt = now
++}
 +func (s *Fallback) stableStatsLocked(now time.Time) StableFallbackStats {
 +	s.stableSelectionStatsLocked(now)
 +	o := s.stable
-+	stats := StableFallbackStats{Since: o.since, SelectedSince: o.selectedSince, SwitchesTotal: o.switchesTotal, BackupSeconds: o.backupSeconds}
-+	elapsed := o.elapsedSelected(now)
-+	if o.statsBackup {
-+		stats.BackupSeconds += elapsed
++	cutoff := now.Add(-24 * time.Hour)
++	since := o.since
++	if cutoff.After(since) {
++		since = cutoff
 +	}
-+	retained := make(map[string]StableFallbackMemberStats, len(s.candidates))
++	stats := StableFallbackStats{Since: since, SelectedSince: o.selectedSince}
++	for _, buckets := range o.buckets {
++		for _, b := range buckets {
++			at := time.Unix(b.minute*60, 0)
++			if !at.Before(cutoff) && !at.After(now) {
++				stats.SwitchesTotal += b.switchesAway
++				stats.BackupSeconds += b.backupSeconds
++			}
++		}
++	}
 +	for _, c := range s.candidates {
-+		m := o.memberStats[c.tag]
-+		m.Name = c.tag
-+		retained[c.tag] = m
++		m := StableFallbackMemberStats{Name: c.tag}
++		for _, b := range o.buckets[c.tag] {
++			at := time.Unix(b.minute*60, 0)
++			if at.Before(cutoff) || at.After(now) {
++				continue
++			}
++			m.SelectedSeconds += b.selectedSeconds
++			m.ConnectionErrors += b.connectionErrors
++			m.FailedChecks += b.failedChecks
++			m.SwitchesAway += b.switchesAway
++		}
 +		if c.tag == o.statsSelected {
++			elapsed := o.elapsedSelected(now)
 +			m.SelectedSeconds += elapsed
++			if o.statsBackup {
++				stats.BackupSeconds += elapsed
++			}
 +		}
 +		stats.Members = append(stats.Members, m)
 +	}
-+	o.memberStats = retained
 +	return stats
 +}
 +func (s *Fallback) purgeStableEventsLocked(now time.Time) {
@@ -1605,6 +1740,8 @@ index 0000000..3c47b80
 +	Events     []StableFallbackEvent
 +	Active     string
 +	CapturedAt time.Time
++	buckets    map[string][]stableStatsBucket
++	startedAt  time.Time
 +}
 +
 +func (s *Fallback) ExportStableObservation() *StableFallbackObservationSnapshot {
@@ -1615,7 +1752,13 @@ index 0000000..3c47b80
 +	defer s.access.Unlock()
 +	now := time.Now()
 +	s.purgeStableEventsLocked(now)
-+	return &StableFallbackObservationSnapshot{Stats: s.stableStatsLocked(now), Events: append([]StableFallbackEvent(nil), s.stable.events...), Active: s.selected, CapturedAt: now}
++	stats := s.stableStatsLocked(now)
++	s.stable.accountSelected(now)
++	buckets := make(map[string][]stableStatsBucket, len(s.stable.buckets))
++	for tag, entries := range s.stable.buckets {
++		buckets[tag] = append([]stableStatsBucket(nil), entries...)
++	}
++	return &StableFallbackObservationSnapshot{buckets: buckets, startedAt: s.stable.since, Stats: stats, Events: append([]StableFallbackEvent(nil), s.stable.events...), Active: s.selected, CapturedAt: now}
 +}
 +
 +// RestoreStableObservation is called before Start, only after the CLI verified
@@ -1631,11 +1774,23 @@ index 0000000..3c47b80
 +	o.selectedSince = snapshot.Stats.SelectedSince
 +	o.statsSelected = snapshot.Active
 +	o.accountedAt = time.Now()
-+	o.switchesTotal = snapshot.Stats.SwitchesTotal
-+	o.backupSeconds = snapshot.Stats.BackupSeconds
-+	o.memberStats = make(map[string]StableFallbackMemberStats, len(snapshot.Stats.Members))
-+	for _, member := range snapshot.Stats.Members {
-+		o.memberStats[member.Name] = member
++	o.buckets = make(map[string][]stableStatsBucket, len(snapshot.buckets))
++	for tag, entries := range snapshot.buckets {
++		o.buckets[tag] = append([]stableStatsBucket(nil), entries...)
++	}
++	if !snapshot.startedAt.IsZero() {
++		o.since = snapshot.startedAt
++	}
++	// Compatibility for callers constructing a runtime snapshot directly.
++	if snapshot.buckets == nil {
++		for _, m := range snapshot.Stats.Members {
++			b := o.bucket(o.accountedAt, m.Name)
++			b.selectedSeconds = m.SelectedSeconds
++			b.connectionErrors = m.ConnectionErrors
++			b.failedChecks = m.FailedChecks
++			b.switchesAway = m.SwitchesAway
++		}
++
 +	}
 +	o.events = nil
 +	for _, event := range snapshot.Events {
@@ -1646,6 +1801,9 @@ index 0000000..3c47b80
 +	baseline := o.selectedSince
 +	if o.accountedAt.After(baseline) {
 +		baseline = o.accountedAt
++	}
++	if cutoff := now.Add(-24 * time.Hour); baseline.Before(cutoff) {
++		baseline = cutoff
 +	}
 +	return max(0, now.Sub(baseline).Seconds())
 +}
@@ -1676,10 +1834,10 @@ index 0000000..3c47b80
 +}
 diff --git a/protocol/group/fallback_stable_observation_test.go b/protocol/group/fallback_stable_observation_test.go
 new file mode 100644
-index 0000000..9ebc99b
+index 0000000..137b584
 --- /dev/null
 +++ b/protocol/group/fallback_stable_observation_test.go
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,322 @@
 +package group
 +
 +import (
@@ -1914,6 +2072,92 @@ index 0000000..9ebc99b
 +	}
 +	if custom.confirmURL != "https://custom.example/" || !custom.confirmStatus.Contains(201) || custom.confirmStatus.Contains(204) {
 +		t.Fatal("explicit confirmation settings changed")
++	}
++}
++
++func TestStableStatsRollingWindow(t *testing.T) {
++	s := stableTestGroup(t, newFallbackHealthTestOutbound("primary", true), newFallbackHealthTestOutbound("backup", true))
++	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
++	s.stable.since = start
++	s.stable.selectedSince = start
++	s.stable.statsSelected = "primary"
++	s.stable.accountedAt = time.Time{}
++	s.stableStatsLocked(start)
++	s.stable.recordCount(start, "primary", 1, 1, 0)
++	s.selected = "backup"
++	s.stableSelectionStatsLocked(start.Add(time.Hour))
++	stats := s.stableStatsLocked(start.Add(25 * time.Hour))
++	if stats.Since != start.Add(time.Hour) || stats.SwitchesTotal != 1 || stats.Members[0].ConnectionErrors != 0 || stats.Members[0].FailedChecks != 0 || stats.Members[0].SelectedSeconds != 0 || stats.BackupSeconds != 24*time.Hour.Seconds() {
++		t.Fatalf("not rolling: %+v", stats)
++	}
++	stats = s.stableStatsLocked(start.Add(25*time.Hour + time.Minute))
++	if stats.SwitchesTotal != 0 || stats.Members[0].SwitchesAway != 0 {
++		t.Fatalf("switch did not expire: %+v", stats)
++	}
++}
++
++func TestStableStatsMinuteBoundaryNeverIncludesExpiredCounters(t *testing.T) {
++	s := stableTestGroup(t, newFallbackHealthTestOutbound("primary", true))
++	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
++	s.stable.since, s.stable.selectedSince = start, start
++	s.stable.statsSelected = "primary"
++	s.stable.recordCount(start.Add(10*time.Second), "primary", 2, 3, 4)
++	// The oldest partial minute is conservatively excluded, including a newer
++	// event in that same minute: counts never include anything older than 24h.
++	s.stable.recordCount(start.Add(40*time.Second), "primary", 5, 6, 7)
++	s.stable.recordCount(start.Add(time.Minute), "primary", 11, 12, 13)
++	stats := s.stableStatsLocked(start.Add(24*time.Hour + 30*time.Second))
++	if stats.Members[0].ConnectionErrors != 11 || stats.Members[0].FailedChecks != 12 || stats.SwitchesTotal != 13 || stats.Members[0].SelectedSeconds != 86400 {
++		t.Fatalf("bad boundary: %+v", stats)
++	}
++	for i := 0; i < 10000; i++ {
++		s.stable.recordCount(start.Add(time.Duration(i)*time.Minute), "primary", 1, 1, 1)
++	}
++	if len(s.stable.buckets["primary"]) != stableStatsBucketCount {
++		t.Fatal("unbounded buckets")
++	}
++}
++
++func TestStableStatsHistoricalIntervalsClipAtWindow(t *testing.T) {
++	s := stableTestGroup(t, newFallbackHealthTestOutbound("primary", true), newFallbackHealthTestOutbound("backup", true))
++	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
++	s.stable.since, s.stable.selectedSince = start, start
++	s.stable.statsSelected = "primary"
++	s.selected = "backup"
++	s.stableSelectionStatsLocked(start.Add(2 * time.Hour))
++	stats := s.stableStatsLocked(start.Add(25 * time.Hour))
++	if stats.Members[0].SelectedSeconds != time.Hour.Seconds() || stats.Members[1].SelectedSeconds != (23*time.Hour).Seconds() || stats.BackupSeconds != (23*time.Hour).Seconds() {
++		t.Fatalf("historical duration outside window: %+v", stats)
++	}
++	stats = s.stableStatsLocked(start.Add(25*time.Hour + 30*time.Second))
++	// Historical data can lose at most the oldest partial minute; current
++	// selection is exact, and their sum can never exceed 24h.
++	total := stats.Members[0].SelectedSeconds + stats.Members[1].SelectedSeconds
++	if total > 86400 || total < 86340 {
++		t.Fatalf("duration boundary precision: %v", total)
++	}
++}
++
++func TestStableRollingBucketsSurviveReloadWithoutReaging(t *testing.T) {
++	a := newFallbackHealthTestOutbound("primary", true)
++	s := stableTestGroup(t, a)
++	now := time.Now()
++	s.stable.since = now.Add(-25 * time.Hour)
++	s.stable.recordCount(now.Add(-25*time.Hour), "primary", 3, 4, 5)
++	s.stable.recordCount(now, "primary", 7, 8, 9)
++	snapshot := s.ExportStableObservation()
++	replacement := stableTestGroup(t, a)
++	replacement.RestoreStableObservation(snapshot)
++	if replacement.stable.since != s.stable.since {
++		t.Fatal("reload replaced actual reset start with rolling boundary")
++	}
++	stats := replacement.stableStatsLocked(snapshot.CapturedAt.Add(25 * time.Hour))
++	if stats.SwitchesTotal != 0 || stats.Members[0].ConnectionErrors != 0 || stats.Members[0].FailedChecks != 0 {
++		t.Fatalf("reload re-aged expired counts: %+v", stats)
++	}
++	replacement.stable.recordCount(now, "primary", 100, 100, 100)
++	if s.stable.bucket(now, "primary").connectionErrors != 7 {
++		t.Fatal("reload snapshot shares mutable counters")
 +	}
 +}
 diff --git a/protocol/group/fallback_stable_regression_test.go b/protocol/group/fallback_stable_regression_test.go
@@ -2205,6 +2449,93 @@ index 0000000..c462be0
 +		}
 +	}
 +}
+diff --git a/protocol/group/fallback_stable_retry_test.go b/protocol/group/fallback_stable_retry_test.go
+new file mode 100644
+index 0000000..03c2b16
+--- /dev/null
++++ b/protocol/group/fallback_stable_retry_test.go
+@@ -0,0 +1,81 @@
++package group
++
++import (
++	"context"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/json/badoption"
++	"testing"
++	"time"
++)
++
++func TestStableFailureRetryIntervalDefaultAndValidation(t *testing.T) {
++	for _, tc := range []struct {
++		interval time.Duration
++		want     time.Duration
++		invalid  bool
++	}{
++		{0, 3 * time.Second, false}, {time.Second, time.Second, false}, {2 * time.Minute, 2 * time.Minute, false}, {5 * time.Minute, 5 * time.Minute, false},
++		{-time.Second, 0, true}, {999 * time.Millisecond, 0, true}, {5*time.Minute + time.Nanosecond, 0, true},
++	} {
++		stable, err := newStableFallback(option.FallbackOutboundOptions{Stable: true, FailureRetryInterval: badoption.Duration(tc.interval)})
++		if tc.invalid {
++			if err == nil {
++				t.Fatalf("accepted retry interval %s", tc.interval)
++			}
++			continue
++		}
++		if err != nil {
++			t.Fatal(err)
++		}
++		if stable.failureRetryDelay() != tc.want {
++			t.Fatalf("retry interval %s: got %s want %s", tc.interval, stable.failureRetryDelay(), tc.want)
++		}
++	}
++}
++func TestStableCustomFailureRetryDeadlineCannotBeBypassed(t *testing.T) {
++	a, b := newFallbackHealthTestOutbound("primary", false), newFallbackHealthTestOutbound("backup", true)
++	s := stableTestGroup(t, a, b)
++	config, err := newStableFallback(option.FallbackOutboundOptions{Stable: true, FailureRetryInterval: badoption.Duration(2 * time.Minute)})
++	if err != nil {
++		t.Fatal(err)
++	}
++	s.stable.failureRetryInterval = config.failureRetryInterval
++	before := time.Now()
++	s.checkOutbounds(context.Background(), 0)
++	finished := time.Now()
++	due := s.StableStatus().NextConfirmation
++	if due == nil {
++		t.Fatal("missing custom confirmation deadline")
++	}
++	if due.Before(before.Add(2*time.Minute)) || due.After(finished.Add(2*time.Minute)) {
++		t.Fatalf("wrong custom deadline %s", due)
++	}
++	if delay := s.stableCheckDelay(); delay < 119*time.Second || delay > 2*time.Minute {
++		t.Fatalf("timer ignored custom retry interval %s", delay)
++	}
++	s.checkOutbounds(context.Background(), 0)
++	if a.dialCount != 2 || b.dialCount != 0 {
++		t.Fatal("early wake bypassed custom interval")
++	}
++	expireStableSuspicion(s)
++	s.checkOutbounds(context.Background(), time.Hour)
++	if a.dialCount != 4 || b.dialCount != 1 || selectedTag(s) != "backup" {
++		t.Fatal("expired custom retry did not perform fresh confirmation")
++	}
++}
++
++func TestStableFailureRetryDelayExcludesProbeExecution(t *testing.T) {
++	primary := &stableDelayedHealthyOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", false), delay: 20 * time.Millisecond}
++	backup := newFallbackHealthTestOutbound("backup", true)
++	s := stableCandidateGroup(t, fallbackCandidate{tag: primary.Tag(), outbound: primary}, fallbackCandidate{tag: backup.Tag(), outbound: backup})
++	s.stable.failureRetryInterval = time.Second
++	started := time.Now()
++	s.checkOutbounds(context.Background(), 0)
++	due := s.StableStatus().NextConfirmation
++	if due == nil || due.Sub(started) < 1035*time.Millisecond {
++		t.Fatal("probe execution consumed the configured retry delay")
++	}
++	if backup.dialCount != 0 {
++		t.Fatal("first failed pair reached reserve")
++	}
++}
 diff --git a/protocol/group/fallback_stable_test.go b/protocol/group/fallback_stable_test.go
 new file mode 100644
 index 0000000..f3053d7
@@ -2458,6 +2789,303 @@ index 0000000..f3053d7
 +		if c.outbound.(*fallbackHealthTestOutbound).dialCount != 0 {
 +			t.Fatal("healthy primary triggered reserve sweep")
 +		}
++	}
++}
+diff --git a/protocol/group/fallback_stable_user_evidence.go b/protocol/group/fallback_stable_user_evidence.go
+new file mode 100644
+index 0000000..1f6f806
+--- /dev/null
++++ b/protocol/group/fallback_stable_user_evidence.go
+@@ -0,0 +1,64 @@
++package group
++
++import (
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/common/urltest"
++	"github.com/sagernet/sing/common/bufio"
++	N "github.com/sagernet/sing/common/network"
++	"net"
++	"sync"
++	"time"
++)
++
++// One observation slot per group, restricted to the current health-check round.
++// No bytes, destinations, or stream history are retained.
++type stableUserObservation struct {
++	userRoundOpen    bool
++	userRoundStarted time.Time
++	userDataAt       time.Time
++	userCreatedAt    time.Time
++	userOutbound     adapter.Outbound
++	userTarget       N.Dialer
++	checkState       string
++}
++
++func (s *Fallback) observeStableUserConn(conn net.Conn, candidate fallbackCandidate, target N.Dialer, createdAt time.Time) net.Conn {
++	var first sync.Once
++	return bufio.NewCounterConn(conn, []N.CountFunc{func(n int64) {
++		if n <= 0 {
++			return
++		}
++		first.Do(func() {
++			s.access.Lock()
++			defer s.access.Unlock()
++			o := s.stable
++			h, ok := s.health[candidate.tag]
++			if !o.userRoundOpen || createdAt.Before(o.userRoundStarted) || candidate.tag != s.selected || !ok || h.outbound != candidate.outbound || !urltest.SameProbeTarget(candidate.outbound, target) {
++				return
++			}
++			o.userDataAt = time.Now()
++			o.userCreatedAt = createdAt
++			o.userOutbound = candidate.outbound
++			o.userTarget = target
++		})
++	}}, nil)
++}
++func (s *Fallback) freshStableUserDataLocked(candidate fallbackCandidate, target N.Dialer, roundStarted time.Time) bool {
++	o := s.stable
++	return o.userRoundOpen && !o.userCreatedAt.Before(roundStarted) && !o.userDataAt.Before(roundStarted) && o.userOutbound == candidate.outbound && urltest.SameProbeTarget(o.userTarget, target) && urltest.SameProbeTarget(candidate.outbound, target)
++}
++func (s *Fallback) vetoStableProbeFailureLocked(candidate fallbackCandidate, at time.Time, reason, detail string) {
++	o := s.stable
++	h := s.health[candidate.tag]
++	h.checked = true
++	h.alive = true
++	h.checkedAt = at
++	h.lastError = "probe-only failure: " + detail
++	h.recoverySuccesses = 0
++	s.health[candidate.tag] = h
++	o.suspect = ""
++	o.suspectOutbound = nil
++	o.confirmAfter = time.Time{}
++	o.checkState = "probe_only_failure"
++	s.appendStableEventLocked(StableFallbackEvent{At: time.Now(), From: candidate.tag, To: candidate.tag, Reason: "Probe-only failure: fresh received data on a new user TCP connection; " + detail, CheckReason: reason})
++}
+diff --git a/protocol/group/fallback_stable_user_evidence_test.go b/protocol/group/fallback_stable_user_evidence_test.go
+new file mode 100644
+index 0000000..f4234ac
+--- /dev/null
++++ b/protocol/group/fallback_stable_user_evidence_test.go
+@@ -0,0 +1,221 @@
++package group
++
++import (
++	"context"
++	"errors"
++	"github.com/sagernet/sing/common/bufio"
++	M "github.com/sagernet/sing/common/metadata"
++	"io"
++	"net"
++	"testing"
++	"time"
++)
++
++func TestStableFreshUserDataVetoesOnlyCurrentFailingRound(t *testing.T) {
++	node := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", false)}
++	backup := newFallbackHealthTestOutbound("backup", true)
++	s := stableCandidateGroup(t, fallbackCandidate{tag: node.Tag(), outbound: node}, fallbackCandidate{tag: backup.Tag(), outbound: backup})
++	fresh := true
++	node.dial = func(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++		if destination.Fqdn == "user.test" {
++			client, server := net.Pipe()
++			go func() { defer server.Close(); server.Write([]byte{1}) }()
++			return client, nil
++		}
++		if destination.Fqdn == "health.test" && fresh {
++			conn, err := s.DialContext(ctx, "tcp", M.Socksaddr{Fqdn: "user.test", Port: 443})
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer conn.Close()
++			buffer := make([]byte, 1)
++			if n, _ := conn.Read(buffer); n != 1 {
++				t.Fatal("user data not received")
++			}
++		}
++		return nil, errors.New("probe target unavailable")
++	}
++	s.checkOutbounds(context.Background(), 0)
++	if st := s.StableStatus(); st.State != "primary" || st.CheckState != "probe_only_failure" || st.NextConfirmation != nil || backup.dialCount != 0 {
++		t.Fatalf("fresh data was ignored: %+v", st)
++	}
++	fresh = false
++	confirmStableFailure(s)
++	if selectedTag(s) != "backup" {
++		t.Fatal("previous round's evidence vetoed later failed pairs")
++	}
++}
++func TestStableDialOnlyAndOldStreamCannotVetoFailure(t *testing.T) {
++	for _, old := range []bool{false, true} {
++		t.Run(map[bool]string{false: "dial_only", true: "old_stream"}[old], func(t *testing.T) {
++			node := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", false)}
++			backup := newFallbackHealthTestOutbound("backup", true)
++			s := stableCandidateGroup(t, fallbackCandidate{tag: node.Tag(), outbound: node}, fallbackCandidate{tag: backup.Tag(), outbound: backup})
++			var prior net.Conn
++			var server net.Conn
++			node.dial = func(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++				if destination.Fqdn == "user.test" {
++					client, peer := net.Pipe()
++					server = peer
++					return client, nil
++				}
++				if destination.Fqdn == "health.test" && prior == nil {
++					conn, err := s.DialContext(ctx, "tcp", M.Socksaddr{Fqdn: "user.test", Port: 443})
++					if err != nil {
++						t.Fatal(err)
++					}
++					prior = conn
++				}
++				if destination.Fqdn == "health.test" && old {
++					go server.Write([]byte{1})
++					buffer := make([]byte, 1)
++					prior.Read(buffer)
++					old = false
++				}
++				return nil, errors.New("probe target unavailable")
++			}
++			if old {
++				var err error
++				prior, err = s.DialContext(context.Background(), "tcp", M.Socksaddr{Fqdn: "user.test", Port: 443})
++				if err != nil {
++					t.Fatal(err)
++				}
++			}
++			defer func() {
++				if prior != nil {
++					prior.Close()
++				}
++				if server != nil {
++					server.Close()
++				}
++			}()
++			confirmStableFailure(s)
++			if selectedTag(s) != "backup" {
++				t.Fatal("TCP dial or pre-existing stream vetoed failed checks")
++			}
++		})
++	}
++}
++
++func TestStableFreshDataDuringConfirmationCancelsSuspicionViaCopy(t *testing.T) {
++	node := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", false)}
++	backup := newFallbackHealthTestOutbound("backup", true)
++	s := stableCandidateGroup(t, fallbackCandidate{tag: node.Tag(), outbound: node}, fallbackCandidate{tag: backup.Tag(), outbound: backup})
++	fresh := false
++	node.dial = func(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++		if destination.Fqdn == "user.test" {
++			client, server := net.Pipe()
++			go func() { defer server.Close(); server.Write([]byte{1}) }()
++			return client, nil
++		}
++		if destination.Fqdn == "health.test" && fresh {
++			conn, err := s.DialContext(ctx, "tcp", M.Socksaddr{Fqdn: "user.test", Port: 443})
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer conn.Close()
++			if n, err := bufio.Copy(io.Discard, conn); n != 1 || err != nil {
++				t.Fatalf("optimized user read %d,%v", n, err)
++			}
++		}
++		return nil, errors.New("probe target unavailable")
++	}
++	s.checkOutbounds(context.Background(), 0)
++	expireStableSuspicion(s)
++	fresh = true
++	s.checkOutbounds(context.Background(), 0)
++	status := s.StableStatus()
++	if status.State != "primary" || status.NextConfirmation != nil || status.CheckState != "probe_only_failure" || backup.dialCount != 0 {
++		t.Fatalf("fresh confirmation-round data did not cancel suspicion: %+v", status)
++	}
++}
++func TestStableUserDataFromReplacedIdentityIsDiscarded(t *testing.T) {
++	node := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", false)}
++	replacement := newFallbackHealthTestOutbound("primary", true)
++	s := stableCandidateGroup(t, fallbackCandidate{tag: node.Tag(), outbound: node})
++	node.dial = func(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++		if destination.Fqdn == "user.test" {
++			client, server := net.Pipe()
++			go func() { defer server.Close(); server.Write([]byte{1}) }()
++			return client, nil
++		}
++		if destination.Fqdn == "health.test" {
++			conn, err := s.DialContext(ctx, "tcp", M.Socksaddr{Fqdn: "user.test", Port: 443})
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer conn.Close()
++			s.access.Lock()
++			s.candidates[0].outbound = replacement
++			s.health["primary"] = fallbackHealth{outbound: replacement}
++			s.access.Unlock()
++			buffer := make([]byte, 1)
++			conn.Read(buffer)
++			s.access.RLock()
++			recorded := !s.stable.userDataAt.IsZero()
++			s.access.RUnlock()
++			if recorded {
++				t.Fatal("obsolete root identity supplied fresh evidence")
++			}
++		}
++		return nil, errors.New("obsolete probe")
++	}
++	s.checkOutbounds(context.Background(), 0)
++	if s.StableStatus().CheckState == "probe_only_failure" {
++		t.Fatal("replaced identity overruled health checks")
++	}
++}
++
++func TestStableFreshDataDuringReserveProbePreventsLateCommit(t *testing.T) {
++	node := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", false)}
++	backup := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("backup", true)}
++	s := stableCandidateGroup(t, fallbackCandidate{tag: node.Tag(), outbound: node}, fallbackCandidate{tag: backup.Tag(), outbound: backup})
++	node.dial = func(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++		if destination.Fqdn == "user.test" {
++			client, server := net.Pipe()
++			go func() { defer server.Close(); server.Write([]byte{1}) }()
++			return client, nil
++		}
++		return nil, errors.New("probe target unavailable")
++	}
++	backup.dial = func(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++		user, err := s.DialContext(ctx, "tcp", M.Socksaddr{Fqdn: "user.test", Port: 443})
++		if err != nil {
++			t.Fatal(err)
++		}
++		defer user.Close()
++		buffer := make([]byte, 1)
++		user.Read(buffer)
++		return backup.fallbackHealthTestOutbound.DialContext(ctx, network, destination)
++	}
++	confirmStableFailure(s)
++	if status := s.StableStatus(); status.State != "primary" || status.CheckState != "probe_only_failure" || status.Stats.SwitchesTotal != 0 {
++		t.Fatalf("late evidence did not prevent switch: %+v", status)
++	}
++}
++
++func TestStableUserDataFromChangedNestedLeafIsDiscarded(t *testing.T) {
++	old, replacement := newFallbackHealthTestOutbound("leaf", true), newFallbackHealthTestOutbound("leaf", true)
++	wrapper := &stableMutableGroup{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", true), selected: old}
++	s := stableCandidateGroup(t, fallbackCandidate{tag: wrapper.Tag(), outbound: wrapper})
++	s.access.Lock()
++	s.stable.userRoundOpen = true
++	s.stable.userRoundStarted = time.Now().Add(-time.Millisecond)
++	s.access.Unlock()
++	client, server := net.Pipe()
++	defer client.Close()
++	defer server.Close()
++	observed := s.observeStableUserConn(client, s.candidates[0], old, time.Now())
++	wrapper.mu.Lock()
++	wrapper.selected = replacement
++	wrapper.mu.Unlock()
++	go server.Write([]byte{1})
++	buffer := make([]byte, 1)
++	observed.Read(buffer)
++	s.access.RLock()
++	recorded := !s.stable.userDataAt.IsZero()
++	s.access.RUnlock()
++	if recorded {
++		t.Fatal("old nested leaf supplied evidence for its replacement")
 +	}
 +}
 diff --git a/protocol/parser/outbound.go b/protocol/parser/outbound.go

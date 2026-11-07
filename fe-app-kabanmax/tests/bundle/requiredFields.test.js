@@ -120,6 +120,7 @@ describe('a field that must not stay empty', () => {
     ['urltest', 'name'],
     ['urltest', 'testing_url'],
     ['fallback', 'name'],
+    ['fallback', 'failure_retry_interval'],
     ['level', 'name'],
     ['tunnel', 'name'],
     ['tunnel', 'address'],

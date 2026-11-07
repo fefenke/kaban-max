@@ -554,8 +554,8 @@ describe('the group details dialogs', () => {
   it('name it on every node, the chosen one included, when there are', async () => {
     expect(await fallbackLevelChips(['Group #1', 'Group #2'])).toEqual([
       'Group #1',
-      'Group #1',
       'Group #2',
+      'Group #1', // Selected value now follows the node list in collapsed parameters.
     ]);
   });
 });

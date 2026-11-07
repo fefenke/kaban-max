@@ -176,7 +176,7 @@ function drawBoar(ctx, x, y, scale = 1, pose = "running", frame = 0) {
     ctx.fillStyle = "#87945e";
     ctx.fillRect(x + 2 * scale, y + 8 * scale, 5 * scale, 3 * scale);
   }
-  if (pose === "running" || pose === "install")
+  if (pose === "install")
     drawAcorn(ctx, x + 24 * scale, y + 11 * scale, scale);
 }
 function drawAcorn(ctx, x, y, scale = 1) {
@@ -301,22 +301,22 @@ async function command(args) {
   return result;
 }
 function renderZapret2() {
-  const status = textE("p", {}, _("Loading..."));
-  const details = textE(
-    "p",
-    {},
-    _(
-      "Official zapret2 engine and Lua update together. Section strategies are kept."
-    )
+  const status = textE(
+    "span",
+    { class: "fkp_components-page__heading-version" },
+    ""
   );
+  const details = textE("p", { role: "status", hidden: true });
   const install = textE(
     "button",
     { type: "button", class: "cbi-button cbi-button-action" },
     _("Install / Update")
   );
   const root = textE("div", { class: "fkp_components-page__block" }, [
-    textE("b", {}, "Zapret2"),
-    status,
+    textE("div", { class: "fkp_components-page__heading" }, [
+      textE("b", {}, "Zapret2"),
+      status
+    ]),
     details,
     install
   ]);
@@ -332,12 +332,14 @@ function renderZapret2() {
     try {
       state = await command(["zapret2_status"]);
       busy = Boolean(state.running);
-      status.textContent = `${_("Installed")}: ${state.installed || "\u2014"} \xB7 ${_("Latest")}: ${state.latest || "\u2014"}${state.architecture ? ` \xB7 ${state.architecture}` : ""}`;
-      details.textContent = state.success === false || busy ? state.message || (busy ? _("in progress") : _("failed")) : checked && state.latest ? state.latest === state.installed ? _("No updates available") : _("Update available") : _("Check for updates before installation");
+      status.textContent = state.installed || "\u2014";
+      details.textContent = state.success === false || busy ? state.message || (busy ? _("in progress") : _("failed")) : checked && state.latest ? state.latest === state.installed ? _("No updates available") : `${_("Update available")}: ${state.latest}` : "";
+      details.hidden = !details.textContent;
       if (busy && root.isConnected)
         window.setTimeout(() => void refresh(), 1500);
     } catch (error) {
       details.textContent = error.message;
+      details.hidden = false;
       busy = false;
       checked = false;
     }
@@ -353,6 +355,7 @@ function renderZapret2() {
       await refresh();
     } catch (error) {
       details.textContent = error.message;
+      details.hidden = false;
       busy = false;
       checked = false;
       draw();
@@ -368,38 +371,21 @@ function renderZapret2() {
 
 // src/kabanmax/tabs/components/render.ts
 var pageRoot = null;
-function versionRow(name, id) {
-  return textE("div", { class: "fkp_components-page__version" }, [
-    textE("b", {}, name),
-    textE("div", { id })
-  ]);
-}
 function render() {
   pageRoot = textE(
     "div",
     { id: "components-status", class: "fkp_components-page" },
     [
       textE("div", { class: "fkp_components-page__controls" }, [
-        textE(
-          "div",
-          {
-            class: "fkp_components-page__block fkp_components-page__block--versions"
-          },
-          [
-            textE("b", {}, _("Installed versions")),
-            versionRow("KabanMax", "components-kabanmax-version"),
-            versionRow("sing-box-kabanmax", "components-core-version")
-          ]
-        ),
         textE("div", {
           id: "components-actions",
           class: "fkp_components-page__block"
         }),
+        renderZapret2(),
         textE("div", {
           id: "components-config",
           class: "fkp_components-page__block"
-        }),
-        renderZapret2()
+        })
       ]),
       textE("div", { id: "components-game", class: "fkp_components-page__game" }),
       textE("div", { id: "components-run", class: "fkp_components-page__run" })
@@ -2443,6 +2429,10 @@ async function requestClashApi(path, init, timeout, options) {
   const method = (init?.method || "GET").toUpperCase();
   const body = typeof init?.body === "string" ? init.body : "";
   const keepsRunning = options?.keepsRunningAfterTimeout || method !== "GET" && method !== "HEAD";
+  if (options?.coldReadThroughCli && !keepsRunning && !directClashApiReachable) {
+    if (canReachClashApiFromBrowser()) void probeDirectClashApi();
+    return fetchClashApiThroughCli(method, path, body, options?.summary);
+  }
   if (keepsRunning && canFetchClashApiDirectly() && !directClashApiReachable) {
     await probeDirectClashApi();
   }
@@ -2563,7 +2553,8 @@ function getClashApiProxies() {
   return requestClashApi(
     "/proxies",
     void 0,
-    CLASH_API_FETCH_TIMEOUT_MS
+    CLASH_API_FETCH_TIMEOUT_MS,
+    { coldReadThroughCli: true }
   );
 }
 function getClashApiTailscale() {
@@ -2590,7 +2581,8 @@ function getClashApiProxyProviders() {
   return requestClashApi(
     "/providers/proxies",
     void 0,
-    CLASH_API_FETCH_TIMEOUT_MS
+    CLASH_API_FETCH_TIMEOUT_MS,
+    { coldReadThroughCli: true }
   );
 }
 function getClashApiConnections() {
@@ -2612,7 +2604,7 @@ async function getClashApiConnectionsSummary() {
     "/connections",
     void 0,
     CLASH_API_FETCH_TIMEOUT_MS,
-    { summary: true }
+    { summary: true, coldReadThroughCli: true }
   );
 }
 function closeClashApiConnection(connectionId) {
@@ -4923,11 +4915,18 @@ function initController() {
       onClick
     });
     part(root, "components-actions").replaceChildren(
-      textE("b", {}, "KabanMax"),
+      textE("div", { class: "fkp_components-page__heading" }, [
+        textE("b", {}, "KabanMax"),
+        textE("span", { id: "components-kabanmax-version" })
+      ]),
+      textE("div", { class: "fkp_components-page__core" }, [
+        textE("span", {}, "sing-box-kabanmax "),
+        textE("span", { id: "components-core-version" })
+      ]),
       textE(
         "p",
-        { role: "status" },
-        releaseBusy ? [createBoar("check"), _("The boar looks for fresh acorns...")] : releaseError || (release ? `${_("Installed")}: ${release.installed || "\u2014"} \xB7 ${_("Latest")}: ${release.latest || "\u2014"} \xB7 sing-box: ${release.core_installed || "\u2014"} \xB7 ${release.core_latest || "\u2014"} \xB7 ${release.update_available ? _("Update available") : _("No updates available")}` : _("Check for updates before installation"))
+        { role: "status", hidden: !releaseBusy && !releaseError && !release },
+        releaseBusy ? _("The boar looks for fresh acorns...") : releaseError || (release?.update_available ? `${_("Update available")}: ${release.latest || release.release || ""}` : release ? _("No updates available") : "")
       ),
       button(
         "update",
@@ -4962,6 +4961,7 @@ function initController() {
         openRemoveDialog
       )
     );
+    renderVersions();
   }
   function renderVersions() {
     const info = store.get().diagnosticsSystemInfo;
@@ -5462,6 +5462,27 @@ ${ansiStyles}
         max-height: max(16rem, 55vh);
     }
 }
+/* The control rail stays compact; the playable area takes the available width. */
+.fkp_components-page__controls { display:flex; flex-direction:column; gap:10px; align-self:start; min-width:0; }
+.fkp_components-page__block { display:flex; flex-direction:column; align-items:stretch; gap:10px; padding:14px; border-width:1px; border-color:var(--border-color-low,#e2e6e9); border-radius:8px; }
+.fkp_components-page__block p { margin:0; line-height:1.45; font-size:12px; overflow-wrap:anywhere; }
+.fkp_components-page__block p[hidden] { display:none; }
+.fkp_components-page__heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; }
+.fkp_components-page__heading > span { font-size:12px; color:var(--text-color-medium,#65717d); }
+.fkp_components-page__core { color:var(--text-color-medium,#65717d); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.fkp_components-page__core > span { display:inline; }
+.fkp_components-page__config-buttons { display:flex; gap:8px; flex-wrap:wrap; }
+.fkp_components-page__config-buttons > .fkp-partial-button { flex:1 1 95px; }
+.fkp_components-page__game { min-width:0; align-self:stretch; }
+.fkp_acorn-game { box-sizing:border-box; height:100%; border:1px solid var(--border-color-low,#e2e6e9); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; }
+.fkp_acorn-game__bar { padding:12px; }
+.fkp_acorn-game canvas { width:100%; max-width:840px; height:auto; max-height:none; aspect-ratio:360 / 122; image-rendering:pixelated; touch-action:manipulation; align-self:center; }
+@container (min-width:700px) { .fkp_components-page { grid-template-columns:270px minmax(0,1fr); align-items:start; } .fkp_components-page__controls { grid-column:1; grid-row:1; } .fkp_components-page__game { grid-column:2; grid-row:1; } .fkp_components-page__run { grid-column:1 / -1; } }
+@container (max-width:699px) { .fkp_components-page { grid-template-columns:minmax(0,1fr); } .fkp_components-page__game { grid-row:auto; grid-column:1; min-height:200px; } }
+
+
+.fkp_acorn-game { background:#f2f4dd; }
+.fkp_acorn-game__bar { background:var(--background-color-high,#fff); }
 `;
 
 // src/kabanmax/tabs/components/index.ts
@@ -10731,88 +10752,159 @@ function checkReason(reason) {
       return "";
   }
 }
+function observationPeriod(since, now = Date.now()) {
+  const seconds3 = count((now - Date.parse(since)) / 1e3);
+  return { fullDay: seconds3 >= 86400, seconds: Math.min(86400, seconds3) };
+}
+function metric(label, value, warning = false) {
+  return textE(
+    "div",
+    {
+      class: `kaban-observation__metric${warning ? " kaban-observation__metric--warning" : ""}`
+    },
+    [
+      textE("span", { class: "kaban-observation__metric-label" }, label),
+      textE("strong", { class: "kaban-observation__metric-value" }, String(value))
+    ]
+  );
+}
 function renderFallbackObservation(info) {
   const status = info.stableStatus;
   if (!status?.stats) return [];
   const summary = observationSummary(status);
-  const events = recentFallbackEvents(status.events);
-  const name = (code) => info.outbounds.find((member) => member.code === code)?.displayName || code.split("/").pop() || code;
-  const row2 = (label, value) => textE(
-    "div",
-    {
-      style: "display:flex;justify-content:space-between;gap:12px;padding:3px 0"
-    },
-    [textE("span", {}, label), textE("strong", {}, String(value))]
+  const period = observationPeriod(summary.since);
+  const selected = info.outbounds.find(
+    (member) => member.code === status.active
   );
   return [
-    textE(
-      "section",
-      {
-        class: "fkp-fallback-observation",
-        style: "margin:14px 0;overflow-x:auto"
-      },
-      [
-        textE("h4", {}, _("Observation")),
-        row2(_("Observation since"), new Date(summary.since).toLocaleString()),
-        row2(
-          _("Current selection duration"),
-          formatDuration(summary.selectedSeconds)
-        ),
-        row2(_("Switches during observation"), summary.switches),
-        row2(_("Time on backup"), formatDuration(summary.backupSeconds)),
-        row2(_("Failed check rounds"), summary.failedChecks),
-        row2(_("Connection opening errors"), summary.connectionErrors),
-        textE("table", { style: "width:100%;margin-top:8px" }, [
+    textE("section", { class: "kaban-observation" }, [
+      textE("header", { class: "kaban-observation__heading" }, [
+        textE("div", {}, [
+          textE("h4", {}, _("Connection overview")),
           textE(
-            "thead",
-            {},
-            textE(
-              "tr",
-              {},
-              [
-                _("Node"),
-                _("Time selected"),
-                _("Failed check rounds"),
-                _("Connection opening errors"),
-                _("Switches away")
-              ].map((text8) => textE("th", {}, text8))
-            )
-          ),
-          textE(
-            "tbody",
-            {},
-            status.stats.members.map(
-              (member) => textE(
-                "tr",
-                {},
-                [
-                  name(member.name),
-                  formatDuration(member.selected_seconds),
-                  member.failed_checks,
-                  member.connection_errors,
-                  member.switches_away
-                ].map((value) => textE("td", {}, String(value)))
-              )
-            )
+            "span",
+            { class: "kaban-observation__period" },
+            period.fullDay ? _("Last 24 hours") : `${_("Since start")} \xB7 ${formatDuration(period.seconds)}`
           )
         ]),
-        textE("details", { style: "margin-top:10px" }, [
-          textE("summary", {}, _("Recent events (up to 24 hours)")),
-          events.length ? textE(
-            "ol",
-            { style: "padding-left:20px" },
-            [...events].reverse().map(
-              (event) => textE("li", { style: "padding:4px 0" }, [
-                textE("time", {}, new Date(event.at).toLocaleString()),
-                ` \xB7 ${checkReason(event.check_reason)}${event.check_reason ? " \xB7 " : ""}`,
-                event.from && event.to && event.from !== event.to ? `${name(event.from)} \u2192 ${name(event.to)} \xB7 ` : "",
+        textE(
+          "span",
+          {
+            class: `kaban-observation__state kaban-observation__state--${status.state}`
+          },
+          fallbackStateLabel(status.state)
+        )
+      ]),
+      textE("div", { class: "kaban-observation__selected" }, [
+        textE("span", { class: "kaban-observation__dot", "aria-hidden": "true" }),
+        textE("strong", {}, selected?.displayName || status.active || "\u2014"),
+        textE(
+          "span",
+          {},
+          `${_("Selected for")} ${formatDuration(Math.min(summary.selectedSeconds, period.seconds))}`
+        )
+      ]),
+      ...status.check_state === "probe_only_failure" ? [
+        textE(
+          "p",
+          { class: "kaban-observation__probe-notice" },
+          _(
+            "Health checks failed, but a new connection received data. Server selection was kept."
+          )
+        )
+      ] : [],
+      textE("div", { class: "kaban-observation__metrics" }, [
+        metric(_("Switches"), summary.switches),
+        metric(_("Time on backup"), formatDuration(summary.backupSeconds)),
+        metric(
+          _("Connection errors"),
+          summary.connectionErrors,
+          summary.connectionErrors > 0
+        ),
+        metric(
+          _("Check failures"),
+          summary.failedChecks,
+          summary.failedChecks > 0
+        )
+      ])
+    ])
+  ];
+}
+function renderMemberObservation(info, code) {
+  const member = info.stableStatus?.stats?.members.find(
+    (item2) => item2.name === code
+  );
+  if (!member) return [];
+  const item = (label, value, warning = false) => textE(
+    "span",
+    {
+      class: warning ? "kaban-observation__node-stat kaban-observation__node-stat--warning" : "kaban-observation__node-stat"
+    },
+    [textE("span", {}, `${label} `), textE("b", {}, String(value))]
+  );
+  return [
+    textE("div", { class: "kaban-observation__node-stats" }, [
+      item(_("Selected for"), formatDuration(count(member.selected_seconds))),
+      item(
+        _("Connection errors"),
+        count(member.connection_errors),
+        member.connection_errors > 0
+      ),
+      item(
+        _("Check failures"),
+        count(member.failed_checks),
+        member.failed_checks > 0
+      ),
+      item(_("Switches"), count(member.switches_away))
+    ])
+  ];
+}
+function renderFallbackEvents(info) {
+  if (!info.stableStatus?.stats) return [];
+  const events = recentFallbackEvents(info.stableStatus.events);
+  const name = (code) => info.outbounds.find((member) => member.code === code)?.displayName || code.split("/").pop() || code;
+  return [
+    textE("details", { class: "kaban-observation__events" }, [
+      textE("summary", {}, [
+        textE("span", {}, _("Recent events (up to 24 hours)")),
+        textE(
+          "span",
+          { class: "kaban-observation__event-count" },
+          String(events.length)
+        )
+      ]),
+      events.length ? textE(
+        "ol",
+        { class: "kaban-observation__timeline" },
+        [...events].reverse().map(
+          (event) => textE("li", {}, [
+            textE(
+              "time",
+              {
+                dateTime: event.at,
+                title: new Date(event.at).toLocaleString()
+              },
+              new Date(event.at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit"
+              })
+            ),
+            textE("div", {}, [
+              textE(
+                "strong",
+                {},
+                event.from && event.to && event.from !== event.to ? `${name(event.from)} \u2192 ${name(event.to)}` : checkReason(event.check_reason) || _("Check")
+              ),
+              textE(
+                "span",
+                { class: "kaban-observation__event-reason" },
                 event.reason
-              ])
-            )
-          ) : textE("p", {}, _("No recent events"))
-        ])
-      ]
-    )
+              )
+            ])
+          ])
+        )
+      ) : textE("p", { class: "kaban-observation__empty" }, _("No recent events"))
+    ])
   ];
 }
 
@@ -11808,6 +11900,7 @@ function renderFallbackMemberRow(info, member, showLevel) {
     {
       class: [
         "fkp_dashboard-page__urltest-details__row",
+        "kaban-observation__node",
         "fkp_dashboard-page__urltest-details__row--selectable",
         member.selected ? "fkp_dashboard-page__urltest-details__row--active" : "",
         busy ? "fkp_dashboard-page__urltest-details__row--busy" : ""
@@ -11852,6 +11945,7 @@ function renderFallbackMemberRow(info, member, showLevel) {
           )
         ] : []
       ]),
+      ...renderMemberObservation(info, member.code),
       textE("div", { class: "fkp_dashboard-page__urltest-details__row-meta" }, [
         textE(
           "span",
@@ -11873,10 +11967,26 @@ function renderFallbackInfoModal(info) {
   const lastSwitch = lastFallbackSwitch(events);
   const fields = [
     ...info.stableStatus ? [
-      { label: _("Fallback state"), value: fallbackStateLabel(info.stableStatus.state) },
-      { label: _("Last switch"), value: lastSwitch ? `${new Date(lastSwitch.at).toLocaleString()} \xB7 ${lastSwitch.reason}` : info.stableStatus.stats?.switches_total ? _("No recent switches") : _("No switches") },
-      ...info.stableStatus.next_confirmation ? [{ label: _("Repeated check due"), value: new Date(info.stableStatus.next_confirmation).toLocaleString() }] : [],
-      { label: _("Recovery due"), value: info.stableStatus.next_recovery ? new Date(info.stableStatus.next_recovery).toLocaleString() : "\u2014" }
+      {
+        label: _("Fallback state"),
+        value: fallbackStateLabel(info.stableStatus.state)
+      },
+      {
+        label: _("Last switch"),
+        value: lastSwitch ? `${new Date(lastSwitch.at).toLocaleString()} \xB7 ${lastSwitch.reason}` : info.stableStatus.stats?.switches_total ? _("No recent switches") : _("No switches")
+      },
+      ...info.stableStatus.next_confirmation ? [
+        {
+          label: _("Repeated check due"),
+          value: new Date(
+            info.stableStatus.next_confirmation
+          ).toLocaleString()
+        }
+      ] : [],
+      {
+        label: _("Recovery due"),
+        value: info.stableStatus.next_recovery ? new Date(info.stableStatus.next_recovery).toLocaleString() : "\u2014"
+      }
     ] : [],
     {
       label: _("Selected"),
@@ -11900,20 +12010,6 @@ function renderFallbackInfoModal(info) {
     }
   ];
   return [
-    textE(
-      "dl",
-      { class: "fkp_dashboard-page__urltest-details__params" },
-      fields.map(
-        ({ label, value, children: children2 }) => textE("div", { class: "fkp_dashboard-page__urltest-details__param" }, [
-          textE("dt", {}, label),
-          textE(
-            "dd",
-            {},
-            children2 || [textE("span", {}, formatUrlTestModalValue(value))]
-          )
-        ])
-      )
-    ),
     ...renderFallbackObservation(info),
     textE("div", { class: "fkp_dashboard-page__urltest-details__outbounds" }, [
       textE(
@@ -11938,6 +12034,24 @@ function renderFallbackInfoModal(info) {
             _("Node list is empty")
           )
         ]
+      )
+    ]),
+    ...renderFallbackEvents(info),
+    textE("details", { class: "kaban-observation__parameters" }, [
+      textE("summary", {}, _("Check settings")),
+      textE(
+        "dl",
+        { class: "fkp_dashboard-page__urltest-details__params" },
+        fields.map(
+          ({ label, value, children: children2 }) => textE("div", { class: "fkp_dashboard-page__urltest-details__param" }, [
+            textE("dt", {}, label),
+            textE(
+              "dd",
+              {},
+              children2 || [textE("span", {}, formatUrlTestModalValue(value))]
+            )
+          ])
+        )
       )
     ]),
     renderDetailsFooter()
@@ -11972,12 +12086,27 @@ function refreshDetailsModal() {
     closeDetailsModal();
     return;
   }
-  const table = ".fkp_dashboard-page__urltest-details__table";
-  const scrollTop = modal.container.querySelector(table)?.scrollTop ?? 0;
+  const scrollPositions = [
+    ".fkp_dashboard-page__urltest-details__table",
+    ".kaban-observation__timeline"
+  ].map((selector) => ({
+    selector,
+    top: modal.container.querySelector(selector)?.scrollTop ?? 0
+  }));
+  const expandedSections = [
+    ".kaban-observation__events",
+    ".kaban-observation__parameters"
+  ].filter(
+    (selector) => modal.container.querySelector(selector)?.open
+  );
   modal.container.replaceChildren(...modal.render());
-  const redrawn = modal.container.querySelector(table);
-  if (redrawn) {
-    redrawn.scrollTop = scrollTop;
+  for (const selector of expandedSections) {
+    const section2 = modal.container.querySelector(selector);
+    if (section2) section2.open = true;
+  }
+  for (const { selector, top } of scrollPositions) {
+    const redrawn = modal.container.querySelector(selector);
+    if (redrawn) redrawn.scrollTop = top;
   }
 }
 function showDetailsModal(title, render6) {
@@ -13336,6 +13465,44 @@ its own name's length. */
     }
 }
 
+/* Fallback summary belongs to the dialog, outside the dashboard container. */
+.kaban-observation { --ko-border: var(--border-color-low, #e2e6e9); --ko-muted: var(--text-color-medium, #65717d); margin: 0 0 20px; color: var(--text-color-high, inherit); }
+.kaban-observation__heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:14px; }
+.kaban-observation__heading h4 { margin:0 0 4px; font-size:16px; font-weight:650; }
+.kaban-observation__period { font-size:12px; color:var(--ko-muted); }
+.kaban-observation__state { padding:4px 9px; border-radius:20px; background:var(--background-color-low,#f1f4f6); font-size:12px; white-space:nowrap; }
+.kaban-observation__state--primary { color:#28764b; background:#edf7f0; }
+.kaban-observation__state--backup,.kaban-observation__state--suspect { color:#8b641a; background:#fff7e7; }
+.kaban-observation__selected { display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding:12px 14px; margin-bottom:12px; border:1px solid var(--ko-border); border-radius:8px; }
+.kaban-observation__selected strong { overflow-wrap:anywhere; }
+.kaban-observation__selected > span:last-child { margin-left:auto; font-size:12px; color:var(--ko-muted); font-variant-numeric:tabular-nums; }
+.kaban-observation__dot { width:7px; height:7px; flex:0 0 7px; border-radius:50%; background:#65717d; }
+.kaban-observation__metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.kaban-observation__metric { display:flex; flex-direction:column; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--ko-border); border-radius:8px; min-width:0; }
+.kaban-observation__metric-label { color:var(--ko-muted); font-size:11px; line-height:1.4; min-height:2.8em; }
+.kaban-observation__metric-value { margin-top:auto; font-size:23px; line-height:1; font-weight:600; font-variant-numeric:tabular-nums; }
+.kaban-observation__metric--warning .kaban-observation__metric-value { color:#9b691d; }
+.kaban-observation__node-stats { display:flex; gap:6px 14px; flex-wrap:wrap; order:3; flex-basis:100%; margin-top:7px; color:var(--text-color-medium,#65717d); font-size:11px; }
+.kaban-observation__node-stat b { color:var(--text-color-high,inherit); font-weight:600; font-variant-numeric:tabular-nums; }
+.kaban-observation__node-stat--warning b { color:#9b691d; }
+.kaban-observation__events,.kaban-observation__parameters { border-top:1px solid var(--border-color-low,#e2e6e9); margin-top:18px; padding-top:12px; }
+.kaban-observation__events > summary,.kaban-observation__parameters > summary { cursor:pointer; font-size:12px; padding:5px 0; color:var(--text-color-high,inherit); }
+.kaban-observation__event-count { display:inline-block; padding:1px 6px; margin-left:8px; border-radius:10px; background:var(--background-color-low,#f1f4f6); color:var(--text-color-medium,#65717d); font-variant-numeric:tabular-nums; }
+.kaban-observation__timeline { list-style:none; margin:12px 0 0; padding:0; max-height:220px; overflow:auto; }
+.kaban-observation__timeline li { display:grid; grid-template-columns:46px minmax(0,1fr); gap:12px; padding:9px 0; border-bottom:1px solid var(--border-color-low,#eef0f2); }
+.kaban-observation__timeline time { font-size:11px; color:var(--text-color-medium,#65717d); font-variant-numeric:tabular-nums; padding-top:2px; }
+.kaban-observation__timeline strong { display:block; font-size:12px; font-weight:500; overflow-wrap:anywhere; }
+.kaban-observation__event-reason { display:block; font-size:11px; color:var(--text-color-medium,#65717d); overflow-wrap:anywhere; margin-top:4px; }
+.kaban-observation__empty { color:var(--text-color-medium,#65717d); font-size:12px; padding:8px 0; }
+.kaban-observation__parameters .fkp_dashboard-page__urltest-details__params { margin-top:12px; }
+@media (max-width:600px) { .kaban-observation__metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .kaban-observation__selected > span:last-child { margin-left:16px; flex-basis:100%; } .kaban-observation__metric-label { min-height:0; } }
+
+
+.kaban-observation__node { padding:12px 14px; border:1px solid var(--border-color-low,#e2e6e9); border-radius:8px; }
+.kaban-observation__node.fkp_dashboard-page__urltest-details__row--active { border-color:var(--success-color-low,#76a18a); background:var(--success-background-color,#f7fbf8); }
+.kaban-observation__node .fkp_dashboard-page__urltest-details__row-name { font-size:12px; }
+
+.kaban-observation__probe-notice { margin:0 0 12px; padding:10px 12px; border-left:3px solid #bd934a; border-radius:4px; background:var(--background-color-low,#fff8eb); color:var(--text-color-high,#755823); font-size:12px; line-height:1.5; }
 `;
 
 // src/kabanmax/tabs/dashboard/index.ts
@@ -24145,6 +24312,12 @@ function validateRequiredSingBoxDuration(value) {
 }
 
 // src/kabanmax/tabs/sections/healthCheck.ts
+function validateFailureRetryInterval(value) {
+  const duration = validateRequiredSingBoxDuration(value);
+  if (duration !== true) return duration;
+  const seconds3 = singBoxDurationSeconds(value);
+  return seconds3 !== null && seconds3 >= 1 && seconds3 <= 300 ? true : _("Use a duration from 1s to 5m");
+}
 function validateExpectedStatus(value) {
   const normalized = `${value || ""}`.trim();
   if (!normalized || normalized === "*") {
@@ -24217,6 +24390,7 @@ function fallbackGroupSettingsKeys() {
     "stable",
     "confirm_url",
     "confirm_expected_status",
+    "failure_retry_interval",
     "recovery_interval",
     "recovery_successes",
     "interrupt_exist_connections"
@@ -24377,6 +24551,15 @@ function addFallbackGroupItemOptions(itemSection, options = {}) {
   o = itemSection.option(form.Value, "confirm_expected_status", _("Confirmation HTTP status"));
   o.default = "204";
   o.depends("stable", "1");
+  o = itemSection.option(
+    form.Value,
+    "failure_retry_interval",
+    _("Failure retry interval"),
+    _("Wait after both checks fail before checking again. Range: 1s to 5m. Check time is additional.")
+  );
+  o.default = "3s";
+  o.depends("stable", "1");
+  o.validate = (_id, value) => validateFailureRetryInterval(value);
   o = itemSection.option(form.Value, "recovery_interval", _("Recovery interval"));
   o.default = "60s";
   o.depends("stable", "1");

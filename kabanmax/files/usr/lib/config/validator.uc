@@ -558,6 +558,10 @@ function validate_fallback_group(section, group_id) {
         if (!expected_status_valid(stability.confirm_expected_status))
             fail_validation("Invalid confirmation HTTP status in " + group);
         validate_required_duration_option(stability.recovery_interval, "'Recovery interval' of " + group);
+        validate_required_duration_option(stability.failure_retry_interval, "'Failure retry interval' of " + group);
+        let retry_seconds = core_common.duration_to_seconds_precise(stability.failure_retry_interval);
+        if (retry_seconds < 1 || retry_seconds > 300)
+            fail_validation("Failure retry interval must be between 1s and 5m in " + group);
         if (core_common.duration_to_seconds(stability.recovery_interval) < 1 || stability.recovery_successes < 1 || stability.recovery_successes > 10)
             fail_validation("Recovery interval must be at least 1s and successes must be 1 through 10 in " + group);
     }

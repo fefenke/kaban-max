@@ -6,6 +6,15 @@ import {
 } from '../../../validators/validateSingBoxDuration';
 import { currentOptionValue } from './subscriptions/model';
 
+export function validateFailureRetryInterval(value: unknown) {
+  const duration = validateRequiredSingBoxDuration(value);
+  if (duration !== true) return duration;
+  const seconds = singBoxDurationSeconds(value);
+  return seconds !== null && seconds >= 1 && seconds <= 300
+    ? true
+    : _('Use a duration from 1s to 5m');
+}
+
 // Status codes 100-599 and ordered ranges of them, at most 28 in all, as the backend takes them.
 export function validateExpectedStatus(value: unknown) {
   const normalized = `${value || ''}`.trim();

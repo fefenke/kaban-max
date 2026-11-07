@@ -666,6 +666,7 @@ function fallback_stability(section, value) {
         stable: bool_option(group, "stable", true),
         confirm_url: option(group, "confirm_url", "https://cp.cloudflare.com/generate_204"),
         confirm_expected_status: option(group, "confirm_expected_status", "204"),
+        failure_retry_interval: option(group, "failure_retry_interval", "3s"),
         recovery_interval: option(group, "recovery_interval", "60s"),
         recovery_successes: int(option(group, "recovery_successes", "3"))
     };

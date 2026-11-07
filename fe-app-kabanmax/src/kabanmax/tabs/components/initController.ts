@@ -305,16 +305,25 @@ export function initController(): void {
       });
 
     part(root, 'components-actions').replaceChildren(
-      E('b', {}, 'KabanMax'),
+      E('div', { class: 'fkp_components-page__heading' }, [
+        E('b', {}, 'KabanMax'),
+        E('span', { id: 'components-kabanmax-version' }),
+      ]),
+      E('div', { class: 'fkp_components-page__core' }, [
+        E('span', {}, 'sing-box-kabanmax '),
+        E('span', { id: 'components-core-version' }),
+      ]),
       E(
         'p',
-        { role: 'status' },
+        { role: 'status', hidden: !releaseBusy && !releaseError && !release },
         releaseBusy
-          ? [createBoar('check'), _('The boar looks for fresh acorns...')]
+          ? _('The boar looks for fresh acorns...')
           : releaseError ||
-              (release
-                ? `${_('Installed')}: ${release.installed || '\u2014'} \u00b7 ${_('Latest')}: ${release.latest || '\u2014'} \u00b7 sing-box: ${release.core_installed || '\u2014'} \u00b7 ${release.core_latest || '\u2014'} \u00b7 ${release.update_available ? _('Update available') : _('No updates available')}`
-                : _('Check for updates before installation')),
+              (release?.update_available
+                ? `${_('Update available')}: ${release.latest || release.release || ''}`
+                : release
+                  ? _('No updates available')
+                  : ''),
       ),
       button(
         'update',
@@ -359,6 +368,7 @@ export function initController(): void {
         openRemoveDialog,
       ),
     );
+    renderVersions();
   }
 
   function renderVersions() {

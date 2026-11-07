@@ -28,6 +28,53 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
+it('loads cold dashboard proxies through CLI while the direct controller probe is pending', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise(() => {})),
+  );
+  mocks.clashApi.mockResolvedValue({
+    success: true,
+    data: { status: 200, body: '{"proxies":{}}' },
+  });
+  const { getClashApiProxies } = await import('../clashApi');
+  const result = getClashApiProxies();
+
+  await vi.waitFor(() =>
+    expect(mocks.clashApi).toHaveBeenCalledWith('GET', '/proxies', ''),
+  );
+  expect(await result).toEqual({ success: true, data: { proxies: {} } });
+});
+
+it('uses the direct dashboard path after the background probe responds', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    status: 200,
+    text: async () => '{"proxies":{}}',
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  mocks.clashApi.mockResolvedValue({
+    success: true,
+    data: { status: 200, body: '{"proxies":{}}' },
+  });
+  const { getClashApiProxies } = await import('../clashApi');
+  await getClashApiProxies();
+  await vi.waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://router.example:9090/version',
+      expect.anything(),
+    ),
+  );
+  mocks.clashApi.mockClear();
+
+  await getClashApiProxies();
+
+  expect(fetchMock).toHaveBeenLastCalledWith(
+    'http://router.example:9090/proxies',
+    expect.anything(),
+  );
+  expect(mocks.clashApi).not.toHaveBeenCalled();
+});
+
 it('chooses the CLI before sending concurrent first mutations to an unreachable controller', async () => {
   const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
   vi.stubGlobal('fetch', fetchMock);

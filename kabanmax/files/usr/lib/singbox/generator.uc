@@ -992,6 +992,7 @@ function build_fallback_group_outbound(section, item, urltest_candidate_tags, ca
     if (stability.stable) {
         outbound.confirm_url = stability.confirm_url;
         outbound.confirm_expected_status = stability.confirm_expected_status;
+        outbound.failure_retry_interval = stability.failure_retry_interval;
         outbound.recovery_interval = stability.recovery_interval;
         outbound.recovery_successes = stability.recovery_successes;
     }

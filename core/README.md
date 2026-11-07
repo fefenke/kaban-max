@@ -2,7 +2,7 @@
 
 Исходники зафиксированы в [UPSTREAM](UPSTREAM). Изменения и тесты находятся в [patches/0001-stable-fallback.patch](patches/0001-stable-fallback.patch).
 
-Версия ядра: **1.14.4-r7**.
+Версия ядра: **1.14.4-r8**.
 
 ```sh
 bash scripts/build-core.sh base aarch64_cortex-a53 dist/release
