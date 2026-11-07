@@ -1,5 +1,8 @@
 let t = require("t");
 let release = require("service.release");
+let stub = require("stub");
+let fs = require("fs");
+let constants = require("core.constants");
 let app = { schema: 1, name: "kabanmax", version: "0.1.0", tag: "0.1.0" };
 let core = { schema: 1, name: "sing-box-kabanmax", version: "1.14.4-r6", tag: "0.1.0" };
 t.test("same app release detects a newer core revision", () => {
@@ -35,4 +38,30 @@ t.test("release selection excludes drafts and unsupported tags", () => {
     t.contains(t.throws(() => release.select_release([ { tag_name: "0.9.0", draft: true } ])).message, "No supported published");
     t.contains(t.throws(() => release.select_release({})).message, "Invalid release listing");
 });
+t.test("release checks work when the router has no timeout applet", () => {
+    let installed = constants.KABANMAX_VERSION;
+    constants.KABANMAX_VERSION = "0.1.1";
+    let tag = constants.KABANMAX_VERSION;
+    let api = "https://api.github.com/repos/" + constants.KABANMAX_RELEASE_REPO;
+    let assets = map([ "install.sh", "release.json", "core-release.json" ], (name, i) => ({ name, url: api + "/releases/assets/" + i }));
+    let listing = [ { tag_name: tag, prerelease: true, assets } ];
+    stub.env({ KABANMAX_DOWNLOAD_URL: "" });
+    stub.commands([ [ () => true, (argv) => {
+        if (argv[0] != "sh") return { status: 1 };
+        if (index(argv[2], "exec timeout") >= 0) return { status: 127 };
+        let path = argv[index(argv, "-O") + 1];
+        let url = argv[length(argv)-1];
+        let value = index(url, "/releases?") >= 0 ? listing
+            : url == assets[1].url ? { schema: 1, name: "kabanmax", tag, version: tag }
+            : { schema: 1, name: "sing-box-kabanmax", tag, version: "1.14.4-r6" };
+        fs.writefile(path, sprintf("%J", value));
+        return { status: 0 };
+    } ] ]);
+    let result = release.check();
+    t.eq(result.release, tag);
+    t.eq(result.prerelease, true);
+    constants.KABANMAX_VERSION = installed;
+    stub.restore();
+});
+
 t.done();

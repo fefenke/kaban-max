@@ -45,9 +45,9 @@ describe('the service state in the heading', () => {
     expect(node.children).toEqual([
       expect.objectContaining({
         tag: 'span',
-        className: 'fkp_page-status__dot',
+        className: 'fkp_boar fkp_boar--running',
       }),
-      'running',
+      'The boar keeps the acorns in check',
     ]);
 
     renderPageStatus(
@@ -55,14 +55,14 @@ describe('the service state in the heading', () => {
       state(false, false, 1, 'apply'),
     );
     expect(node.className).toBe('fkp_page-status fkp_page-status--progress');
-    expect(node.children[1]).toBe('applying...');
+    expect(node.children[1]).toBe('The boar tidies up its grounds...');
   });
 
   it('says nothing about a state the page has not read', () => {
     for (const unknown of [state(true, false, 0), state(false, true, 0)]) {
       const node = element('small');
       node.className = 'stale';
-      node.children = ['running'];
+      node.children = ['The boar keeps the acorns in check'];
       renderPageStatus(node as unknown as HTMLElement, unknown);
       expect([node.className, node.children]).toEqual(['', []]);
     }
@@ -75,6 +75,6 @@ describe('the service state in the heading', () => {
 
     store.set({ serviceState: state(false, false, 1) });
     expect(node.className).toBe('fkp_page-status fkp_page-status--success');
-    expect(node.children[1]).toBe('running');
+    expect(node.children[1]).toBe('The boar keeps the acorns in check');
   });
 });

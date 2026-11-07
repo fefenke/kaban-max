@@ -186,6 +186,36 @@ describe('getDashboardSections', () => {
     vi.stubGlobal('fetch', undefined);
   });
 
+  it('publishes sections before optional provider metadata finishes', async () => {
+    mocks.getConfigSections.mockResolvedValue([
+      section(),
+      child('subscription_url', 'subscription1', {
+        url: 'https://example.com/subscription',
+        tag: 'premium',
+      }),
+    ]);
+    const proxies = {
+      Office: proxy('Selector', { all: ['Office/premium/Node'] }),
+      'Office/premium/Node': proxy('VLESS'),
+    };
+    let finishProviders!: (value: unknown) => void;
+    mocks.clashApi.mockImplementation(async (_method: string, path: string) =>
+      path === '/providers/proxies'
+        ? new Promise((resolve) => {
+            finishProviders = resolve;
+          })
+        : clashApiJson(200, { proxies }),
+    );
+    const update = vi.fn();
+    const pending = getDashboardSections(update);
+    await vi.waitFor(() => expect(update).toHaveBeenCalled());
+    expect(update.mock.calls[0][0].data[0].outbounds[0].code).toBe(
+      'Office/premium/Node',
+    );
+    finishProviders(clashApiJson(200, { providers: {} }));
+    expect((await pending).success).toBe(true);
+  });
+
   it('derives manual node identity and presentation from readable runtime tags', async () => {
     const uris = [
       'vless://first@example.com:443#Same',

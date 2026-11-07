@@ -15,13 +15,14 @@ function valid_manifest(value, name, tag) {
         (name == "kabanmax" ? valid_tag(value.version) : packages.kabanmax_core_version(value.version) != "");
 }
 
-// A private, unique file; timeout bounds the entire transfer, ulimit bounds bytes on disk.
+// A private, unique file; uclient-fetch bounds connect/request time, ulimit bounds bytes on disk.
+// OpenWrt does not necessarily ship the standalone timeout applet.
 // Neither remote error bodies nor download URLs are returned to the page or the log.
 function fetch_json(url, asset, expected_type) {
     let now = clock();
     let path = sprintf("/tmp/kabanmax-release.%d.%d.%d", common.own_pid(), now[0], now[1]);
     let argv = [ "uclient-fetch", "-q", "-T", "15", ...(asset ? [ "--header=Accept: application/octet-stream" ] : []), "-O", path, url ];
-    let status = exec.status([ "sh", "-c", "umask 077; ulimit -f 1024; exec timeout 20 \"$@\"", "sh", ...argv ]);
+    let status = exec.status([ "sh", "-c", "umask 077; ulimit -f 1024; exec \"$@\"", "sh", ...argv ]);
     let data = status == 0 ? fs.readfile(path, 1048576) : null;
     fs.unlink(path);
     if (data == null)

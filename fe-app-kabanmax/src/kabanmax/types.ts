@@ -26,8 +26,22 @@ export namespace ClashAPI {
     state: string;
     active: string;
     members: Array<{name:string; state:string; last_check?:string; recovery_successes:number}>;
-    events: Array<{at:string; from:string; to:string; reason:string}>;
+    events: Array<{at:string; from:string; to:string; reason:string; check_reason?:string}>;
     next_recovery?: string;
+    next_confirmation?: string;
+    stats?: {
+      since: string;
+      selected_since: string;
+      switches_total: number;
+      backup_seconds: number;
+      members: Array<{
+        name: string;
+        selected_seconds: number;
+        connection_errors: number;
+        failed_checks: number;
+        switches_away: number;
+      }>;
+    };
   }
 
   export interface Proxies {
@@ -465,6 +479,7 @@ export namespace KabanMax {
     variant?: string | null;
     purge?: boolean;
     interactive?: boolean;
+    phase?: 'download' | 'install' | null;
     running: boolean;
     exit?: number | null;
     interrupted?: boolean;

@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   disconnect: vi.fn(),
   resetAll: vi.fn(),
   readCoreUsage: vi.fn(),
+  getDashboardSections: vi.fn(),
+  getClashApiConnectionsSummary: vi.fn(),
 }));
 
 vi.mock('../../../services/socket.service', () => ({
@@ -17,8 +19,8 @@ vi.mock('../../../services/socket.service', () => ({
 vi.mock('../../../../helpers/onMount', () => ({ onMount: async () => ({}) }));
 vi.mock('../../../methods', () => ({
   CustomKabanMaxMethods: {
-    getDashboardSections: async () => ({ success: false, data: [] }),
-    getClashApiConnectionsSummary: async () => ({ success: false }),
+    getDashboardSections: mocks.getDashboardSections,
+    getClashApiConnectionsSummary: mocks.getClashApiConnectionsSummary,
   },
 }));
 vi.mock('../../../methods/custom/getClashApiSecret', () => ({
@@ -39,6 +41,12 @@ beforeEach(() => {
   mocks.disconnect.mockReset();
   mocks.resetAll.mockReset();
   mocks.readCoreUsage.mockReset();
+  mocks.getDashboardSections
+    .mockReset()
+    .mockResolvedValue({ success: false, data: [] });
+  mocks.getClashApiConnectionsSummary
+    .mockReset()
+    .mockResolvedValue({ success: false });
   mocks.readCoreUsage.mockResolvedValue({
     success: false,
     message: '',
@@ -171,6 +179,50 @@ function reading(started: number, clockMs: number, cpuTicks: number) {
 }
 
 describe('the core widgets', () => {
+  it('ends initial loading when section and snapshot reads never answer', async () => {
+    mocks.getDashboardSections.mockReturnValue(new Promise(() => {}));
+    mocks.getClashApiConnectionsSummary.mockReturnValue(new Promise(() => {}));
+    await openDashboard();
+    const { store } = await import('../../../services/store.service');
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(store.get().sectionsWidget).toMatchObject({
+      loading: false,
+      failed: true,
+    });
+    expect(store.get().bandwidthWidget).toMatchObject({
+      loading: false,
+      failed: true,
+    });
+    expect(store.get().trafficTotalWidget).toMatchObject({
+      loading: false,
+      failed: true,
+    });
+  });
+
+  it('renders a partial sections reply and ignores replies after its deadline', async () => {
+    let update!: (value: unknown) => void;
+    mocks.getDashboardSections.mockImplementation((callback) => {
+      update = callback;
+      return new Promise(() => {});
+    });
+    await openDashboard();
+    const { store } = await import('../../../services/store.service');
+    const data = [{ sectionName: 'main', displayName: 'Ready', outbounds: [] }];
+    update({ success: true, data, hasRemoteLists: false });
+    expect(store.get().sectionsWidget).toMatchObject({
+      loading: false,
+      failed: false,
+      data,
+    });
+    await vi.advanceTimersByTimeAsync(12000);
+    update({
+      success: true,
+      data: [{ ...data[0], displayName: 'Late' }],
+      hasRemoteLists: false,
+    });
+    expect(store.get().sectionsWidget.data).toEqual(data);
+  });
+
   it('count the age from one start per core and the load between two readings of it', async () => {
     mocks.readCoreUsage
       .mockResolvedValueOnce(reading(100000, 1_060_000, 500))
