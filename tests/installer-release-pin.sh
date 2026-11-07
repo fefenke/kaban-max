@@ -15,3 +15,27 @@ decide_kabanmax
 test "$RESULT_KABANMAX" = 0.1.0
 test "$NEED_KABANMAX/$NEED_APP/$NEED_I18N" = 1/1/1
 echo 'Explicit release pin selects all matching application packages: OK'
+
+# Rebuilt app/UI keep 0.1.0 while their release contains a newer core revision.
+KABANMAX_OLD=0.1.0 APP_OLD=0.1.0 I18N_OLD=0.1.0 KABANMAX_REINSTALL=1
+NEED_KABANMAX=0 NEED_APP=0 NEED_I18N=0
+decide_kabanmax
+test "$NEED_KABANMAX/$NEED_APP/$NEED_I18N" = 1/1/1
+
+# An inherited reinstall flag without an explicit release pin has no effect.
+TARGET_TAG='' KABANMAX_REINSTALL=1
+vercmp() { echo 0; }
+NEED_KABANMAX=0 NEED_APP=0 NEED_I18N=0
+decide_kabanmax
+test "$NEED_KABANMAX/$NEED_APP/$NEED_I18N" = 0/0/0
+
+# Explicit pins always grant opkg permission to replace same-version packages.
+source <(sed -n '/^resolve_release() {/,/^}/p' "$repo/install.sh")
+step() { :; }
+fetch_release() { :; }
+decide_core() { :; }
+ask_translation() { :; }
+ASKED=0 TARGET_TAG=0.1.0 OPKG_FLAGS=''
+resolve_release
+test "$OPKG_FLAGS" = '--force-downgrade --force-reinstall'
+echo 'Same-version pinned update refreshes backend/UI and opkg replacement flags: OK'

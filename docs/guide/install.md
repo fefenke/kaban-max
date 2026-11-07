@@ -1,6 +1,6 @@
 # Установка
 
-**K.A.B.A.N.-MAX 0.1.0 · предварительная версия**
+**K.A.B.A.N.-MAX 0.1.1 · предварительная версия**
 
 | Система | Формат пакетов | Архитектура |
 |---|---|---|
@@ -10,7 +10,7 @@
 ## Через SSH
 
 ```sh
-wget -O /tmp/kabanmax-install.sh https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh && KABANMAX_RELEASE=0.1.0 sh /tmp/kabanmax-install.sh --variant base --lang ru
+wget -O /tmp/kabanmax-install.sh https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh && KABANMAX_RELEASE=0.1.1 sh /tmp/kabanmax-install.sh --variant base --lang ru
 ```
 
 Установщик определяет пакетный менеджер и архитектуру, скачивает компоненты, проверяет SHA256 и устанавливает приложение с русским переводом.
@@ -24,13 +24,15 @@ wget -O /tmp/kabanmax-install.sh https://raw.githubusercontent.com/fefenke/kaban
 
 ## Скачать пакеты
 
-В [выпуске 0.1.0](https://github.com/fefenke/kaban-max/releases/tag/0.1.0) находятся пакеты приложения, интерфейса, перевода и ядра. Выберите APK или IPK по пакетному менеджеру роутера. Контрольные суммы находятся в `SHA256SUMS`.
+В [выпуске 0.1.1](https://github.com/fefenke/kaban-max/releases/tag/0.1.1) находятся пакеты приложения, интерфейса, перевода и ядра. Выберите APK или IPK по пакетному менеджеру роутера. Контрольные суммы находятся в `SHA256SUMS`.
 
 Для установки с автоматическим подбором зависимостей используйте команду выше.
 
 ## Обновление
 
-Запустите установщик повторно с номером нужного выпуска в `KABANMAX_RELEASE`.
+Откройте **Компоненты → KabanMax → Проверить обновления**. Если доступно обновление, кнопка сменится на **Скачать и установить обновление**. Во время установки отображается состояние операции; подробный журнал можно раскрыть ниже.
+
+Для обновления через SSH запустите установщик повторно с номером нужного выпуска в `KABANMAX_RELEASE`.
 
 ## Удаление
 

@@ -1,6 +1,6 @@
 repository=https://github.com/ushan0v/sing-box-forkop.git
 commit=60d96c99815a672712915a5c00114bf0f690ad80
 tag=v1.14.4-r1
-package_version=1.14.4-r5
+package_version=1.14.4-r6
 go_version=1.26.10
 license=GPL-3.0-or-later

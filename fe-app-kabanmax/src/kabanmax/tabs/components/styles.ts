@@ -50,14 +50,14 @@ controls at least, growing with its output up to its limit. */
     box-sizing: border-box;
     width: 100%;
     display: grid;
-    grid-template-columns: minmax(17rem, max-content) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     grid-gap: 10px;
 }
 
 .fkp_components-page__controls {
     align-self: start;
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
     grid-row-gap: 10px;
 }
 
@@ -113,6 +113,8 @@ controls at least, growing with its output up to its limit. */
     vertical-align: 0.08rem;
 }
 
+.fkp_components-page__run[hidden] { display: none; }
+.fkp_components-page__run summary { padding: 8px 10px; cursor: pointer; }
 .fkp_components-page__run {
     display: flex;
     flex-direction: column;
@@ -221,8 +223,8 @@ controls at least, growing with its output up to its limit. */
 .fkp_components-page .fkp_terminal__output {
     box-sizing: border-box;
     flex: 1 1 auto;
-    min-height: 12rem;
-    max-height: max(18rem, 62vh);
+    min-height: 4rem;
+    max-height: 18rem;
     margin: 0;
     padding: 8px 10px;
     overflow-x: hidden;

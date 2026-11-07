@@ -34,6 +34,7 @@ export const installerApi = {
     variant: string,
     purge: boolean,
     lang: string,
+    release?: string,
   ): Promise<KabanMax.InstallerStartResult> {
     const response = await executeShellCommand({
       command: '/usr/bin/kabanmax',
@@ -43,6 +44,7 @@ export const installerApi = {
         variant,
         purge ? '1' : '0',
         lang,
+        ...(release ? [release] : []),
       ],
       timeout: START_TIMEOUT_MS,
     });

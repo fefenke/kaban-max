@@ -201,6 +201,7 @@ export function createInstallerRun(options: {
       action: KabanMax.InstallerAction,
       variant = '',
       purge = false,
+      release?: string,
     ): Promise<void> {
       if (state.running || state.starting) {
         return;
@@ -213,6 +214,7 @@ export function createInstallerRun(options: {
           variant,
           purge,
           options.lang(),
+          ...(release ? [release] : []),
         );
         follow(result.id);
         state = {

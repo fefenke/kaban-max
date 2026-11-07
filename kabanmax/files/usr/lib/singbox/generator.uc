@@ -595,6 +595,10 @@ function add_manual_link_outbounds(config, section, selector_tags, urltest_candi
     for (let link in connections.connection_link_items(section)) {
         let tag_name = child_outbound_tag(section, connections.link_display_name(link));
         let outbound = { type: "parser", tag: tag_name, link: connections.option(link, "uri", "") };
+        if (common.bool_option(link, "tls_record_fragment", false))
+            outbound.tls_record_fragment = true;
+        if (common.bool_option(link, "tls_classical", false))
+            outbound.tls_classical = true;
         let detour = cascade_tag(link);
         if (detour != "")
             outbound.detour = detour;

@@ -925,7 +925,8 @@ decide_kabanmax() { # the KabanMax packages to install, NEED_*, and the KabanMax
 		case "$(uci -q get luci.main.lang)" in '' | auto | ru*) I18N=1 ;; esac
 	fi
 	RESULT_KABANMAX=$F_VERSION
-	if [ -n "$FORK_URL" ]; then
+	if [ -n "$FORK_URL" ] || { [ -n "$TARGET_TAG" ] && [ "${KABANMAX_REINSTALL:-0}" = 1 ]; }; then
+		# Explicit page updates refresh same-version backend/UI packages as well.
 		# a fork goes whatever its version says: KabanMax's packages take its place
 		NEED_KABANMAX=1 NEED_APP=1 NEED_I18N=$I18N
 		return 0

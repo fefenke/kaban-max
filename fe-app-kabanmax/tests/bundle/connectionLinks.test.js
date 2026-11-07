@@ -244,4 +244,22 @@ describe('a stored link', () => {
     expect(check('uri', 'vless://a@a.example:443#USA')).toBe(true);
     expect(check('name', '')).toBe('Required');
   });
+
+  it.each([
+    ['1', '0'],
+    ['0', '1'],
+    ['1', '1'],
+  ])('saves independent TLS options (%s, %s)', async (split, classical) => {
+    const dialog = await harness.openDialog(linkList(), 'sec', 'link1');
+    const fields = dialog.map.children[0].children;
+    const field = (name) => fields.find((option) => option.option === name);
+    field('uri').formvalue = () =>
+      'vless://a@a.example:443?security=reality#USA';
+    field('tls_record_fragment').formvalue = () => split;
+    field('tls_classical').formvalue = () => classical;
+    expect((await dialog.save()).saved).toBe(true);
+    const stored = harness.store.get('link1');
+    expect(stored.tls_record_fragment || '0').toBe(split);
+    expect(stored.tls_classical || '0').toBe(classical);
+  });
 });
