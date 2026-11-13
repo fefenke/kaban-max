@@ -47,6 +47,23 @@ function query(url) {
 }
 
 describe('VLESS links', () => {
+  it('preserves the explicit Chrome 155 fingerprint in Reality links', () => {
+    const { link, client } = load(
+      {
+        protocol: 'vless',
+        security: 'reality',
+        reality_public_key: 'public-key',
+        reality_short_id: ['abcd1234'],
+        tls_server_name: 'www.microsoft.com',
+        client_fingerprint: 'chrome_155',
+      },
+      { uuid: UUID },
+    );
+
+    const [{ link: url }] = link.buildClientLinks('srv', client);
+    expect(query(url)).toMatchObject({ security: 'reality', fp: 'chrome_155' });
+  });
+
   it('carries the Reality parameters clients need', () => {
     const { link, client } = load(
       {

@@ -236,6 +236,34 @@ function link_uses_xhttp_http3(link) {
     return uses_xhttp_http3(link_type(link), link);
 }
 
+function connection_fingerprint_supported(link, fingerprint) {
+    link = trim(link);
+    let scheme = lc(substr(link, 0, index(link, "://")));
+    let type_name = scheme == "https" ? "http" : scheme;
+    if (index([ "vless", "vmess", "trojan", "anytls", "http" ], type_name) < 0 || uses_xhttp_http3(type_name, link))
+        return false;
+    if (type_name == "vmess") {
+        let payload = vmess_payload(link);
+        if (payload != null) {
+            if (payload.net == "quic")
+                return false;
+            return index([ "tls", "1", "true" ], lc("" + (payload.tls ?? ""))) >= 0 || payload.net == "h2";
+        }
+    }
+    let query = link_query(link);
+    let security = lc(query_value(query.security));
+    if (security == "reality" && index([ "android", "360" ], lc(trim(fingerprint ?? ""))) >= 0)
+        return false;
+    if (type_name == "http")
+        return scheme == "https";
+    if (type_name == "trojan" && security == "none")
+        return false;
+    if ((query_value(query.type) || query_value(query.net)) == "quic")
+        return false;
+    return scheme == "https" || type_name == "trojan" || type_name == "anytls" ||
+        index([ "tls", "xtls", "reality" ], security) >= 0;
+}
+
 // The features a share link needs from the core that will parse it.
 function link_features(link) {
     link = trim("" + (link ?? ""));
@@ -273,5 +301,5 @@ function report(present) {
 return {
     paths, REQUIRED, FEATURES, OUTBOUND_TYPES, INBOUND_TYPES, ENDPOINT_TYPES,
     parse_tags, tags, version, available, missing_tags, unavailable_reason, core_problem, type_feature, link_features,
-    link_uses_xhttp_http3, report
+    link_uses_xhttp_http3, connection_fingerprint_supported, report
 };

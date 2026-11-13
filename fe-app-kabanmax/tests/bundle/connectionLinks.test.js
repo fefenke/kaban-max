@@ -187,6 +187,34 @@ describe('a pasted link', () => {
 });
 
 describe('a stored link', () => {
+  it('sets a fingerprint by persistent ID with identical URI fragments and a renamed server', async () => {
+    const uri = 'vless://u@a.example:443?security=tls&fp=firefox#Same';
+    for (const [id, name] of [
+      ['first', 'Renamed'],
+      ['second', 'Same'],
+    ]) {
+      harness.uci.add('kabanmax', 'connection_link', id);
+      Object.assign(harness.store.get(id), { section: 'sec', name, uri });
+    }
+    const dialog = await harness.openDialog(linkList(), 'sec', 'first');
+    const fields = dialog.map.children[0].children;
+    const fingerprint = fields.find(
+      (option) => option.option === 'tls_fingerprint',
+    );
+    fingerprint.formvalue = () => 'chrome_155';
+    expect((await dialog.save()).saved).toBe(true);
+    expect(harness.store.get('first').tls_fingerprint).toBe('chrome_155');
+    expect(harness.store.get('second').tls_fingerprint).toBeUndefined();
+    expect(harness.store.get('first').uri).toBe(uri);
+    expect(harness.store.get('second').uri).toBe(uri);
+    const reopened = await harness.openDialog(linkList(), 'sec', 'first');
+    reopened.map.children[0].children.find(
+      (option) => option.option === 'tls_fingerprint',
+    ).formvalue = () => '';
+    expect((await reopened.save()).saved).toBe(true);
+    expect(harness.store.get('first').tls_fingerprint || '').toBe('');
+    expect(harness.store.get('first').uri).toBe(uri);
+  });
   beforeEach(() => {
     harness.uci.add('kabanmax', 'connection_link', 'link1');
     Object.assign(harness.store.get('link1'), {

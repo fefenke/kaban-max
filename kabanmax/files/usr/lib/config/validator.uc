@@ -196,6 +196,13 @@ function validate_connection_links(section) {
             fail_validation("Link '" + link_name + "' in section '" + section_label(section) + "' is probably a subscription URL. Paste it into Subscription");
         if (trim(link_name) == "")
             fail_validation("A link in section '" + section_label(section) + "' has no name. Set one in its settings");
+        let fingerprint = lc(trim(option(link, "tls_fingerprint", "")));
+        if (fingerprint != "") {
+            if (!contains([ "chrome", "chrome_155", "firefox", "edge", "safari", "ios", "android", "random" ], fingerprint))
+                fail_validation("Unsupported TLS fingerprint for link '" + link_name + "'");
+            if (!features.connection_fingerprint_supported(uri, fingerprint))
+                fail_validation("TLS fingerprint requires a supported TCP connection with TLS enabled for link '" + link_name + "'");
+        }
     }
 }
 
@@ -1672,6 +1679,8 @@ function validate_core_features(settings, sections, servers, core_tags) {
         for (let item in connections.connection_link_items(section)) {
             let link = connections.option(item, "uri", "");
             let label = core_url.scheme(link) + ":// link '" + connections.option(item, "name", "") + "'";
+            if (trim(connections.option(item, "tls_fingerprint", "")) != "")
+                refuse_without("utls", core_tags, "Section '" + section_label(section) + "' has a " + label + " with a TLS fingerprint override");
             for (let feature in features.link_features(link))
                 refuse_without(feature, core_tags, "Section '" + section_label(section) + "' has a " + label +
                     (feature == "utls" ? " that uses Reality or a TLS fingerprint"

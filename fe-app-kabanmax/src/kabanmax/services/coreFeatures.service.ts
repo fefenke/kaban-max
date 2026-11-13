@@ -13,7 +13,9 @@ type CoreTypeKind = 'outbound' | 'inbound' | 'endpoint';
 let report: KabanMax.CoreFeatures | null = null;
 
 // Answers from the state service carry the report; the CLI's leave the last one in place.
-export function setCoreFeatures(value: KabanMax.CoreFeatures | null | undefined) {
+export function setCoreFeatures(
+  value: KabanMax.CoreFeatures | null | undefined,
+) {
   if (value === undefined) {
     return;
   }
@@ -121,6 +123,46 @@ function vmessPayload(link: string) {
   } catch {
     return null;
   }
+}
+
+// Only protocols whose parsed outbound exposes a TCP TLS client can use uTLS.
+export function connectionFingerprintSupported(link: string, fingerprint = '') {
+  link = link.trim();
+  const scheme = link.split('://')[0].toLowerCase();
+  const type = scheme === 'https' ? 'http' : scheme;
+  if (!['vless', 'vmess', 'trojan', 'anytls', 'http'].includes(type))
+    return false;
+  if (linkUsesXhttpHttp3(type, link)) return false;
+  if (type === 'vmess') {
+    const payload = vmessPayload(link);
+    if (payload) {
+      if (payload.net === 'quic') return false;
+      return (
+        ['tls', '1', 'true'].includes(`${payload.tls ?? ''}`.toLowerCase()) ||
+        payload.net === 'h2'
+      );
+    }
+  }
+  const query = linkQuery(link);
+  const security = queryValue(query.get('security')).toLowerCase();
+  if (
+    security === 'reality' &&
+    ['android', '360'].includes(fingerprint.trim().toLowerCase())
+  )
+    return false;
+  if (type === 'http') return scheme === 'https';
+  if (type === 'trojan' && security === 'none') return false;
+  if (
+    ['quic'].includes(
+      queryValue(query.get('type')) || queryValue(query.get('net')),
+    )
+  )
+    return false;
+  return (
+    scheme === 'https' ||
+    ['trojan', 'anytls'].includes(type) ||
+    ['tls', 'xtls', 'reality'].includes(security)
+  );
 }
 
 // A fingerprint on a TLS link, or Reality, which always sends one; singbox/features.uc reads

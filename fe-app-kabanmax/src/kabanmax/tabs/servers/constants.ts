@@ -61,6 +61,7 @@ export const DEFAULT_CLIENT_FINGERPRINT = 'chrome';
 
 export const CLIENT_FINGERPRINTS = [
   'chrome',
+  'chrome_155',
   'firefox',
   'edge',
   'safari',

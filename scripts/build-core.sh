@@ -20,8 +20,10 @@ else
  git -C "$work/source" fetch --depth=1 "$source_repo" "$commit"
  git -C "$work/source" checkout -q --detach FETCH_HEAD
 fi
-git -C "$work/source" apply --check "$repo/core/patches/0001-stable-fallback.patch"
-git -C "$work/source" apply "$repo/core/patches/0001-stable-fallback.patch"
+for patch in "$repo"/core/patches/*.patch; do
+ git -C "$work/source" apply --check "$patch"
+ git -C "$work/source" apply "$patch"
+done
 python3 "$repo/scripts/brand-core.py" "$work/source"
 export SOURCE_DATE_EPOCH=1793880000
 mkdir -p "$output"

@@ -3119,6 +3119,18 @@ msgstr "Ты кабан"
 msgid "Your own certificate"
 msgstr "Свой сертификат"
 
+msgid "TLS fingerprint"
+msgstr "Отпечаток TLS"
+
+msgid "Inherit from connection URI"
+msgstr "Из настроек ссылки подключения"
+
+msgid "Unsupported TLS fingerprint."
+msgstr "Неподдерживаемый отпечаток TLS."
+
+msgid "TLS fingerprint requires a supported TCP connection with TLS enabled."
+msgstr "Отпечаток TLS доступен только для поддерживаемого TCP-подключения с включённым TLS."
+
 msgid "Failed to clear logs"
 msgstr "Не удалось очистить журнал"
 

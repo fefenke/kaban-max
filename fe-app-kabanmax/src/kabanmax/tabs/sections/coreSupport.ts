@@ -85,11 +85,12 @@ export function sectionMissingCoreFeatures(sectionId: string) {
     });
   (uci.sections(KABANMAX_UCI_PACKAGE, 'connection_link') || [])
     .filter((link) => link.section === sectionId)
-    .forEach((link) =>
+    .forEach((link) => {
+      if (link.tls_fingerprint && !coreHas('utls')) missing.add('utls');
       linkCoreFeatures(`${link.uri || ''}`)
         .filter((feature) => !coreHas(feature))
-        .forEach((feature) => missing.add(feature)),
-    );
+        .forEach((feature) => missing.add(feature));
+    });
   return [...missing];
 }
 

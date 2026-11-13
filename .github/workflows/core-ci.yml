@@ -22,9 +22,11 @@ jobs:
           git init /tmp/kaban-core
           git -C /tmp/kaban-core fetch --depth=1 https://github.com/ushan0v/sing-box-forkop.git 60d96c99815a672712915a5c00114bf0f690ad80
           git -C /tmp/kaban-core checkout --detach FETCH_HEAD
-          git -C /tmp/kaban-core apply --check "$PWD/core/patches/0001-stable-fallback.patch"
-          git -C /tmp/kaban-core apply "$PWD/core/patches/0001-stable-fallback.patch"
+          for patch in "$PWD"/core/patches/*.patch; do
+            git -C /tmp/kaban-core apply --check "$patch"
+            git -C /tmp/kaban-core apply "$patch"
+          done
           python3 scripts/brand-core.py /tmp/kaban-core
-      - name: Test fallback including cancellation and concurrent checks
+      - name: Test TLS fingerprints, parsers and fallback including concurrent checks
         working-directory: /tmp/kaban-core
-        run: go test -race ./protocol/group -run Fallback -count=1
+        run: go test -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./cmd/sing-box ./parser/... ./protocol/parser ./protocol/group ./common/tls ./common/tlsfragment

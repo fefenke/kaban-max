@@ -1,0 +1,444 @@
+diff --git a/common/tls/chrome155_test.go b/common/tls/chrome155_test.go
+new file mode 100644
+index 0000000..2253dfa
+--- /dev/null
++++ b/common/tls/chrome155_test.go
+@@ -0,0 +1,151 @@
++//go:build with_utls
++
++package tls
++
++import (
++	"context"
++	"encoding/binary"
++	"io"
++	"net"
++	"reflect"
++	"testing"
++	"time"
++
++	utls "github.com/metacubex/utls"
++	"github.com/sagernet/sing-box/option"
++	"github.com/stretchr/testify/require"
++)
++
++func TestChrome155IsExplicitAndChromeStays133(t *testing.T) {
++	for _, name := range []string{"", "chrome", "chrome_psk"} {
++		id, err := uTLSClientHelloID(name)
++		require.NoError(t, err)
++		require.Equal(t, "133", id.Version, name)
++	}
++	id, err := uTLSClientHelloID("chrome_155")
++	require.NoError(t, err)
++	require.Equal(t, "Chrome", id.Client)
++	require.Equal(t, "155", id.Version)
++	field, ok := reflect.TypeFor[option.OutboundUTLSOptions]().FieldByName("Fingerprint")
++	require.True(t, ok)
++	require.Contains(t, field.Tag.Get("enum"), "chrome_155")
++}
++
++func TestChrome155RealityHelloHonorsHybridAndRecordOptions(t *testing.T) {
++	for _, test := range []struct {
++		name    string
++		hybrid  bool
++		records bool
++	}{
++		{"default", true, false},
++		{"record fragments", true, true},
++		{"explicit classical", false, false},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			options := realityOptionsForTest("chrome_155", true)
++			options.Reality.SupportX25519MLKEM768 = &test.hybrid
++			options.RecordFragment = test.records
++			logger, _ := newWarnLogger(t)
++			config, err := NewClient(context.Background(), logger, "example.org", options)
++			require.NoError(t, err)
++			client, server := net.Pipe()
++			defer client.Close()
++			defer server.Close()
++			require.NoError(t, server.SetReadDeadline(time.Now().Add(5*time.Second)))
++			done := make(chan error, 1)
++			go func() {
++				_, err := ClientHandshake(context.Background(), client, config)
++				done <- err
++			}()
++			var raw []byte
++			var count int
++			for {
++				header := make([]byte, 5)
++				_, err = io.ReadFull(server, header)
++				require.NoError(t, err)
++				require.Equal(t, byte(22), header[0])
++				payload := make([]byte, binary.BigEndian.Uint16(header[3:]))
++				_, err = io.ReadFull(server, payload)
++				require.NoError(t, err)
++				raw = append(raw, payload...)
++				count++
++				if len(raw) >= 4 && len(raw) == 4+(int(raw[1])<<16|int(raw[2])<<8|int(raw[3])) {
++					break
++				}
++			}
++			server.Close()
++			require.Error(t, <-done, "the capture pipe never supplies a server handshake")
++			wantRecords := 1
++			if test.records {
++				wantRecords = 2
++			}
++			require.Equal(t, wantRecords, count)
++			require.NotEmpty(t, chrome155Extension(t, raw, 0xca34))
++			shares := chrome155Extension(t, raw, 51)[2:]
++			var groups []uint16
++			for len(shares) >= 4 {
++				groups = append(groups, binary.BigEndian.Uint16(shares))
++				length := int(binary.BigEndian.Uint16(shares[2:]))
++				require.GreaterOrEqual(t, len(shares), length+4)
++				shares = shares[length+4:]
++			}
++			require.Contains(t, groups, uint16(utls.X25519))
++			if test.hybrid {
++				require.Contains(t, groups, uint16(utls.X25519MLKEM768))
++			} else {
++				require.NotContains(t, groups, uint16(utls.X25519MLKEM768))
++			}
++		})
++	}
++}
++
++// Parse the bytes emitted by our specification path, not just a preset's ID.
++func chrome155Extension(t *testing.T, raw []byte, wanted uint16) []byte {
++	t.Helper()
++	require.GreaterOrEqual(t, len(raw), 39)
++	pos := 4 + 2 + 32
++	pos += 1 + int(raw[pos])
++	require.GreaterOrEqual(t, len(raw), pos+2)
++	pos += 2 + int(binary.BigEndian.Uint16(raw[pos:]))
++	require.Greater(t, len(raw), pos)
++	pos += 1 + int(raw[pos])
++	require.GreaterOrEqual(t, len(raw), pos+2)
++	end := pos + 2 + int(binary.BigEndian.Uint16(raw[pos:]))
++	pos += 2
++	require.LessOrEqual(t, end, len(raw))
++	for pos+4 <= end {
++		kind := binary.BigEndian.Uint16(raw[pos:])
++		size := int(binary.BigEndian.Uint16(raw[pos+2:]))
++		pos += 4
++		require.LessOrEqual(t, pos+size, end)
++		if kind == wanted {
++			return raw[pos : pos+size]
++		}
++		pos += size
++	}
++	t.Fatalf("ClientHello has no extension %#x", wanted)
++	return nil
++}
++
++func TestChrome155CarriesActualNewWireCapabilities(t *testing.T) {
++	conn := buildClientHello(t, "chrome_155")
++	raw := conn.HandshakeState.Hello.Raw
++	signatures := chrome155Extension(t, raw, 13)
++	require.GreaterOrEqual(t, len(signatures), 10)
++	grease := binary.BigEndian.Uint16(signatures[2:])
++	require.Equal(t, uint16(0x0a0a), grease&0x0f0f)
++	require.Equal(t, byte(grease), byte(grease>>8))
++	for i, want := range []uint16{0x0904, 0x0905, 0x0906} {
++		require.Equal(t, want, binary.BigEndian.Uint16(signatures[4+2*i:]))
++	}
++	anchors := chrome155Extension(t, raw, 0xca34)
++	require.NotEmpty(t, anchors)
++	shares := clientHelloKeyShares(t, conn)
++	hybrid, hybridCount := keyShareIndex(shares, utls.X25519MLKEM768)
++	classical, classicalCount := keyShareIndex(shares, utls.X25519)
++	require.Equal(t, 1, hybridCount)
++	require.Equal(t, 1, classicalCount)
++	require.Less(t, hybrid, classical)
++	require.Len(t, shares[hybrid].Data, 1216)
++	require.Len(t, shares[classical].Data, 32)
++}
+diff --git a/common/tls/reality_fingerprint_test.go b/common/tls/reality_fingerprint_test.go
+index c448ac0..cc24dde 100644
+--- a/common/tls/reality_fingerprint_test.go
++++ b/common/tls/reality_fingerprint_test.go
+@@ -110,6 +110,7 @@ func TestRealityFingerprintWithoutHybridKeyShareWarns(t *testing.T) {
+ 		{"qq", true, true},
+ 		{"", true, false},
+ 		{"chrome", true, false},
++		{"chrome_155", true, false},
+ 		{"firefox", true, false},
+ 		{"safari", true, false},
+ 		{"random", true, false},
+diff --git a/common/tls/utls_client.go b/common/tls/utls_client.go
+index e34a4be..e67f599 100644
+--- a/common/tls/utls_client.go
++++ b/common/tls/utls_client.go
+@@ -409,6 +409,8 @@ func uTLSClientHelloID(name string) (utls.ClientHelloID, error) {
+ 		fallthrough
+ 	case "chrome", "":
+ 		return utls.HelloChrome_Auto, nil
++	case "chrome_155":
++		return utls.HelloChrome_155, nil
+ 	case "firefox":
+ 		return helloFirefox148, nil
+ 	case "edge":
+diff --git a/common/tls/utls_key_share_test.go b/common/tls/utls_key_share_test.go
+index 08fe192..0503a56 100644
+--- a/common/tls/utls_key_share_test.go
++++ b/common/tls/utls_key_share_test.go
+@@ -48,7 +48,7 @@ func keyShareIndex(shares []utls.KeyShare, group utls.CurveID) (index int, count
+ // key share ahead of one X25519 share and answers anything else with its
+ // camouflage site.
+ func TestFingerprintsCarryOneHybridKeyShareFirst(t *testing.T) {
+-	for _, fingerprint := range []string{"chrome", "firefox", "safari"} {
++	for _, fingerprint := range []string{"chrome", "chrome_155", "firefox", "safari"} {
+ 		t.Run(fingerprint, func(t *testing.T) {
+ 			shares := clientHelloKeyShares(t, buildClientHello(t, fingerprint))
+ 			hybrid, hybridCount := keyShareIndex(shares, utls.X25519MLKEM768)
+diff --git a/common/tls/utls_spec_test.go b/common/tls/utls_spec_test.go
+index 04a7cc5..0f9458d 100644
+--- a/common/tls/utls_spec_test.go
++++ b/common/tls/utls_spec_test.go
+@@ -13,7 +13,7 @@ import (
+ 	"github.com/stretchr/testify/require"
+ )
+ 
+-var specFingerprints = []string{"chrome", "edge", "ios", "qq", "360", "android"}
++var specFingerprints = []string{"chrome", "chrome_155", "edge", "ios", "qq", "360", "android"}
+ 
+ // A hello built from the specification of a fingerprint is, byte for byte, the hello uTLS
+ // builds from the fingerprint's ID: the same random stream gives the same bytes, the
+diff --git a/go.mod b/go.mod
+index 091f53f..a73e63a 100644
+--- a/go.mod
++++ b/go.mod
+@@ -1,5 +1,8 @@
+ module github.com/sagernet/sing-box
+ 
++// Chrome 155 is explicit; this reviewed fork preserves HelloChrome_Auto = 133.
++replace github.com/metacubex/utls => github.com/Leadaxe/utls-lx v1.8.8-0.20261008181611-47b8493a47af
++
+ go 1.25.5
+ 
+ require (
+diff --git a/go.sum b/go.sum
+index d7d4982..a28df14 100644
+--- a/go.sum
++++ b/go.sum
+@@ -2,6 +2,8 @@ cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMT
+ filippo.io/edwards25519 v1.2.0 h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
+ filippo.io/edwards25519 v1.2.0/go.mod h1:xzAOLCNug/yB62zG1bQ8uziwrIqIuxhctzJT18Q77mc=
+ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
++github.com/Leadaxe/utls-lx v1.8.8-0.20261008181611-47b8493a47af h1:OdjzYa+QVxlwM22+b63NAOcQuza6cnFQq0dv+Zl+ewM=
++github.com/Leadaxe/utls-lx v1.8.8-0.20261008181611-47b8493a47af/go.mod h1:kncGGVhFaoGn5M3pFe3SXhZCzsbCJayNOH4UEqTKTko=
+ github.com/RyuaNerin/go-krypto v1.3.0 h1:smavTzSMAx8iuVlGb4pEwl9MD2qicqMzuXR2QWp2/Pg=
+ github.com/RyuaNerin/go-krypto v1.3.0/go.mod h1:9R9TU936laAIqAmjcHo/LsaXYOZlymudOAxjaBf62UM=
+ github.com/RyuaNerin/testingutil v0.1.0 h1:IYT6JL57RV3U2ml3dLHZsVtPOP6yNK7WUVdzzlpNrss=
+diff --git a/option/parser.go b/option/parser.go
+index 28f6aa6..5a9bf26 100644
+--- a/option/parser.go
++++ b/option/parser.go
+@@ -5,4 +5,5 @@ type ParserOutboundOptions struct {
+ 	Link              string `json:"link"`
+ 	TLSRecordFragment bool   `json:"tls_record_fragment,omitempty"`
+ 	TLSClassical      bool   `json:"tls_classical,omitempty"`
++	TLSFingerprint    string `json:"tls_fingerprint,omitempty"`
+ }
+diff --git a/option/tls.go b/option/tls.go
+index 3c1a97f..2539bcd 100644
+--- a/option/tls.go
++++ b/option/tls.go
+@@ -247,7 +247,7 @@ type OutboundECHOptions struct {
+ 
+ type OutboundUTLSOptions struct {
+ 	Enabled     bool   `json:"enabled,omitempty"`
+-	Fingerprint string `json:"fingerprint,omitempty" enum:"chrome_psk,chrome_psk_shuffle,chrome_padding_psk_shuffle,chrome_pq,chrome_pq_psk,chrome,firefox,edge,safari,360,qq,ios,android,random,randomized"`
++	Fingerprint string `json:"fingerprint,omitempty" enum:"chrome_psk,chrome_psk_shuffle,chrome_padding_psk_shuffle,chrome_pq,chrome_pq_psk,chrome,chrome_155,firefox,edge,safari,360,qq,ios,android,random,randomized"`
+ }
+ 
+ type OutboundRealityOptions struct {
+diff --git a/parser/subscription/chrome155_test.go b/parser/subscription/chrome155_test.go
+new file mode 100644
+index 0000000..5349fd3
+--- /dev/null
++++ b/parser/subscription/chrome155_test.go
+@@ -0,0 +1,22 @@
++package subscription
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestChrome155FingerprintSurvivesSubscriptionParsing(t *testing.T) {
++	for _, reality := range []bool{false, true} {
++		for _, name := range []string{"chrome_155", " Chrome_155 "} {
++			options, err := UTLSFingerprint(name, "chrome", reality)
++			require.NoError(t, err)
++			require.NotNil(t, options)
++			require.True(t, options.Enabled)
++			require.Equal(t, "chrome_155", options.Fingerprint)
++		}
++		options, err := UTLSFingerprint("", "chrome", reality)
++		require.NoError(t, err)
++		require.Equal(t, "chrome", options.Fingerprint)
++	}
++}
+diff --git a/parser/subscription/tls.go b/parser/subscription/tls.go
+index 004984c..13b6962 100644
+--- a/parser/subscription/tls.go
++++ b/parser/subscription/tls.go
+@@ -11,7 +11,7 @@ import (
+ 
+ // The fingerprints sing-box knows by these names (common/tls/utls_client.go).
+ var utlsFingerprints = map[string]bool{
+-	"chrome": true, "firefox": true, "edge": true, "safari": true, "360": true, "qq": true, "ios": true, "android": true,
++	"chrome": true, "chrome_155": true, "firefox": true, "edge": true, "safari": true, "360": true, "qq": true, "ios": true, "android": true,
+ 	"random": true, "randomized": true,
+ 	"chrome_psk": true, "chrome_psk_shuffle": true, "chrome_padding_psk_shuffle": true, "chrome_pq": true, "chrome_pq_psk": true,
+ }
+diff --git a/protocol/parser/outbound.go b/protocol/parser/outbound.go
+index 35d47e4..ac07458 100644
+--- a/protocol/parser/outbound.go
++++ b/protocol/parser/outbound.go
+@@ -2,6 +2,7 @@ package parser
+ 
+ import (
+ 	"context"
++	"strings"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+@@ -9,6 +10,7 @@ import (
+ 	"github.com/sagernet/sing-box/log"
+ 	"github.com/sagernet/sing-box/option"
+ 	"github.com/sagernet/sing-box/parser/link"
++	"github.com/sagernet/sing-box/parser/subscription"
+ 
+ 	E "github.com/sagernet/sing/common/exceptions"
+ 	"github.com/sagernet/sing/service"
+@@ -29,6 +31,35 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
+ 	if dialerOptions, ok := outboundOptions.Options.(option.DialerOptionsWrapper); ok {
+ 		dialerOptions.ReplaceDialerOptions(options.DialerOptions)
+ 	}
++	if fingerprint := strings.ToLower(strings.TrimSpace(options.TLSFingerprint)); fingerprint != "" {
++		tlsOptions, ok := outboundOptions.Options.(option.OutboundTLSOptionsWrapper)
++		if !ok || tlsOptions.TakeOutboundTLSOptions() == nil || !tlsOptions.TakeOutboundTLSOptions().Enabled {
++			return nil, E.New("tls_fingerprint requires an existing TCP TLS connection")
++		}
++		tls := *tlsOptions.TakeOutboundTLSOptions()
++		var transport *option.V2RayTransportOptions
++		switch value := outboundOptions.Options.(type) {
++		case *option.VLESSOutboundOptions:
++			transport = value.Transport
++		case *option.VMessOutboundOptions:
++			transport = value.Transport
++		case *option.TrojanOutboundOptions:
++			transport = value.Transport
++		case *option.HTTPOutboundOptions, *option.AnyTLSOutboundOptions:
++		default:
++			return nil, E.New("tls_fingerprint is unsupported for this outbound protocol")
++		}
++		if transport != nil && (transport.Type == C.V2RayTransportTypeQUIC || (transport.Type == C.V2RayTransportTypeXHTTP && (tls.Reality == nil || !tls.Reality.Enabled) && len(tls.ALPN) == 1 && tls.ALPN[0] == "h3")) {
++			return nil, E.New("tls_fingerprint is unsupported over QUIC")
++		}
++		// Strict override: unlike imported links, unknown names never silently fall back.
++		utls, err := subscription.UTLSFingerprint(fingerprint, "", true)
++		if err != nil || utls == nil || utls.Fingerprint != fingerprint {
++			return nil, E.New("unsupported tls_fingerprint: ", fingerprint)
++		}
++		tls.UTLS = utls
++		tlsOptions.ReplaceOutboundTLSOptions(&tls)
++	}
+ 	if options.TLSRecordFragment || options.TLSClassical {
+ 		tlsOptions, ok := outboundOptions.Options.(option.OutboundTLSOptionsWrapper)
+ 		if !ok || outboundOptions.Type != C.TypeVLESS || tlsOptions.TakeOutboundTLSOptions() == nil || !tlsOptions.TakeOutboundTLSOptions().Enabled || tlsOptions.TakeOutboundTLSOptions().Reality == nil || !tlsOptions.TakeOutboundTLSOptions().Reality.Enabled {
+diff --git a/protocol/parser/outbound_test.go b/protocol/parser/outbound_test.go
+index 7dfd9c5..6e98d1b 100644
+--- a/protocol/parser/outbound_test.go
++++ b/protocol/parser/outbound_test.go
+@@ -60,3 +60,40 @@ func TestParserRejectsTLSOverridesWithoutVLESSReality(t *testing.T) {
+ 		}
+ 	}
+ }
++
++func TestParserFingerprintOverride(t *testing.T) {
++	uri := realityTestLink + "&fp=firefox#Same"
++	for _, fingerprint := range []string{"", " Chrome_155 "} {
++		r := &captureRegistry{}
++		ctx := service.ContextWith[adapter.OutboundRegistry](context.Background(), r)
++		_, err := NewOutbound(ctx, nil, nil, "test", option.ParserOutboundOptions{Link: uri, TLSFingerprint: fingerprint})
++		if err != nil {
++			t.Fatal(err)
++		}
++		tls := r.options.(option.OutboundTLSOptionsWrapper).TakeOutboundTLSOptions()
++		expected := "firefox"
++		if fingerprint != "" {
++			expected = "chrome_155"
++		}
++		if tls.UTLS == nil || tls.UTLS.Fingerprint != expected || tls.ServerName != "example.com" || tls.Reality == nil {
++			t.Fatalf("override lost parsed TLS fields: %+v", tls)
++		}
++	}
++}
++
++func TestParserRejectsUnsupportedFingerprintOverride(t *testing.T) {
++	for _, uri := range []string{"socks://example.com:1080", "vless://00000000-0000-0000-0000-000000000001@example.com:443?security=none", "vless://00000000-0000-0000-0000-000000000001@example.com:443?security=tls&type=xhttp&alpn=h3", "hysteria2://password@example.com:443"} {
++		r := &captureRegistry{}
++		ctx := service.ContextWith[adapter.OutboundRegistry](context.Background(), r)
++		if _, err := NewOutbound(ctx, nil, nil, "test", option.ParserOutboundOptions{Link: uri, TLSFingerprint: "chrome_155"}); err == nil || r.options != nil {
++			t.Fatalf("accepted unsupported TLS override on %s", uri)
++		}
++	}
++	for _, fp := range []string{"unknown", "none", "unsafe"} {
++		r := &captureRegistry{}
++		ctx := service.ContextWith[adapter.OutboundRegistry](context.Background(), r)
++		if _, err := NewOutbound(ctx, nil, nil, "test", option.ParserOutboundOptions{Link: realityTestLink, TLSFingerprint: fp}); err == nil {
++			t.Fatalf("accepted unsupported fingerprint %s", fp)
++		}
++	}
++}
+diff --git a/release/forkop/package.sh b/release/forkop/package.sh
+index a13a32a..f368d17 100755
+--- a/release/forkop/package.sh
++++ b/release/forkop/package.sh
+@@ -68,6 +68,7 @@ install -Dm644 "$PROJECT/release/config/openwrt.conf" "$ROOT/etc/config/sing-box
+ install -Dm755 "$PROJECT/release/config/openwrt.init" "$ROOT/etc/init.d/sing-box"
+ install -Dm644 "$PROJECT/release/config/openwrt.keep" "$ROOT/lib/upgrade/keep.d/sing-box"
+ install -Dm644 "$PROJECT/LICENSE" "$ROOT/usr/share/licenses/sing-box/LICENSE"
++install -Dm644 "$PROJECT/release/forkop/utls-lx.LICENSE" "$ROOT/usr/share/licenses/sing-box/utls-lx.LICENSE"
+ 
+ comma_list() {
+   local joined
+diff --git a/release/forkop/utls-lx.LICENSE b/release/forkop/utls-lx.LICENSE
+new file mode 100644
+index 0000000..6a66aea
+--- /dev/null
++++ b/release/forkop/utls-lx.LICENSE
+@@ -0,0 +1,27 @@
++Copyright (c) 2009 The Go Authors. All rights reserved.
++
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions are
++met:
++
++   * Redistributions of source code must retain the above copyright
++notice, this list of conditions and the following disclaimer.
++   * Redistributions in binary form must reproduce the above
++copyright notice, this list of conditions and the following disclaimer
++in the documentation and/or other materials provided with the
++distribution.
++   * Neither the name of Google Inc. nor the names of its
++contributors may be used to endorse or promote products derived from
++this software without specific prior written permission.
++
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
