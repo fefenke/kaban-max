@@ -1,13 +1,48 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   recentFallbackEvents,
   observationSummary,
   lastFallbackSwitch,
   observationPeriod,
+  renderFallbackObservation,
 } from '../fallbackObservation';
-import type { ClashAPI } from '../../../types';
+import type { ClashAPI, KabanMax } from '../../../types';
 
 describe('bounded fallback observation display', () => {
+  it('uses a local container for the overview heading to avoid LuCI page-header styles', () => {
+    const element = (
+      tag: string,
+      attrs: Record<string, unknown>,
+      children: unknown,
+    ) => ({ tag, attrs, children });
+    vi.stubGlobal('E', element);
+    try {
+      const [overview] = renderFallbackObservation({
+        outbounds: [],
+        stableStatus: {
+          state: 'primary',
+          active: 'A',
+          members: [],
+          events: [],
+          stats: {
+            since: new Date().toISOString(),
+            selected_since: new Date().toISOString(),
+            switches_total: 0,
+            backup_seconds: 0,
+            members: [],
+          },
+        },
+      } as unknown as KabanMax.FallbackInfo) as unknown as Array<{
+        children: Array<{ tag: string; attrs: Record<string, unknown> }>;
+      }>;
+      expect(overview.children[0]).toMatchObject({
+        tag: 'div',
+        attrs: { class: 'kaban-observation__heading' },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   const now = Date.parse('2026-11-07T18:00:00Z');
   it('keeps only the latest 50 events within 24 hours without mutating input', () => {
     const events = Array.from({ length: 60 }, (_, i) => ({

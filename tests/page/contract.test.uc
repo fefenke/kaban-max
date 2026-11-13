@@ -86,7 +86,7 @@ t.test("the state service parks a request as long as the page expects", () => {
 t.test("the page may call every method the state service publishes", () => {
     let acl = json(fs.readfile(repo.path("luci-app-kabanmax/root/usr/share/rpcd/acl.d/luci-app-kabanmax.json")))["luci-app-kabanmax"];
     t.eq(sort([ ...acl.read.ubus.kabanmax, ...acl.write.ubus.kabanmax ]), sort(keys(state_service.object_methods())));
-    t.eq(acl.write.ubus.kabanmax, [ "import_config" ]);
+    t.eq(acl.write.ubus.kabanmax, [ "import_config", "clear_logs" ]);
 });
 
 t.test("the option every password field is stored in is masked in diagnostics", () => {

@@ -1410,6 +1410,27 @@ function add_static_hosts_dns_rule(config, hosts) {
     });
 }
 
+function add_pre_routing_resolve(config, settings, hosts) {
+    let resolved = runtime_dns.pre_routing_resolve(settings);
+    if (resolved.unsupported)
+        runtime_generate_unsupported(resolved.unsupported);
+    if (resolved.mode == "disabled")
+        return;
+
+    // Explicit main DNS bypasses FakeIP, local-zone and section DNS rules. Static
+    // records already resolved above must keep their pinned destination addresses.
+    let rules = [ {
+        domain: [ ...hosts.domains, runtime_constants.CHECK_PROXY_IP_DOMAIN, runtime_constants.FAKEIP_TEST_DOMAIN ],
+        invert: true
+    } ];
+    if (resolved.mode == "selected")
+        push(rules, { type: "logical", mode: "or", rules: resolved.rules });
+    push(config.route.rules, {
+        type: "logical", mode: "and", rules,
+        action: "resolve", server: runtime_constants.DNS_SERVER_TAG
+    });
+}
+
 // Unmatched queries take the KabanMax DNS, or the local resolver when configured so. The
 // resolver's own upstream queries are never captured, so this cannot loop.
 function add_source_aware_dns_fallback(config) {
@@ -1851,6 +1872,7 @@ function build(context) {
     for (let section in sections)
         add_outbound_for_section(config, section);
     add_service_route_rules(config, sections);
+    add_pre_routing_resolve(config, settings, static_hosts);
     for (let section in sections)
         add_route_for_section(config, section);
     add_static_hosts_dns_rule(config, static_hosts);

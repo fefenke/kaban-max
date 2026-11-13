@@ -7,8 +7,11 @@ let ui = require("service.ui");
 let health = require("service.health");
 let features = require("singbox.features");
 
+let journal_run = 0;
 function fresh_service() {
-    return stub.fresh("service.state_service");
+    let service = stub.fresh("service.state_service");
+    service.paths.journal_dir = getenv("KABANMAX_TEST_TMP") + "/journal-" + ++journal_run;
+    return service;
 }
 
 // The runtime a running service reads, how many times it read it, and how
@@ -33,7 +36,9 @@ function runtime_state() {
 // Runs the service's loop over that runtime; `during` is what happens while
 // the loop runs, handed the service.
 function started(during) {
-    let real = { state: ui.current_ui_state, running: health.sing_box_service_running, report: features.report };
+    let exec = require("core.exec");
+    let real = { state: ui.current_ui_state, running: health.sing_box_service_running, report: features.report, capture_parallel: exec.capture_parallel };
+    exec.capture_parallel = () => [ { status: 0, stdout: "archived\n" } ];
     ui.current_ui_state = runtime_state;
     health.sing_box_service_running = () => runtime.running == 1;
     features.report = () => ({ known: true });
@@ -57,6 +62,7 @@ function started(during) {
     ui.current_ui_state = real.state;
     health.sing_box_service_running = real.running;
     features.report = real.report;
+    exec.capture_parallel = real.capture_parallel;
     return { status, looped };
 }
 
@@ -146,24 +152,81 @@ t.test("the first log answer says where the log stands and carries none of it", 
     t.eq(reply, { cursor: 2 });
 });
 
-t.test("the Logs tab gets the whole log, read again only once a line arrived past its cursor", () => {
+t.test("the Logs tab retains captured records after the system ring changes", () => {
     let service = fresh_service();
     let exec = require("core.exec");
     let real_parallel = exec.capture_parallel;
     let full_reads = 0;
     exec.capture_parallel = (commands) => map(commands, (argv) =>
         argv[0] == "logread" && argv[1] == "-e" ? { status: 0, stdout: "whole log " + ++full_reads + "\n" } : die("unexpected " + join(" ", argv)));
-    stub.commands([ [ "logread -l", { stdout: "kabanmax: first\n" } ] ]);
     let log_text = (args) => service.object_methods().log_text.call({ args });
     let first = log_text({});
     let same = log_text({ cursor: first.cursor });
-    service.remember_log_line("kabanmax: second");
+    service.collect_logs();
     let moved = log_text({ cursor: first.cursor });
     let fresh_page = log_text({});
     stub.restore();
     exec.capture_parallel = real_parallel;
     t.eq([ first.text, same, moved.text, moved.cursor - first.cursor, fresh_page.text, full_reads ],
-        [ "whole log 1\n", { cursor: first.cursor, unchanged: true }, "whole log 2\n", 1, "whole log 3\n", 3 ]);
+        [ "whole log 1\n", { cursor: first.cursor, unchanged: true }, "whole log 1\nwhole log 2\n", 1, "whole log 1\nwhole log 2\n", 2 ]);
+});
+
+t.test("clearing the retained journal does not reimport old system records", () => {
+    let service = fresh_service();
+    let exec = require("core.exec");
+    let real_parallel = exec.capture_parallel;
+    let text = "before\n";
+    exec.capture_parallel = () => [ { status: 0, stdout: text } ];
+    let methods = service.object_methods();
+    let first = methods.log_text.call({ args: {} });
+    t.eq(first.text, "before\n");
+    t.eq(methods.clear_logs.call({ args: {} }), { success: true });
+    service.collect_logs();
+    t.eq(methods.log_text.call({ args: {} }).text, "");
+    text += "after\n";
+    service.collect_logs();
+    t.eq(methods.log_text.call({ args: {} }).text, "after\n");
+    exec.capture_parallel = real_parallel;
+});
+
+t.test("a state service restart preserves the archive and a failed clear preserves its contents", () => {
+    let service = fresh_service();
+    let exec = require("core.exec");
+    let real_parallel = exec.capture_parallel;
+    exec.capture_parallel = () => [ { status: 0, stdout: "saved\n" } ];
+    let first = service.object_methods().log_text.call({ args: {} });
+    let restarted = fresh_service();
+    restarted.paths.journal_dir = service.paths.journal_dir;
+    t.eq(restarted.object_methods().log_text.call({ args: {} }).text, first.text);
+    let real_atomic = require("core.common").write_file_atomic;
+    require("core.common").write_file_atomic = () => false;
+    t.eq(restarted.object_methods().clear_logs.call({ args: {} }), { success: false });
+    t.eq(restarted.object_methods().log_text.call({ args: {} }).text, "saved\n");
+    require("core.common").write_file_atomic = real_atomic;
+    exec.capture_parallel = real_parallel;
+});
+
+t.test("logs are collected on the timer even without any browser log interest", () => {
+    let retained = "";
+    started((service) => {
+        fire_interval(service.LOG_POLL_MS);
+        retained = fs.readfile(service.paths.journal_dir + "/archive.json") ?? "";
+    });
+    t.ok(index(retained, "archived") >= 0);
+});
+
+t.test("clear refuses a failed fresh system read rather than resurrecting uncaptured records", () => {
+    let service = fresh_service();
+    let exec = require("core.exec");
+    let real_parallel = exec.capture_parallel;
+    exec.capture_parallel = () => [ { status: 0, stdout: "before\n" } ];
+    let methods = service.object_methods();
+    methods.log_text.call({ args: {} });
+    exec.capture_parallel = () => [ { status: 1, stdout: "" } ];
+    let reply = methods.clear_logs.call({ args: {} });
+    exec.capture_parallel = real_parallel;
+    t.eq(reply, { success: false });
+    t.eq(methods.log_text.call({ args: {} }).text, "before\n");
 });
 
 t.test("the new lines of a tail are the ones after the last line already held", () => {

@@ -365,6 +365,9 @@ function dns_setting_values(settings, key) {
 }
 
 function validate_dns_settings(settings, sections, context) {
+    let pre_resolve = runtime_dns.pre_routing_resolve(settings);
+    if (pre_resolve.unsupported)
+        fail_validation(pre_resolve.unsupported);
     validate_required_duration_option(option(settings, "dns_timeout", "10s"), "'DNS timeout' in Settings");
     let dns_strategy = option(settings, "dns_strategy", "prefer_ipv4");
     if (!contains([ "prefer_ipv4", "ipv4_only", "prefer_ipv6", "ipv6_only" ], dns_strategy))

@@ -334,8 +334,9 @@ ${ansiStyles}
 .fkp_components-page__heading > span { font-size:12px; color:var(--text-color-medium,#65717d); }
 .fkp_components-page__core { color:var(--text-color-medium,#65717d); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
 .fkp_components-page__core > span { display:inline; }
-.fkp_components-page__config-buttons { display:flex; gap:8px; flex-wrap:wrap; }
-.fkp_components-page__config-buttons > .fkp-partial-button { flex:1 1 95px; }
+.fkp_components-page__config-buttons { display:flex; flex-direction:column; gap:8px; align-items:stretch; }
+.fkp_components-page__config-buttons > .fkp-partial-button { box-sizing:border-box; width:100%; white-space:normal; }
+.fkp_components-page__config-buttons > .fkp-partial-button > span:last-child { min-width:0; overflow-wrap:anywhere; }
 .fkp_components-page__game { min-width:0; align-self:stretch; }
 .fkp_acorn-game { box-sizing:border-box; height:100%; border:1px solid var(--border-color-low,#e2e6e9); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; }
 .fkp_acorn-game__bar { padding:12px; }

@@ -950,9 +950,9 @@ its own name's length. */
 .kaban-observation__heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:14px; }
 .kaban-observation__heading h4 { margin:0 0 4px; font-size:16px; font-weight:650; }
 .kaban-observation__period { font-size:12px; color:var(--ko-muted); }
-.kaban-observation__state { padding:4px 9px; border-radius:20px; background:var(--background-color-low,#f1f4f6); font-size:12px; white-space:nowrap; }
-.kaban-observation__state--primary { color:#28764b; background:#edf7f0; }
-.kaban-observation__state--backup,.kaban-observation__state--suspect { color:#8b641a; background:#fff7e7; }
+.kaban-observation__state { font-size:12px; white-space:nowrap; color:var(--text-color-medium,#65717d); }
+.kaban-observation__state--primary { color:#28764b; }
+.kaban-observation__state--backup,.kaban-observation__state--suspect { color:#8b641a; }
 .kaban-observation__selected { display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding:12px 14px; margin-bottom:12px; border:1px solid var(--ko-border); border-radius:8px; }
 .kaban-observation__selected strong { overflow-wrap:anywhere; }
 .kaban-observation__selected > span:last-child { margin-left:auto; font-size:12px; color:var(--ko-muted); font-variant-numeric:tabular-nums; }

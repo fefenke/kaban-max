@@ -109,7 +109,7 @@ export function renderFallbackObservation(info: KabanMax.FallbackInfo) {
   );
   return [
     E('section', { class: 'kaban-observation' }, [
-      E('header', { class: 'kaban-observation__heading' }, [
+      E('div', { class: 'kaban-observation__heading' }, [
         E('div', {}, [
           E('h4', {}, _('Connection overview')),
           E(

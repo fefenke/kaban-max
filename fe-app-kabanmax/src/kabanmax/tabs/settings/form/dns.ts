@@ -12,6 +12,7 @@ import { createStaticHostsOption } from '../staticHosts';
 import { validateRequiredSingBoxDuration } from '../../../../validators/validateSingBoxDuration';
 import { required } from '../../../cbi/required';
 import { wholeNumberField } from '../../../../validators/fields';
+import { addPreRoutingResolveOptions } from '../preRoutingResolve';
 
 export function addDnsOptions(section: CBISection) {
   const dnsOption = section.option(
@@ -97,6 +98,7 @@ export function addDnsOptions(section: CBISection) {
   configureDownloadSectionOption(o, 'dns_detour_section');
 
   createStaticHostsOption(section);
+  addPreRoutingResolveOptions(section);
 
   o = section.option(
     form.Value,
