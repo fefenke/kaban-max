@@ -179,11 +179,17 @@ controls at least, growing with its output up to its limit. */
     font-variant-numeric: tabular-nums;
 }
 
-.fkp_components-page__run-status--success {
+.fkp_components-page__update-status {
+    color: var(--text-color-medium, inherit);
+}
+
+.fkp_components-page__run-status--success,
+.fkp_components-page__update-status--success {
     color: var(--success-color-high, green);
 }
 
-.fkp_components-page__run-status--error {
+.fkp_components-page__run-status--error,
+.fkp_components-page__update-status--error {
     color: var(--error-color-high, red);
 }
 

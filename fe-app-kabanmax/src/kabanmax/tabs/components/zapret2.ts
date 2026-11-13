@@ -65,6 +65,11 @@ export function renderZapret2(): HTMLElement {
   let busy = true;
   let state: Zapret2Status = {};
   let checked = false;
+  function showDetails(text: string, tone: '' | 'success' | 'error' = '') {
+    details.textContent = text;
+    details.hidden = !text;
+    details.className = `fkp_components-page__update-status${tone ? ` fkp_components-page__update-status--${tone}` : ''}`;
+  }
   function draw() {
     const next = zapretAction(state, checked, busy);
     install.disabled = next.disabled;
@@ -82,20 +87,26 @@ export function renderZapret2(): HTMLElement {
       state = await command(['zapret2_status']);
       busy = Boolean(state.running);
       status.textContent = state.installed || '\u2014';
-      details.textContent =
+      showDetails(
         state.success === false || busy
           ? state.message || (busy ? _('in progress') : _('failed'))
           : checked && state.latest
             ? state.latest === state.installed
               ? _('No updates available')
               : `${_('Update available')}: ${state.latest}`
-            : '';
-      details.hidden = !details.textContent;
+            : '',
+        busy
+          ? ''
+          : state.success === false
+            ? 'error'
+            : checked && state.latest
+              ? 'success'
+              : '',
+      );
       if (busy && root.isConnected)
         window.setTimeout(() => void refresh(), 1500);
     } catch (error) {
-      details.textContent = (error as Error).message;
-      details.hidden = false;
+      showDetails((error as Error).message, 'error');
       busy = false;
       checked = false;
     }
@@ -105,14 +116,14 @@ export function renderZapret2(): HTMLElement {
   async function run(action: string) {
     if (busy) return;
     busy = true;
+    showDetails(_('in progress'));
     draw();
     try {
       await command(['zapret2_update', action]);
       checked = true;
       await refresh();
     } catch (error) {
-      details.textContent = (error as Error).message;
-      details.hidden = false;
+      showDetails((error as Error).message, 'error');
       busy = false;
       checked = false;
       draw();

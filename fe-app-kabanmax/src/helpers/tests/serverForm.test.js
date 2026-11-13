@@ -31,6 +31,19 @@ function build(server = {}) {
 }
 
 describe('server form', () => {
+  it('offers Chrome 155 separately while keeping Chrome as the default', () => {
+    const { section } = build({ security: 'reality' });
+    const fingerprint = section.options.find(
+      (option) => option.name === 'client_fingerprint',
+    );
+
+    expect(fingerprint.choices.slice(0, 2)).toEqual([
+      ['chrome', 'chrome'],
+      ['chrome_155', 'chrome_155'],
+    ]);
+    expect(fingerprint.default).toBe('chrome');
+  });
+
   it('leaves a server that becomes AmneziaWG empty until its parameters are generated', () => {
     const { section, uci } = build({ protocol: 'wireguard' });
     const button = section.options.find(

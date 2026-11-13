@@ -323,6 +323,11 @@ function renderZapret2() {
   let busy = true;
   let state = {};
   let checked = false;
+  function showDetails(text8, tone = "") {
+    details.textContent = text8;
+    details.hidden = !text8;
+    details.className = `fkp_components-page__update-status${tone ? ` fkp_components-page__update-status--${tone}` : ""}`;
+  }
   function draw() {
     const next = zapretAction(state, checked, busy);
     install.disabled = next.disabled;
@@ -333,13 +338,14 @@ function renderZapret2() {
       state = await command(["zapret2_status"]);
       busy = Boolean(state.running);
       status.textContent = state.installed || "\u2014";
-      details.textContent = state.success === false || busy ? state.message || (busy ? _("in progress") : _("failed")) : checked && state.latest ? state.latest === state.installed ? _("No updates available") : `${_("Update available")}: ${state.latest}` : "";
-      details.hidden = !details.textContent;
+      showDetails(
+        state.success === false || busy ? state.message || (busy ? _("in progress") : _("failed")) : checked && state.latest ? state.latest === state.installed ? _("No updates available") : `${_("Update available")}: ${state.latest}` : "",
+        busy ? "" : state.success === false ? "error" : checked && state.latest ? "success" : ""
+      );
       if (busy && root.isConnected)
         window.setTimeout(() => void refresh(), 1500);
     } catch (error) {
-      details.textContent = error.message;
-      details.hidden = false;
+      showDetails(error.message, "error");
       busy = false;
       checked = false;
     }
@@ -348,14 +354,14 @@ function renderZapret2() {
   async function run(action) {
     if (busy) return;
     busy = true;
+    showDetails(_("in progress"));
     draw();
     try {
       await command(["zapret2_update", action]);
       checked = true;
       await refresh();
     } catch (error) {
-      details.textContent = error.message;
-      details.hidden = false;
+      showDetails(error.message, "error");
       busy = false;
       checked = false;
       draw();
@@ -4905,9 +4911,6 @@ function initController() {
     renderActions(runState ?? run.state);
     try {
       release = await checkRelease();
-      if (!release.update_available) {
-        showToast(_("No updates available"), "success");
-      }
     } catch (error) {
       release = null;
       releaseError = error instanceof Error ? error.message : String(error);
@@ -4949,7 +4952,11 @@ function initController() {
       ]),
       textE(
         "p",
-        { role: "status", hidden: !releaseBusy && !releaseError && !release },
+        {
+          role: "status",
+          class: `fkp_components-page__update-status${releaseBusy ? "" : releaseError ? " fkp_components-page__update-status--error" : release ? " fkp_components-page__update-status--success" : ""}`,
+          hidden: !releaseBusy && !releaseError && !release
+        },
         releaseBusy ? _("The boar looks for fresh acorns...") : releaseError || (release?.update_available ? `${_("Update available")}: ${release.latest || release.release || ""}` : release ? _("No updates available") : "")
       ),
       button(
@@ -5340,11 +5347,17 @@ controls at least, growing with its output up to its limit. */
     font-variant-numeric: tabular-nums;
 }
 
-.fkp_components-page__run-status--success {
+.fkp_components-page__update-status {
+    color: var(--text-color-medium, inherit);
+}
+
+.fkp_components-page__run-status--success,
+.fkp_components-page__update-status--success {
     color: var(--success-color-high, green);
 }
 
-.fkp_components-page__run-status--error {
+.fkp_components-page__run-status--error,
+.fkp_components-page__update-status--error {
     color: var(--error-color-high, red);
 }
 
@@ -6877,6 +6890,32 @@ function vmessPayload(link) {
     return null;
   }
 }
+function connectionFingerprintSupported(link, fingerprint2 = "") {
+  link = link.trim();
+  const scheme = link.split("://")[0].toLowerCase();
+  const type = scheme === "https" ? "http" : scheme;
+  if (!["vless", "vmess", "trojan", "anytls", "http"].includes(type))
+    return false;
+  if (linkUsesXhttpHttp3(type, link)) return false;
+  if (type === "vmess") {
+    const payload = vmessPayload(link);
+    if (payload) {
+      if (payload.net === "quic") return false;
+      return ["tls", "1", "true"].includes(`${payload.tls ?? ""}`.toLowerCase()) || payload.net === "h2";
+    }
+  }
+  const query = linkQuery(link);
+  const security = queryValue(query.get("security")).toLowerCase();
+  if (security === "reality" && ["android", "360"].includes(fingerprint2.trim().toLowerCase()))
+    return false;
+  if (type === "http") return scheme === "https";
+  if (type === "trojan" && security === "none") return false;
+  if (["quic"].includes(
+    queryValue(query.get("type")) || queryValue(query.get("net"))
+  ))
+    return false;
+  return scheme === "https" || ["trojan", "anytls"].includes(type) || ["tls", "xtls", "reality"].includes(security);
+}
 function linkUsesUtls(type, link) {
   if (type === "vmess") {
     const payload = vmessPayload(link);
@@ -7609,6 +7648,7 @@ var ALPN_PROTOCOLS = ["vless", "vmess", "trojan", "anytls"];
 var DEFAULT_CLIENT_FINGERPRINT = "chrome";
 var CLIENT_FINGERPRINTS = [
   "chrome",
+  "chrome_155",
   "firefox",
   "edge",
   "safari",
@@ -23837,9 +23877,10 @@ function sectionMissingCoreFeatures(sectionId) {
       missing.add(feature);
     }
   });
-  (uci.sections(KABANMAX_UCI_PACKAGE, "connection_link") || []).filter((link) => link.section === sectionId).forEach(
-    (link) => linkCoreFeatures(`${link.uri || ""}`).filter((feature) => !coreHas(feature)).forEach((feature) => missing.add(feature))
-  );
+  (uci.sections(KABANMAX_UCI_PACKAGE, "connection_link") || []).filter((link) => link.section === sectionId).forEach((link) => {
+    if (link.tls_fingerprint && !coreHas("utls")) missing.add("utls");
+    linkCoreFeatures(`${link.uri || ""}`).filter((feature) => !coreHas(feature)).forEach((feature) => missing.add(feature));
+  });
   return [...missing];
 }
 function coreFilterTypeChoices(choices, selected) {
@@ -25071,7 +25112,8 @@ function connectionLinkSettingsKeys() {
     "uri",
     "detour_section",
     "tls_record_fragment",
-    "tls_classical"
+    "tls_classical",
+    "tls_fingerprint"
   ];
 }
 function writeTrimmed(itemId, value) {
@@ -25132,6 +25174,29 @@ function showConnectionLinkSettingsModal(sectionId, itemValue, option2, widget, 
           `${currentOptionValue(this, itemId, "uri") || ""}`,
           value
         );
+      };
+      o = itemSection.option(
+        form.ListValue,
+        "tls_fingerprint",
+        _("TLS fingerprint")
+      );
+      o.value("", _("Inherit from connection URI"));
+      for (const fingerprint2 of CLIENT_FINGERPRINTS)
+        o.value(fingerprint2, fingerprint2);
+      o.default = "";
+      o.rmempty = true;
+      o.validate = function(itemId, value) {
+        if (!value) return true;
+        if (!CLIENT_FINGERPRINTS.includes(`${value}`))
+          return _("Unsupported TLS fingerprint.");
+        if (!connectionFingerprintSupported(
+          `${currentOptionValue(this, itemId, "uri") || ""}`,
+          `${value}`
+        ))
+          return _(
+            "TLS fingerprint requires a supported TCP connection with TLS enabled."
+          );
+        return validateCoreFeature("utls");
       };
       addCascadeOptions(
         itemSection,

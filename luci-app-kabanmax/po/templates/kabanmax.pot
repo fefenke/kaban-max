@@ -5730,6 +5730,18 @@ msgstr ""
 msgid "Your own certificate"
 msgstr ""
 
+msgid "TLS fingerprint"
+msgstr ""
+
+msgid "Inherit from connection URI"
+msgstr ""
+
+msgid "Unsupported TLS fingerprint."
+msgstr ""
+
+msgid "TLS fingerprint requires a supported TCP connection with TLS enabled."
+msgstr ""
+
 msgid "Failed to clear logs"
 msgstr ""
 

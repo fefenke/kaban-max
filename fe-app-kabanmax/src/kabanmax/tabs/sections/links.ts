@@ -1,4 +1,9 @@
 import { validateRealityTlsOption } from './tlsOptions';
+import { CLIENT_FINGERPRINTS } from '../servers/constants';
+import {
+  connectionFingerprintSupported,
+  validateCoreFeature,
+} from '../../services/coreFeatures.service';
 import { KABANMAX_UCI_PACKAGE } from '../../../constants';
 import { getProxyUrlName } from '../../../helpers/getProxyUrlName';
 import { nextNumberedName } from '../../../helpers/nextNumberedName';
@@ -86,6 +91,7 @@ function connectionLinkSettingsKeys() {
     'detour_section',
     'tls_record_fragment',
     'tls_classical',
+    'tls_fingerprint',
   ];
 }
 
@@ -158,6 +164,32 @@ export function showConnectionLinkSettingsModal(
           `${currentOptionValue(this, itemId, 'uri') || ''}`,
           value,
         );
+      };
+
+      o = itemSection.option(
+        form.ListValue,
+        'tls_fingerprint',
+        _('TLS fingerprint'),
+      );
+      o.value('', _('Inherit from connection URI'));
+      for (const fingerprint of CLIENT_FINGERPRINTS)
+        o.value(fingerprint, fingerprint);
+      o.default = '';
+      o.rmempty = true;
+      o.validate = function (itemId: string, value: unknown) {
+        if (!value) return true;
+        if (!CLIENT_FINGERPRINTS.includes(`${value}`))
+          return _('Unsupported TLS fingerprint.');
+        if (
+          !connectionFingerprintSupported(
+            `${currentOptionValue(this, itemId, 'uri') || ''}`,
+            `${value}`,
+          )
+        )
+          return _(
+            'TLS fingerprint requires a supported TCP connection with TLS enabled.',
+          );
+        return validateCoreFeature('utls');
       };
 
       addCascadeOptions(

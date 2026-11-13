@@ -263,9 +263,6 @@ export function initController(): void {
     renderActions(runState ?? run.state);
     try {
       release = await checkRelease();
-      if (!release.update_available) {
-        showToast(_('No updates available'), 'success');
-      }
     } catch (error) {
       release = null;
       releaseError = error instanceof Error ? error.message : String(error);
@@ -318,7 +315,11 @@ export function initController(): void {
       ]),
       E(
         'p',
-        { role: 'status', hidden: !releaseBusy && !releaseError && !release },
+        {
+          role: 'status',
+          class: `fkp_components-page__update-status${releaseBusy ? '' : releaseError ? ' fkp_components-page__update-status--error' : release ? ' fkp_components-page__update-status--success' : ''}`,
+          hidden: !releaseBusy && !releaseError && !release,
+        },
         releaseBusy
           ? _('The boar looks for fresh acorns...')
           : releaseError ||

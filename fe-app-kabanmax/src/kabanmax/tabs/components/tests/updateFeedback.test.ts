@@ -4,6 +4,13 @@ const mocks = vi.hoisted(() => ({
   check: vi.fn(),
   toast: vi.fn(),
   buttons: [] as Array<{ text: string; onClick: () => void }>,
+  actions: [] as Array<{
+    tag: string;
+    role?: string;
+    className: string;
+    hidden?: boolean;
+    children: unknown[];
+  }>,
 }));
 
 vi.mock('../releaseCheck', async (original) => ({
@@ -51,18 +58,34 @@ vi.mock('../../../services/store.service', () => ({
 }));
 vi.mock('../render', () => ({
   pageRoot: {
-    querySelector: () => ({ append: vi.fn(), replaceChildren: vi.fn() }),
+    querySelector: (selector: string) => ({
+      append: vi.fn(),
+      replaceChildren: (...children: typeof mocks.actions) => {
+        if (selector === '#components-actions') mocks.actions = children;
+      },
+    }),
   },
 }));
 
 afterEach(() => vi.unstubAllGlobals());
 
-it('confirms every manual check that finds no application updates', async () => {
-  vi.stubGlobal('E', () => ({
-    replaceChildren: vi.fn(),
-    append: vi.fn(),
-    addEventListener: vi.fn(),
-  }));
+it('shows successful checks above the application button without a toast, including repeated checks', async () => {
+  vi.stubGlobal(
+    'E',
+    (
+      tag: string,
+      attrs: Record<string, unknown> = {},
+      children: unknown[] = [],
+    ) => ({
+      tag,
+      ...attrs,
+      className: attrs.class || '',
+      children,
+      replaceChildren: vi.fn(),
+      append: vi.fn(),
+      addEventListener: vi.fn(),
+    }),
+  );
   vi.stubGlobal('document', {
     createElementNS: () => ({ setAttribute: vi.fn(), appendChild: vi.fn() }),
   });
@@ -74,10 +97,38 @@ it('confirms every manual check that finds no application updates', async () => 
       .reverse()
       .find((button) => button.text === 'Check for updates')!
       .onClick();
-    await vi.waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(checks));
-    expect(mocks.toast).toHaveBeenLastCalledWith(
-      'No updates available',
-      'success',
-    );
+    await vi.waitFor(() => {
+      const status = mocks.actions.find((node) => node.role === 'status')!;
+      expect(status.children).toEqual(['No updates available']);
+      expect(status.hidden).toBe(false);
+      expect(status.className).toContain('update-status--success');
+      expect(mocks.actions.indexOf(status)).toBe(2);
+    });
+    expect(mocks.check).toHaveBeenCalledTimes(checks);
+    expect(mocks.toast).not.toHaveBeenCalled();
   }
+  mocks.check.mockRejectedValueOnce(new Error('offline'));
+  [...mocks.buttons]
+    .reverse()
+    .find((button) => button.text === 'Check for updates')!
+    .onClick();
+  expect(mocks.actions[2].className).not.toMatch(/--success|--error/);
+  await vi.waitFor(() =>
+    expect(mocks.actions[2].className).toContain('update-status--error'),
+  );
+  expect(mocks.actions[2].children).toEqual(['offline']);
+  mocks.check.mockResolvedValueOnce({
+    success: true,
+    update_available: true,
+    latest: 'v9',
+  });
+  [...mocks.buttons]
+    .reverse()
+    .find((button) => button.text === 'Check for updates')!
+    .onClick();
+  await vi.waitFor(() =>
+    expect(mocks.actions[2].children).toEqual(['Update available: v9']),
+  );
+  expect(mocks.actions[2].className).toContain('update-status--success');
+  expect(mocks.toast).not.toHaveBeenCalled();
 });

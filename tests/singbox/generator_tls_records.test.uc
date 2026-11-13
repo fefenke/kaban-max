@@ -27,4 +27,19 @@ t.test("TLS record fragmentation belongs only to the selected manual server", ()
     t.eq(q.outbound(config, "main/Both").tls_record_fragment, true);
     t.eq(q.outbound(config, "main/Split").link, "vless://u@split.example:443?security=reality#Split");
 });
+t.test("fingerprint override belongs to its persistent item and preserves the URI", () => {
+    let uri = "vless://u@same.example:443?security=tls&fp=firefox#Same";
+    fixture.seed({ settings: { dns_server: "1.1.1.1" },
+        section: [ { ".name": "main", action: "connection", enabled: "1" } ],
+        connection_link: [
+            { ".name": "first", section: "main", name: "Renamed", uri, tls_fingerprint: " Chrome_155 " },
+            { ".name": "second", section: "main", name: "Same", uri }
+        ] });
+    let config = generator.build({ service_address: "127.0.0.1" });
+    t.eq(q.outbound(config, "main/Renamed").tls_fingerprint, "chrome_155");
+    t.eq(q.outbound(config, "main/Same").tls_fingerprint, null);
+    t.eq(q.outbound(config, "main/Renamed").link, uri);
+    t.eq(q.outbound(config, "main/Same").link, uri);
+});
+
 t.done();
