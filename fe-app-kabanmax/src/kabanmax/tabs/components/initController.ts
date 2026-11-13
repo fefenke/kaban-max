@@ -263,6 +263,9 @@ export function initController(): void {
     renderActions(runState ?? run.state);
     try {
       release = await checkRelease();
+      if (!release.update_available) {
+        showToast(_('No updates available'), 'success');
+      }
     } catch (error) {
       release = null;
       releaseError = error instanceof Error ? error.message : String(error);

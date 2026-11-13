@@ -1,7 +1,7 @@
 # SOME DESCRIPTIVE TITLE.
 # Copyright (C) 2026 THE PACKAGE'S COPYRIGHT HOLDER
 # This file is distributed under the same license as the KABANMAX package.
-# K.A.B.A.N.-MAX contributors, 2026.
+# K.A.B.A.N.-MAX contributors
 #, fuzzy
 msgid ""
 msgstr ""
@@ -5728,4 +5728,37 @@ msgstr ""
 #: fe-app-kabanmax/src/kabanmax/tabs/servers/form/security.ts:138
 #: luci-app-kabanmax/htdocs/luci-static/resources/view/kabanmax/main.js:29722
 msgid "Your own certificate"
+msgstr ""
+
+msgid "Failed to clear logs"
+msgstr ""
+
+msgid "Clear logs"
+msgstr ""
+
+msgid "Logs are kept in temporary RAM for up to 24 hours or 2 MiB. Rebooting clears them."
+msgstr ""
+
+msgid "Resolve domains before routing"
+msgstr ""
+
+msgid "Resolve real IP addresses through main DNS before applying section rules. Rules keep their priority: an IP rule wins only when the resolved address matches."
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "All domains"
+msgstr ""
+
+msgid "Selected domains"
+msgstr ""
+
+msgid "Domains to resolve before routing"
+msgstr ""
+
+msgid "example.org includes subdomains; full:example.org matches only that domain. Separate entries with a new line, comma or space."
+msgstr ""
+
+msgid "Enter at least one valid domain or full:domain"
 msgstr ""

@@ -1,6 +1,7 @@
 import { onMount } from '../../../helpers/onMount';
 import { copyToClipboard } from '../../../helpers/copyToClipboard';
 import { downloadAsTxt } from '../../../helpers/downloadAsTxt';
+import { showToast } from '../../../helpers/showToast';
 import { renderSearchIcon24 } from '../../../icons';
 import { KabanMaxShellMethods } from '../../methods';
 import { isActiveLuciTab } from '../../helpers/isActiveLuciTab';
@@ -72,6 +73,26 @@ function renderLogs(scrollToTop = false) {
 function setLoading(nextLoading: boolean) {
   loading = nextLoading;
   element('logs-output').setAttribute('aria-busy', String(nextLoading));
+  element<HTMLButtonElement>('logs-clear').disabled = nextLoading;
+}
+
+async function clearLogs() {
+  if (loading) return;
+  setLoading(true);
+  try {
+    const response = await KabanMaxShellMethods.clearLogs();
+    if (!response.success) throw new Error(response.error);
+    rawLogs = '';
+    logsLoaded = true;
+    renderLogs(true);
+  } catch (error) {
+    showToast(
+      error instanceof Error ? error.message : _('Failed to clear logs'),
+      'error',
+    );
+  } finally {
+    setLoading(false);
+  }
 }
 
 async function refreshLogs() {
@@ -154,6 +175,7 @@ export async function initController(): Promise<void> {
   });
   element('logs-copy').addEventListener('click', copyVisibleLogs);
   element('logs-download').addEventListener('click', downloadVisibleLogs);
+  element('logs-clear').addEventListener('click', () => void clearLogs());
 
   store.subscribe((next, prev) => {
     if (

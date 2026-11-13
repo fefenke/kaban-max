@@ -26,6 +26,70 @@ describe('KabanMaxShellMethods.checkLogs', () => {
     return (await import('..')).KabanMaxShellMethods;
   }
 
+  it('clears only through the authorized RPC and resets the cached cursor after success', async () => {
+    const shell = await methods();
+    mocks.callUbus
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: 4, text: 'old line' },
+      })
+      .mockResolvedValueOnce({ success: true, data: { success: true } })
+      .mockResolvedValueOnce({ success: true, data: { cursor: 5, text: '' } });
+    await shell.checkLogs();
+    expect(await shell.clearLogs()).toEqual({ success: true, data: '' });
+    await shell.checkLogs();
+    expect(mocks.callUbus.mock.calls[1][0]).toMatchObject({
+      object: 'kabanmax',
+      method: 'clear_logs',
+      retryUnavailable: false,
+    });
+    expect(mocks.callUbus.mock.calls[2][0].params).toEqual({});
+    expect(mocks.executeShellCommand).not.toHaveBeenCalled();
+  });
+
+  it('preserves the cached log on a clear failure and never falls back to a shell mutation', async () => {
+    const shell = await methods();
+    mocks.callUbus
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: 4, text: 'old line' },
+      })
+      .mockResolvedValueOnce(UNAVAILABLE)
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: 4, unchanged: true },
+      });
+    await shell.checkLogs();
+    expect(await shell.clearLogs()).toEqual({ success: false, error: 'gone' });
+    expect(await shell.checkLogs()).toEqual({
+      success: true,
+      data: 'old line',
+    });
+    expect(mocks.executeShellCommand).not.toHaveBeenCalled();
+  });
+
+  it('waits for an in-flight read before clearing to avoid restoring stale cached text', async () => {
+    const shell = await methods();
+    let finish!: (value: unknown) => void;
+    mocks.callUbus
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ success: true, data: { success: true } })
+      .mockResolvedValueOnce({ success: true, data: { cursor: 5, text: '' } });
+    const read = shell.checkLogs();
+    const clear = shell.clearLogs();
+    await Promise.resolve();
+    expect(mocks.callUbus).toHaveBeenCalledTimes(1);
+    finish({ success: true, data: { cursor: 4, text: 'old line' } });
+    await read;
+    await clear;
+    await shell.checkLogs();
+    expect(mocks.callUbus.mock.calls[2][0].params).toEqual({});
+  });
+
   it('reads the whole log from the state service only once a line arrived', async () => {
     const shell = await methods();
     mocks.callUbus

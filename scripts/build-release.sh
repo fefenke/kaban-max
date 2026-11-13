@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="${1:-0.1.3}"
+version="${1:-0.1.4}"
 output="${2:-$repo/dist/release}"
 export PO2LMO="${PO2LMO:-$(command -v po2lmo)}"
 test -x "$PO2LMO"

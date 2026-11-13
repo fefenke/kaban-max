@@ -40,8 +40,16 @@ export function render() {
       E('div', { class: 'fkp_logs-page__actions' }, [
         renderActionButton('logs-copy', _('Copy')),
         renderActionButton('logs-download', _('Download')),
+        renderActionButton('logs-clear', _('Clear logs')),
       ]),
     ]),
+    E(
+      'p',
+      {},
+      _(
+        'Logs are kept in temporary RAM for up to 24 hours or 2 MiB. Rebooting clears them.',
+      ),
+    ),
     E(
       'pre',
       {

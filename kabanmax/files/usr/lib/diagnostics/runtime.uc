@@ -87,6 +87,9 @@ function show_sing_box_config(visibility) {
 }
 
 function logs() {
+    let saved = common.read_json_file("/tmp/kabanmax-journal/archive.json");
+    if (type(saved) == "object")
+        return require("service.log_journal").create(null, saved).text(int(common.monotonic_ms() / 1000));
     return exec.output([ "logread", "-e", constants.KABANMAX_LOG_PATTERN ]) ?? "";
 }
 

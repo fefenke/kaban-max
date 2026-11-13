@@ -6,6 +6,7 @@ let runtime_constants = require("singbox.constants");
 let runtime_url = require("core.url");
 let domain_config = require("config.domain");
 let connections = require("config.connections");
+let rule_config = require("config.rule");
 
 let as_string = common.as_string;
 let bool_option = common.bool_option;
@@ -124,6 +125,27 @@ function static_hosts(settings) {
     }
 
     return { domains, predefined };
+}
+
+// A single parser is used by validation and generation, including direct builds.
+function pre_routing_resolve(settings) {
+    let mode = option(settings, "pre_routing_resolve_mode", "disabled");
+    if (mode != "disabled" && mode != "all" && mode != "selected")
+        return { unsupported: "Unsupported pre-routing resolve mode '" + mode + "'" };
+
+    let rules = [];
+    for (let value in rule_config.text_list_values(option(settings, "pre_routing_resolve_domains", ""), "comma-space")) {
+        let parsed = rule_config.destination_kind_value(value);
+        if (parsed == null || (parsed.kind != "domain" && parsed.kind != "domain_suffix") ||
+            static_host_domain(parsed.value) == null)
+            return { unsupported: "Invalid pre-routing resolve domain '" + value + "'. Use a domain or full:domain" };
+        let rule = {};
+        rule[parsed.kind] = [ parsed.value ];
+        push(rules, rule);
+    }
+    if (mode == "selected" && length(rules) == 0)
+        return { unsupported: "Pre-routing resolve requires at least one domain in selected mode" };
+    return { mode, rules };
 }
 
 function parse_server_uri(value, ip_only) {
@@ -262,6 +284,7 @@ return {
     config,
     default_domain_resolver,
     parse_server_uri,
+    pre_routing_resolve,
     static_hosts,
     server_list
 };

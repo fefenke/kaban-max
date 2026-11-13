@@ -2157,6 +2157,26 @@ function checkLogs() {
   }
   return checkLogsRequest;
 }
+async function clearLogs() {
+  await checkLogsRequest?.catch(() => void 0);
+  const result = await callUbus({
+    object: "kabanmax",
+    method: "clear_logs",
+    timeoutMs: LOG_TEXT_UBUS_TIMEOUT_MS,
+    retryUnavailable: false
+  });
+  if (!result.success) {
+    return { success: false, error: result.message };
+  }
+  if (!result.data.success) {
+    return {
+      success: false,
+      error: result.data.message || _("Failed to clear logs")
+    };
+  }
+  servedLog = null;
+  return { success: true, data: "" };
+}
 function parseJsonObjectOutput(output) {
   if (!output) {
     return null;
@@ -2223,6 +2243,7 @@ var KabanMaxShellMethods = {
   enable: async () => callBaseMethod(KabanMax.AvailableMethods.ENABLE),
   disable: async () => callBaseMethod(KabanMax.AvailableMethods.DISABLE),
   checkLogs,
+  clearLogs,
   // The state service holds the versions until the installed packages change; the CLI answers
   // when it is not running.
   getSystemInfo: async () => {
@@ -4884,6 +4905,9 @@ function initController() {
     renderActions(runState ?? run.state);
     try {
       release = await checkRelease();
+      if (!release.update_available) {
+        showToast(_("No updates available"), "success");
+      }
     } catch (error) {
       release = null;
       releaseError = error instanceof Error ? error.message : String(error);
@@ -5471,8 +5495,9 @@ ${ansiStyles}
 .fkp_components-page__heading > span { font-size:12px; color:var(--text-color-medium,#65717d); }
 .fkp_components-page__core { color:var(--text-color-medium,#65717d); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
 .fkp_components-page__core > span { display:inline; }
-.fkp_components-page__config-buttons { display:flex; gap:8px; flex-wrap:wrap; }
-.fkp_components-page__config-buttons > .fkp-partial-button { flex:1 1 95px; }
+.fkp_components-page__config-buttons { display:flex; flex-direction:column; gap:8px; align-items:stretch; }
+.fkp_components-page__config-buttons > .fkp-partial-button { box-sizing:border-box; width:100%; white-space:normal; }
+.fkp_components-page__config-buttons > .fkp-partial-button > span:last-child { min-width:0; overflow-wrap:anywhere; }
 .fkp_components-page__game { min-width:0; align-self:stretch; }
 .fkp_acorn-game { box-sizing:border-box; height:100%; border:1px solid var(--border-color-low,#e2e6e9); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; }
 .fkp_acorn-game__bar { padding:12px; }
@@ -10778,7 +10803,7 @@ function renderFallbackObservation(info) {
   );
   return [
     textE("section", { class: "kaban-observation" }, [
-      textE("header", { class: "kaban-observation__heading" }, [
+      textE("div", { class: "kaban-observation__heading" }, [
         textE("div", {}, [
           textE("h4", {}, _("Connection overview")),
           textE(
@@ -13470,9 +13495,9 @@ its own name's length. */
 .kaban-observation__heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:14px; }
 .kaban-observation__heading h4 { margin:0 0 4px; font-size:16px; font-weight:650; }
 .kaban-observation__period { font-size:12px; color:var(--ko-muted); }
-.kaban-observation__state { padding:4px 9px; border-radius:20px; background:var(--background-color-low,#f1f4f6); font-size:12px; white-space:nowrap; }
-.kaban-observation__state--primary { color:#28764b; background:#edf7f0; }
-.kaban-observation__state--backup,.kaban-observation__state--suspect { color:#8b641a; background:#fff7e7; }
+.kaban-observation__state { font-size:12px; white-space:nowrap; color:var(--text-color-medium,#65717d); }
+.kaban-observation__state--primary { color:#28764b; }
+.kaban-observation__state--backup,.kaban-observation__state--suspect { color:#8b641a; }
 .kaban-observation__selected { display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding:12px 14px; margin-bottom:12px; border:1px solid var(--ko-border); border-radius:8px; }
 .kaban-observation__selected strong { overflow-wrap:anywhere; }
 .kaban-observation__selected > span:last-child { margin-left:auto; font-size:12px; color:var(--ko-muted); font-variant-numeric:tabular-nums; }
@@ -17453,9 +17478,17 @@ function render5() {
       ]),
       textE("div", { class: "fkp_logs-page__actions" }, [
         renderActionButton("logs-copy", _("Copy")),
-        renderActionButton("logs-download", _("Download"))
+        renderActionButton("logs-download", _("Download")),
+        renderActionButton("logs-clear", _("Clear logs"))
       ])
     ]),
+    textE(
+      "p",
+      {},
+      _(
+        "Logs are kept in temporary RAM for up to 24 hours or 2 MiB. Rebooting clears them."
+      )
+    ),
     textE(
       "pre",
       {
@@ -17530,6 +17563,25 @@ function renderLogs(scrollToTop = false) {
 function setLoading(nextLoading) {
   loading2 = nextLoading;
   element2("logs-output").setAttribute("aria-busy", String(nextLoading));
+  element2("logs-clear").disabled = nextLoading;
+}
+async function clearLogs2() {
+  if (loading2) return;
+  setLoading(true);
+  try {
+    const response = await KabanMaxShellMethods.clearLogs();
+    if (!response.success) throw new Error(response.error);
+    rawLogs = "";
+    logsLoaded = true;
+    renderLogs(true);
+  } catch (error) {
+    showToast(
+      error instanceof Error ? error.message : _("Failed to clear logs"),
+      "error"
+    );
+  } finally {
+    setLoading(false);
+  }
 }
 async function refreshLogs() {
   if (loading2) {
@@ -17596,6 +17648,7 @@ async function initController5() {
   });
   element2("logs-copy").addEventListener("click", copyVisibleLogs);
   element2("logs-download").addEventListener("click", downloadVisibleLogs);
+  element2("logs-clear").addEventListener("click", () => void clearLogs2());
   store.subscribe((next, prev) => {
     if (next.tabService.current === "logs" && prev.tabService.current !== "logs" && (!logsLoaded || autoRefresh.checked)) {
       void refreshLogs();
@@ -30277,6 +30330,47 @@ function createStaticHostsOption(section2) {
   return option2;
 }
 
+// src/validators/validatePreRoutingResolve.ts
+function validPreRoutingResolveDomains(text8) {
+  const values = text8.split("\n").map((line) => line.replace(/\s*\/\/.*$/, "").replace(/\s*#.*$/, "")).join("\n").split(/[,\s]+/).filter(Boolean);
+  return values.length > 0 && values.every((value) => {
+    while (/^full:/i.test(value)) {
+      value = value.slice(5);
+    }
+    const ascii = asciiHostname(value.toLowerCase());
+    return !!ascii && validAsciiDomain(ascii, false) && !/(^|\.)[0-9]+$/.test(ascii);
+  });
+}
+
+// src/kabanmax/tabs/settings/preRoutingResolve.ts
+function addPreRoutingResolveOptions(section2) {
+  const mode = section2.option(
+    form.ListValue,
+    "pre_routing_resolve_mode",
+    _("Resolve domains before routing"),
+    _(
+      "Resolve real IP addresses through main DNS before applying section rules. Rules keep their priority: an IP rule wins only when the resolved address matches."
+    )
+  );
+  mode.value("disabled", _("Disabled"));
+  mode.value("all", _("All domains"));
+  mode.value("selected", _("Selected domains"));
+  mode.default = "disabled";
+  mode.rmempty = false;
+  const domains = section2.option(
+    form.TextValue,
+    "pre_routing_resolve_domains",
+    _("Domains to resolve before routing"),
+    _(
+      "example.org includes subdomains; full:example.org matches only that domain. Separate entries with a new line, comma or space."
+    )
+  );
+  domains.depends("pre_routing_resolve_mode", "selected");
+  domains.rows = 5;
+  domains.placeholder = "example.org\nfull:only.example.org";
+  domains.validate = (_sectionId, value) => validPreRoutingResolveDomains(`${value || ""}`) ? true : _("Enter at least one valid domain or full:domain");
+}
+
 // src/kabanmax/tabs/settings/form/dns.ts
 function addDnsOptions(section2) {
   const dnsOption = section2.option(
@@ -30354,6 +30448,7 @@ function addDnsOptions(section2) {
   o.depends("dns_detour_enabled", "1");
   configureDownloadSectionOption(o, "dns_detour_section");
   createStaticHostsOption(section2);
+  addPreRoutingResolveOptions(section2);
   o = section2.option(
     form.Value,
     "dns_timeout",

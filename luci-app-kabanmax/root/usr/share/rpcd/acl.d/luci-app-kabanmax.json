@@ -50,7 +50,8 @@
           "remove"
         ],
         "kabanmax": [
-          "import_config"
+          "import_config",
+          "clear_logs"
         ]
       },
       "uci": [

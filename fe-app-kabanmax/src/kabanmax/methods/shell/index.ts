@@ -59,6 +59,28 @@ function checkLogs() {
   return checkLogsRequest;
 }
 
+async function clearLogs(): Promise<KabanMax.MethodResponse<string>> {
+  // Let an older read finish before discarding its cursor and cached text.
+  await checkLogsRequest?.catch(() => undefined);
+  const result = await callUbus<{ success?: boolean; message?: string }>({
+    object: 'kabanmax',
+    method: 'clear_logs',
+    timeoutMs: LOG_TEXT_UBUS_TIMEOUT_MS,
+    retryUnavailable: false,
+  });
+  if (!result.success) {
+    return { success: false, error: result.message };
+  }
+  if (!result.data.success) {
+    return {
+      success: false,
+      error: result.data.message || _('Failed to clear logs'),
+    };
+  }
+  servedLog = null;
+  return { success: true, data: '' };
+}
+
 function parseJsonObjectOutput<T>(output: string): T | null {
   if (!output) {
     return null;
@@ -151,6 +173,7 @@ export const KabanMaxShellMethods = {
   enable: async () => callBaseMethod<unknown>(KabanMax.AvailableMethods.ENABLE),
   disable: async () => callBaseMethod<unknown>(KabanMax.AvailableMethods.DISABLE),
   checkLogs,
+  clearLogs,
   // The state service holds the versions until the installed packages change; the CLI answers
   // when it is not running.
   getSystemInfo: async () => {

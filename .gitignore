@@ -1,4 +1,5 @@
 .idea
+.local/
 fe-app-kabanmax/node_modules
 fe-app-kabanmax/.yarn/
 fe-app-kabanmax/.env

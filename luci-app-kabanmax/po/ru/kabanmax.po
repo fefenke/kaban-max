@@ -3118,3 +3118,36 @@ msgstr "Ты кабан"
 
 msgid "Your own certificate"
 msgstr "Свой сертификат"
+
+msgid "Failed to clear logs"
+msgstr "Не удалось очистить журнал"
+
+msgid "Clear logs"
+msgstr "Очистить журнал"
+
+msgid "Logs are kept in temporary RAM for up to 24 hours or 2 MiB. Rebooting clears them."
+msgstr "Журнал хранится в оперативной памяти до 24 часов с лимитом 2 МиБ. Перезагрузка очищает его."
+
+msgid "Resolve domains before routing"
+msgstr "Резолв доменов перед маршрутизацией"
+
+msgid "Resolve real IP addresses through main DNS before applying section rules. Rules keep their priority: an IP rule wins only when the resolved address matches."
+msgstr "Получать реальные IP через основной DNS до применения правил секций. Приоритет правил сохраняется: правило по IP срабатывает только при совпадении полученного адреса."
+
+msgid "Disabled"
+msgstr "Выключено"
+
+msgid "All domains"
+msgstr "Все домены"
+
+msgid "Selected domains"
+msgstr "Указанные домены"
+
+msgid "Domains to resolve before routing"
+msgstr "Домены для резолва перед маршрутизацией"
+
+msgid "example.org includes subdomains; full:example.org matches only that domain. Separate entries with a new line, comma or space."
+msgstr "example.org включает поддомены; full:example.org — только точное совпадение. Разделяйте записи новой строкой, запятой или пробелом."
+
+msgid "Enter at least one valid domain or full:domain"
+msgstr "Укажите хотя бы один корректный домен или full:домен"

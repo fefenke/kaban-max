@@ -18,6 +18,7 @@ let installer = require("service.installer");
 let uci = require("core.uci");
 let health = require("service.health");
 let features = require("singbox.features");
+let log_journal = require("service.log_journal");
 
 const OBJECT_NAME = getenv("KABANMAX_STATE_SERVICE_OBJECT") || "kabanmax";
 
@@ -44,6 +45,7 @@ const LOG_INTEREST_MS = 60000;
 
 let paths = {
     config: "/etc/config/kabanmax",
+    journal_dir: "/tmp/kabanmax-journal",
     // Both package managers record installs and removals in these files; watching them is a stat,
     // reading the versions a CLI run.
     package_databases: [ "/usr/lib/opkg/status", "/lib/apk/db/installed" ],
@@ -85,6 +87,44 @@ let last_sweep_ms = 0;
 let last_busy_refresh_ms = 0;
 let settle_until_ms = 0;
 let down_since_ms = 0;
+let journal = null;
+let last_journal_poll_ms = null;
+
+function retained_log() {
+    if (journal == null)
+        journal = log_journal.create(null, common.read_json_file(paths.journal_dir + "/archive.json"));
+    return journal;
+}
+
+function journal_now() {
+    return int(common.monotonic_ms() / 1000);
+}
+
+function save_journal() {
+    // A private directory protects both the atomic replacement and its temporary file.
+    if (!fs.mkdir(paths.journal_dir, 0700) && fs.stat(paths.journal_dir)?.type != "directory")
+        return false;
+    fs.chmod(paths.journal_dir, 0700);
+    return common.write_file_atomic(paths.journal_dir + "/archive.json", sprintf("%J", retained_log().snapshot()));
+}
+
+function collect_logs(force) {
+    let now = common.monotonic_ms();
+    if (!force && last_journal_poll_ms != null && now - last_journal_poll_ms < LOG_POLL_MS)
+        return true;
+    last_journal_poll_ms = now;
+    let log = retained_log();
+    let before = log.revision();
+    // File-backed capture avoids truncation when a child exits during a pipe read.
+    let read = exec.capture_parallel([ [ "logread", "-e", LOG_PATTERN ] ])[0];
+    if (read.status == 0)
+        log.ingest(filter(split(read.stdout, "\n"), (line) => line != ""), journal_now());
+    else
+        log.prune(journal_now());
+    if (log.revision() != before)
+        save_journal();
+    return read.status == 0;
+}
 
 function read_log_tail() {
     let data = exec.output([ "logread", "-l", LOG_TAIL_LINES, "-e", LOG_PATTERN ]);
@@ -333,6 +373,7 @@ function tick() {
 }
 
 function log_tick() {
+    collect_logs(true);
     if (log_is_watched())
         poll_log(true);
 }
@@ -395,19 +436,33 @@ function object_methods() {
             },
             args: { ubus_rpc_session: "" }
         },
-        // The whole log the Logs tab shows, read again only once a line arrived past the caller's
-        // cursor: the tab asks every two seconds, and the read is what costs. Through a file, as a
-        // log longer than a pipe holds would be cut by logread's exit.
+        // The retained journal is independent of the system ring and browser interest.
+        // Expiry and clear advance its revision even when no new line arrives.
         log_text: {
             call: function(request) {
-                log_interest();
-                poll_log(false);
-                if (request.args.cursor != null && int(request.args.cursor) == log_cursor)
-                    return { cursor: log_cursor, unchanged: true };
-                let read = exec.capture_parallel([ [ "logread", "-e", LOG_PATTERN ] ])[0];
-                return { cursor: log_cursor, text: read.status == 0 ? read.stdout : "" };
+                collect_logs(false);
+                let log = retained_log();
+                let text = log.text(journal_now());
+                let cursor = log.revision();
+                if (request.args.cursor != null && int(request.args.cursor) == cursor)
+                    return { cursor, unchanged: true };
+                return { cursor, text };
             },
             args: { cursor: 0, ubus_rpc_session: "" }
+        },
+        // Write permission is intentionally separate from reading logs.
+        clear_logs: {
+            call: function(request) {
+                if (!collect_logs(true))
+                    return { success: false };
+                let before = retained_log().snapshot();
+                retained_log().clear(journal_now());
+                if (save_journal())
+                    return { success: true };
+                journal = log_journal.create(null, before);
+                return { success: false };
+            },
+            args: { ubus_rpc_session: "" }
         },
         // Installed versions and the device, held until the installed packages change.
         system_info: {
@@ -505,6 +560,7 @@ if ((sourcepath(1) != null && sourcepath(1) != "") || ARGV[0] == null)
         needs_close_refresh,
         settled_running,
         new_log_lines,
+        collect_logs: function() { collect_logs(true); },
         remember_log_line: function(line) { append_log_lines([ line ]); },
         object_methods,
         run
