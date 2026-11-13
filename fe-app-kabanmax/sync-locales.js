@@ -1,7 +1,6 @@
 // Regenerates the catalogs in luci-app-kabanmax/po from the `_()` calls in the bundle, keeping
 // translations by msgid.
 
-import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -17,39 +16,15 @@ const PLURAL_FORMS = {
   ru: 'nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);',
 };
 const DEFAULT_PLURAL_FORMS = 'nplurals=2; plural=(n != 1);';
-const DEFAULT_IDENTITY = {
-  name: 'KabanMax',
+// Catalog metadata is public: never derive it from local Git or old headers.
+const PROJECT_IDENTITY = {
+  name: 'K.A.B.A.N.-MAX contributors',
   email: '341400787+fefenke@users.noreply.github.com',
 };
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const repoRoot = path.resolve(projectRoot, '..');
 const poRoot = path.join(repoRoot, 'luci-app-kabanmax/po');
-
-function gitIdentity() {
-  const read = (key) => {
-    try {
-      return execSync(`git config ${key}`, {
-        stdio: ['ignore', 'pipe', 'ignore'],
-      })
-        .toString()
-        .trim();
-    } catch {
-      return '';
-    }
-  };
-
-  const name = read('user.name');
-  const email = read('user.email');
-  return name && email ? { name, email } : null;
-}
-
-// Windows git cannot open a worktree that WSL git added, so there the catalog keeps the author
-// it already names.
-function catalogIdentity(pot) {
-  const match = pot.match(/^"Last-Translator: (.+) <([^>]+)>\\n"$/m);
-  return match ? { name: match[1], email: match[2] } : null;
-}
 
 function timestamp(now) {
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
@@ -212,9 +187,7 @@ function renderPo(entries, translations, language, { name }, now) {
 
 const entries = await collectCalls();
 const potPath = path.join(poRoot, 'templates', 'kabanmax.pot');
-const previousPot = await fs.readFile(potPath, 'utf8').catch(() => '');
-const identity =
-  gitIdentity() ?? catalogIdentity(previousPot) ?? DEFAULT_IDENTITY;
+const identity = PROJECT_IDENTITY;
 const now = new Date();
 
 await fs.mkdir(path.dirname(potPath), { recursive: true });
