@@ -29,6 +29,7 @@ const SERVICE_MIXED_INBOUND_ADDRESS = "127.0.0.1";
 const WARP_PROFILES_MIXED_INBOUND_TAG = "service-warp-in";
 const WARP_PROFILES_MIXED_INBOUND_PORT = 4536;
 const DIRECT_OUTBOUND_TAG = "direct-out";
+const INFRASTRUCTURE_OUTBOUND_TAG = "infrastructure-direct-out";
 const CLASH_API_CONTROLLER_PORT = 9090;
 // The mark sing-box puts on its own traffic is the one the nft table lets pass.
 const OUTBOUND_MARK = hex(require("core.constants").NFT_OUTBOUND_MARK);
@@ -108,11 +109,21 @@ const RESERVED_TAGS = {
     [SYSTEM_TPROXY_INBOUND6_TAG]: true,
     [SYSTEM_DNS_INBOUND_TAG]: true,
     [WARP_PROFILES_MIXED_INBOUND_TAG]: true,
+    [INFRASTRUCTURE_OUTBOUND_TAG]: true,
     [DIRECT_OUTBOUND_TAG]: true
 };
 
 function as_string(value) {
     return value == null ? "" : "" + value;
+}
+
+// LuCI may omit options equal to their defaults on Save & Apply.
+function config_path(settings) {
+    return require("core.common").option(settings, "config_path", "") || "/etc/sing-box/config.json";
+}
+
+function cache_path(settings) {
+    return require("core.common").option(settings, "cache_path", "") || TMP_SING_BOX_FOLDER + "/cache.db";
 }
 
 function tag(base, postfix) {
@@ -139,6 +150,8 @@ function server_inbound_tag(display_name) {
 }
 
 return {
+    config_path,
+    cache_path,
     DNS_SERVER_TAG,
     FAKEIP_DNS_SERVER_TAG,
     BOOTSTRAP_DNS_SERVER_TAG,
@@ -165,6 +178,7 @@ return {
     WARP_PROFILES_MIXED_INBOUND_TAG,
     WARP_PROFILES_MIXED_INBOUND_PORT,
     DIRECT_OUTBOUND_TAG,
+    INFRASTRUCTURE_OUTBOUND_TAG,
     CLASH_API_CONTROLLER_PORT,
     OUTBOUND_MARK,
     FAKEIP_INET4_RANGE,

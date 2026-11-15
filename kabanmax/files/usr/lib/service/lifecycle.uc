@@ -157,7 +157,7 @@ function wait_stopped() {
 
 function clash_controller_free() {
     let settings = uci.get_all(CONFIG_NAME, "settings") ?? {};
-    let config = common.read_json_file(common.option(settings, "config_path", ""));
+    let config = common.read_json_file(require("singbox.constants").config_path(settings));
     let controller = common.as_string(config?.experimental?.clash_api?.external_controller);
     if (controller == "" || !netstat.tcp_endpoint_in_use(exec.output([ "netstat", "-lnt" ]) ?? "", controller))
         return true;
@@ -560,7 +560,11 @@ function reload_runtime(reason) {
         return abort_reload(e.message, true);
     }
 
-    let nft_changed = fs.readfile(paths.applied_nft) != built.script;
+    // A new core may have no usable provider cache even when nft text is the
+    // same. Re-arm provider guards before replacing it, then resync from the
+    // new core. No-op saves still leave the table and existing core untouched.
+    let nft_changed = fs.readfile(paths.applied_nft) != built.script ||
+        ((config_changed || forced) && length(built.kept) > 0);
     try { require("zapret2.runtime").start(); }
     catch (e) { return abort_reload(e.message, true); }
     if (nft_changed) {

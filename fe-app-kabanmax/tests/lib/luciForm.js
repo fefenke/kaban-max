@@ -111,6 +111,7 @@ function isContained(x, y) {
 /* ------------------------------------------------------------------ the DOM */
 
 class FakeNode {
+  select() {}
   constructor(tag, attrs) {
     this.tag = tag;
     this.attrs = attrs || {};
@@ -555,6 +556,7 @@ function buildForm(uciData) {
 
 export function createHarness(packageName = 'kabanmax') {
   const messages = [];
+  const clipboard = [];
 
   const store = new Map();
   const operations = [];
@@ -638,6 +640,14 @@ export function createHarness(packageName = 'kabanmax') {
   };
 
   const documentStub = {
+    execCommand: (command) => {
+      if (command !== 'copy') return false;
+      clipboard.push(
+        documentStub.body.childNodes.find((node) => node.tag === 'textarea')
+          ?.value,
+      );
+      return true;
+    },
     // Hidden, so the polling services the page starts stand down instead of running against stubs.
     visibilityState: 'hidden',
     querySelector: (selector) =>
@@ -822,6 +832,7 @@ export function createHarness(packageName = 'kabanmax') {
     store,
     operations,
     messages,
+    clipboard,
     commands,
     notifications,
     openDialog,

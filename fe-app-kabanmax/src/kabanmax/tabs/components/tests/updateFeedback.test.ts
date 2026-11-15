@@ -93,10 +93,11 @@ it('shows successful checks above the application button without a toast, includ
   const { initController } = await import('../initController');
   initController();
   for (let checks = 1; checks <= 2; checks++) {
-    [...mocks.buttons]
+    const checkButton = [...mocks.buttons]
       .reverse()
-      .find((button) => button.text === 'Check for updates')!
-      .onClick();
+      .find((button) => button.text === 'Check for updates')!;
+    checkButton.onClick();
+    checkButton.onClick();
     await vi.waitFor(() => {
       const status = mocks.actions.find((node) => node.role === 'status')!;
       expect(status.children).toEqual(['No updates available']);

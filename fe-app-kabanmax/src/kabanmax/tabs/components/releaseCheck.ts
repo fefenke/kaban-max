@@ -25,5 +25,8 @@ export async function checkRelease(): Promise<ReleaseCheck> {
   if (reply.code || !state.success) {
     throw new Error(state.message || reply.stderr || _('Failed to execute'));
   }
+  if (typeof state.update_available !== 'boolean') {
+    throw new Error(_('Unknown response'));
+  }
   return state;
 }

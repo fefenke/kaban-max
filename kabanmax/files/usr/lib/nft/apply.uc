@@ -117,7 +117,7 @@ const REPLY_RETURN = [ "ct", "direction", "reply", "return" ];
 // and a later one forwarded directly would let flow offloading take the whole connection.
 function add_held_flow_rule(chain, mark) {
     add_rule(chain, [ "ct", "direction", "original", "ct", "mark", "&", mark, "==", mark,
-        "meta", "mark", "set", mark, "counter", "accept" ]);
+        "meta", "mark", "set", "meta", "mark", "|", mark, "counter", "accept" ]);
 }
 
 // While sing-box rebinds its listeners its traffic is dropped, not sent direct: a forwarded
@@ -168,7 +168,7 @@ function add_base(settings, excluded_router, excluded) {
     }
     add_chain("priority_rules", "{ }");
     add_chain("priority_output_rules", "{ }");
-    add_rule("priority_output_rules", [ "meta", "mark", "!=", "0", "return" ]);
+    add_rule("priority_output_rules", [ "meta", "mark", "&", "0x1c000000", "!=", "0", "return" ]);
     add_chain("proxy", "{ type filter hook prerouting priority -100; policy accept; }");
     add_chain(PAUSE_CHAIN, "{ }");
 
@@ -190,7 +190,7 @@ function add_base(settings, excluded_router, excluded) {
     add_rule("mangle", [ "jump", "priority_rules" ]);
     for (let pair in [ [ "ip", FAKEIP4 ], [ "ip6", FAKEIP6 ] ])
         for (let proto in [ "tcp", "udp" ])
-            add_rule("mangle", [ "iifname", "@" + INTERFACES, pair[0], "daddr", pair[1], "meta", "l4proto", proto, "meta", "mark", "set", FAKEIP_MARK, "counter" ]);
+            add_rule("mangle", [ "iifname", "@" + INTERFACES, pair[0], "daddr", pair[1], "meta", "l4proto", proto, "meta", "mark", "set", "meta", "mark", "|", FAKEIP_MARK, "counter" ]);
 
     add_rule("proxy", [ "jump", PAUSE_CHAIN ]);
     for (let mark in [ FAKEIP_MARK, ROUTER_MARK ])
@@ -219,6 +219,12 @@ function add_base(settings, excluded_router, excluded) {
 
 function create_section_sets(m) {
     let s = m.sets;
+    if (length(m.subnet_tags) > 0) {
+        add_set(s.pending4, IPV4_SET);
+        add_set(s.pending6, IPV6_SET);
+        add_elements(s.pending4, [ "0.0.0.0/0" ]);
+        add_elements(s.pending6, [ "::/0" ]);
+    }
     if (m.needs_subnet_sets) {
         add_set(s.subnets, IPV4_SET);
         add_set(s.subnets6, IPV6_SET);
@@ -256,7 +262,7 @@ function section_rule(m, family, match_args, match_source, mark) {
     if (m.action == "bypass")
         push(args, "counter", "accept");
     else
-        push(args, "meta", "mark", "set", mark, "counter", "accept");
+        push(args, "meta", "mark", "set", "meta", "mark", "|", mark, "counter", "accept");
     return args;
 }
 
@@ -292,6 +298,20 @@ function add_section_rules(m) {
     create_section_sets(m);
     add_fully_routed_rules(m);
 
+    // Until every provider has valid content and nft has its snapshot, route
+    // this section's source/port scope through core. Even Bypass must be
+    // validated there; accepting an unknown provider here would fail open.
+    if (length(m.subnet_tags) > 0) {
+        let guard = { ...m, action: "capture" };
+        if (m.needs_port_set)
+            for (let proto in [ "tcp", "udp" ])
+                add_section_rule_pair(guard,
+                    [ "ip", "daddr", "@" + m.sets.pending4, proto, "dport", "@" + m.sets.ports ],
+                    [ "ip6", "daddr", "@" + m.sets.pending6, proto, "dport", "@" + m.sets.ports ]);
+        else
+            add_section_rule_pair(guard, [ "ip", "daddr", "@" + m.sets.pending4 ], [ "ip6", "daddr", "@" + m.sets.pending6 ]);
+    }
+
     let port = (proto) => [ proto, "dport", "@" + s.ports ];
     if (m.needs_subnet_sets && !m.needs_port_set)
         add_section_rule_pair(m, [ "ip", "daddr", "@" + s.subnets ], [ "ip6", "daddr", "@" + s.subnets6 ]);
@@ -312,7 +332,7 @@ function add_section_rules(m) {
 function add_fakeip_output() {
     for (let pair in [ [ "ip", FAKEIP4 ], [ "ip6", FAKEIP6 ] ])
         for (let proto in [ "tcp", "udp" ])
-            add_rule("mangle_output", [ pair[0], "daddr", pair[1], "meta", "l4proto", proto, "meta", "mark", "set", ROUTER_MARK, "counter" ]);
+            add_rule("mangle_output", [ pair[0], "daddr", pair[1], "meta", "l4proto", proto, "meta", "mark", "set", "meta", "mark", "|", ROUTER_MARK, "counter" ]);
 }
 
 // Only loopback is captured, so the resolver's upstream queries never come back here;
@@ -322,7 +342,7 @@ function add_router_dns(excluded_router) {
     add_rule("system_dns_redirect", [ "jump", PAUSE_CHAIN ]);
     if (excluded_router)
         add_rule("system_dns_redirect", [ "counter", "return" ]);
-    add_rule("system_dns_redirect", [ "meta", "mark", "!=", "0", "return" ]);
+    add_rule("system_dns_redirect", [ ...marked(OUTBOUND_MARK), "return" ]);
     for (let address in [ [ "ip", "127.0.0.1" ], [ "ip6", "::1" ] ])
         for (let proto in [ "tcp", "udp" ])
             add_rule("system_dns_redirect", [ address[0], "daddr", address[1], proto, "dport", "53", "counter", "redirect", "to", ":" + singbox_constants.SYSTEM_DNS_INBOUND_PORT ]);

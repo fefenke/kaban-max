@@ -38,8 +38,8 @@ describe('server form', () => {
     );
 
     expect(fingerprint.choices.slice(0, 2)).toEqual([
-      ['chrome', 'chrome'],
-      ['chrome_155', 'chrome_155'],
+      ['chrome', 'Chrome 133'],
+      ['chrome_155', 'Chrome 155'],
     ]);
     expect(fingerprint.default).toBe('chrome');
   });

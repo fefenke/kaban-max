@@ -921,8 +921,12 @@ decide_kabanmax() { # the KabanMax packages to install, NEED_*, and the KabanMax
 	if [ -n "$KABANMAX_OLD" ]; then
 		[ -z "$I18N_OLD" ] || I18N=1
 	else
-		# a first install brings the page's Russian translation unless LuCI is set to another language
-		case "$(uci -q get luci.main.lang)" in '' | auto | ru*) I18N=1 ;; esac
+		# An explicit installer language takes precedence over LuCI's automatic mode.
+		case "${LANG_OPT:-}" in
+		ru) I18N=1 ;;
+		en) I18N=0 ;;
+		*) case "$(uci -q get luci.main.lang)" in ru*) I18N=1 ;; esac ;;
+		esac
 	fi
 	RESULT_KABANMAX=$F_VERSION
 	if [ -n "$FORK_URL" ] || { [ -n "$TARGET_TAG" ] && [ "${KABANMAX_REINSTALL:-0}" = 1 ]; }; then

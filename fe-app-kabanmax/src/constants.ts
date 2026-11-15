@@ -9,6 +9,7 @@ export const RESERVED_RUNTIME_TAGS = new Set([
   'bootstrap-dns-server',
   'dnsmasq-server',
   'hosts-server',
+  'infrastructure-direct-out',
   'fakeip-dns-rule-tag',
   'fakeip-ruleset-dns-rule-tag',
   'service-fakeip-dns-rule-tag',

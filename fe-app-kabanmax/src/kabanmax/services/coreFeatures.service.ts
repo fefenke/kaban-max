@@ -1,4 +1,5 @@
 import { callUbus } from '../../helpers/callUbus';
+import { fingerprintProfile } from './tlsFingerprints';
 import { KabanMaxShellMethods } from '../methods/shell';
 import type { KabanMax } from '../types';
 import {
@@ -144,10 +145,17 @@ export function connectionFingerprintSupported(link: string, fingerprint = '') {
     }
   }
   const query = linkQuery(link);
-  const security = queryValue(query.get('security')).toLowerCase();
+  let security = queryValue(query.get('security')).toLowerCase();
+  if (
+    queryValue(query.get('pbk')) &&
+    (['tls', 'xtls', 'reality'].includes(security) ||
+      (type === 'trojan' && security !== 'none') ||
+      type === 'anytls')
+  )
+    security = 'reality';
   if (
     security === 'reality' &&
-    ['android', '360'].includes(fingerprint.trim().toLowerCase())
+    fingerprintProfile(fingerprint)?.reality === 'unsupported'
   )
     return false;
   if (type === 'http') return scheme === 'https';

@@ -114,7 +114,7 @@ describe('KabanMaxShellMethods.checkLogs', () => {
     expect(mocks.executeShellCommand).not.toHaveBeenCalled();
   });
 
-  it('runs the CLI when the state service does not answer, and starts over afterwards', async () => {
+  it('does not resurrect system-ring lines when the journal service is unavailable', async () => {
     const shell = await methods();
     mocks.callUbus
       .mockResolvedValueOnce({ success: true, data: { cursor: 2, text: 'a' } })
@@ -127,19 +127,16 @@ describe('KabanMaxShellMethods.checkLogs', () => {
     });
 
     await shell.checkLogs();
-    expect(await shell.checkLogs()).toEqual({
-      success: true,
-      data: 'from cli',
-    });
+    expect(await shell.checkLogs()).toEqual({ success: false, error: 'gone' });
     await shell.checkLogs();
-    expect(mocks.callUbus.mock.calls[2][0].params).toEqual({});
+    expect(mocks.callUbus.mock.calls[2][0].params).toEqual({ cursor: 2 });
+    expect(mocks.executeShellCommand).not.toHaveBeenCalled();
   });
 
   it('shares one in-flight log request between UI pollers', async () => {
     const shell = await methods();
-    mocks.callUbus.mockResolvedValue(UNAVAILABLE);
     let finishRequest: (value: unknown) => void = () => {};
-    mocks.executeShellCommand.mockImplementation(
+    mocks.callUbus.mockImplementation(
       () =>
         new Promise((resolve) => {
           finishRequest = resolve;
@@ -149,9 +146,9 @@ describe('KabanMaxShellMethods.checkLogs', () => {
     const first = shell.checkLogs();
     const second = shell.checkLogs();
     await vi.waitFor(() =>
-      expect(mocks.executeShellCommand).toHaveBeenCalledTimes(1),
+      expect(mocks.callUbus).toHaveBeenCalledTimes(1),
     );
-    finishRequest({ stdout: 'line', stderr: '', code: 0 });
+    finishRequest({ success: true, data: { cursor: 1, text: 'line' } });
     await expect(Promise.all([first, second])).resolves.toEqual([
       { success: true, data: 'line' },
       { success: true, data: 'line' },
@@ -161,12 +158,7 @@ describe('KabanMaxShellMethods.checkLogs', () => {
 
   it('answers an empty log as a log with no lines', async () => {
     const shell = await methods();
-    mocks.callUbus.mockResolvedValue(UNAVAILABLE);
-    mocks.executeShellCommand.mockResolvedValue({
-      stdout: '',
-      stderr: '',
-      code: 0,
-    });
+    mocks.callUbus.mockResolvedValue({ success: true, data: { cursor: 1, text: '' } });
 
     await expect(shell.checkLogs()).resolves.toEqual({
       success: true,

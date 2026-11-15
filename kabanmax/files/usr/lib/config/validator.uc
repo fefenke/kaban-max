@@ -198,7 +198,7 @@ function validate_connection_links(section) {
             fail_validation("A link in section '" + section_label(section) + "' has no name. Set one in its settings");
         let fingerprint = lc(trim(option(link, "tls_fingerprint", "")));
         if (fingerprint != "") {
-            if (!contains([ "chrome", "chrome_155", "firefox", "edge", "safari", "ios", "android", "random" ], fingerprint))
+            if (!features.fingerprint_known(fingerprint))
                 fail_validation("Unsupported TLS fingerprint for link '" + link_name + "'");
             if (!features.connection_fingerprint_supported(uri, fingerprint))
                 fail_validation("TLS fingerprint requires a supported TCP connection with TLS enabled for link '" + link_name + "'");
@@ -1790,6 +1790,9 @@ function check_requirements() {
         die("sing-box " + binary_version + " is not sing-box-kabanmax, the core KabanMax runs on. Install sing-box-kabanmax");
     if (!core_version.version_at_least(binary_version, ctx.sing_box_required_version))
         die("sing-box-kabanmax " + binary_version + " is older than the required minimum (" + ctx.sing_box_required_version + "). Update sing-box-kabanmax");
+    for (let section in sections_by_type("section"))
+        if (option(section, "action", "") == "zapret2" && bool_option(section, "enabled", true) && bool_option(section, "auto_routing_enabled", false) && !core_version.version_at_least(binary_version, "1.14.4-r11"))
+            die("Automatic routing requires sing-box-kabanmax 1.14.4-r11; disabled automation remains compatible with r10");
 
     let problem = features.core_problem(ctx.core_tags);
     if (problem != "")

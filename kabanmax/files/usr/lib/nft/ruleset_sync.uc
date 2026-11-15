@@ -282,7 +282,8 @@ function section_plan(snapshot, entry) {
         sets: [
             [ s.subnets, plain["4"] ], [ s.subnets6, plain["6"] ],
             [ s.ip_ports, pairs4.elements ], [ s.ip6_ports, pairs6.elements ],
-            [ s.proto_ports, triples4.elements ], [ s.proto6_ports, triples6.elements ]
+            [ s.proto_ports, triples4.elements ], [ s.proto6_ports, triples6.elements ],
+            [ s.pending4, [] ], [ s.pending6, [] ]
         ],
         scoped: pairs4.count + pairs6.count + triples4.count + triples6.count
     };

@@ -38,15 +38,9 @@ async function readLogs(): Promise<KabanMax.MethodResponse<string>> {
     }
   }
 
-  servedLog = null;
-  const response = await executeShellCommand({
-    command: '/usr/bin/kabanmax',
-    args: [KabanMax.AvailableMethods.CHECK_LOGS],
-    timeout: 15000,
-  });
-  return response.code
-    ? { success: false, error: response.stderr || response.stdout || '' }
-    : { success: true, data: response.stdout };
+  // The CLI reads the system ring, whose entries are not erased by clear_logs.
+  // Falling back to it would resurrect deliberately cleared application lines.
+  return { success: false, error: served.success ? _('Failed to load logs') : served.message };
 }
 
 function checkLogs() {

@@ -1,0 +1,106 @@
+diff --git a/adapter/inbound.go b/adapter/inbound.go
+--- a/adapter/inbound.go
++++ b/adapter/inbound.go
+@@ -45,6 +45,9 @@
+ }
+ 
+ type InboundContext struct {
++	// A remote set with no valid content cannot authorize a lower route.
++	UnavailableRuleSet string
++
+ 	Inbound     string
+ 	InboundType string
+ 	IPVersion   uint8
+diff --git a/route/rule/rule_item_rule_set.go b/route/rule/rule_item_rule_set.go
+--- a/route/rule/rule_item_rule_set.go
++++ b/route/rule/rule_item_rule_set.go
+@@ -57,6 +57,10 @@
+ 	snapshot := snapshotRuleMatch(metadata)
+ 	for _, ruleSet := range r.setList {
+ 		r.prepareNestedMatch(metadata)
++		if unavailableRouteSet(ruleSet, metadata) {
++			snapshot.restore(metadata)
++			return true
++		}
+ 		if ruleSet.Match(metadata) && (!r.domainOnly || metadata.RuleSetDomainMatched) {
+ 			snapshot.restore(metadata)
+ 			return true
+@@ -71,6 +75,13 @@
+ 		return outerGroups.done() && r.Match(metadata)
+ 	}
+ 	outerDone := outerGroups.done()
++	if outerDone {
++		for _, set := range r.setList {
++			if unavailableRouteSet(set, metadata) {
++				return true
++			}
++		}
++	}
+ 	var (
+ 		matched        bool
+ 		deferredGroups uint8
+@@ -180,3 +191,22 @@
+ 		return F.ToString("rule_set=[", strings.Join(r.tagList, " "), "]")
+ 	}
+ }
++
++// DNS matching keeps its query/response semantics. Data routing conservatively
++// holds the section's scope until the first valid remote set is available.
++func unavailableRouteSet(set adapter.RuleSet, metadata *adapter.InboundContext) bool {
++	if metadata.QueryType != 0 || metadata.DestinationAddressMatchFromResponse {
++		return false
++	}
++	remote, ok := set.(*RemoteRuleSet)
++	if !ok {
++		return false
++	}
++	remote.access.RLock()
++	unavailable := remote.startedEmpty && remote.revision == 0
++	remote.access.RUnlock()
++	if unavailable {
++		metadata.UnavailableRuleSet = remote.tag
++	}
++	return unavailable
++}
+diff --git a/route/route.go b/route/route.go
+--- a/route/route.go
++++ b/route/route.go
+@@ -381,6 +381,9 @@
+ 		if !matchResolvedRoute(currentRule, &metadata) {
+ 			continue
+ 		}
++		if metadata.UnavailableRuleSet != "" {
++			return adapter.PreMatchResult{Action: adapter.PreMatchReject}
++		}
+ 		ruleDescription := currentRule.String()
+ 		if ruleDescription != "" {
+ 			r.logger.DebugContext(ctx, "pre-match[", currentRuleIndex, "] ", currentRule, " => ", currentRule.Action())
+@@ -662,6 +665,7 @@
+ // The destination name is retained for TLS and proxy protocols; only dial
+ // candidates are narrowed. A failed dial never falls through to another route.
+ func matchResolvedRoute(rule adapter.Rule, metadata *adapter.InboundContext) bool {
++	metadata.UnavailableRuleSet = ""
+ 	action := rule.Action().Type()
+ 	if metadata.Destination.IsIP() || len(metadata.DestinationAddresses) == 0 ||
+ 		(action != C.RuleActionTypeRoute && action != C.RuleActionTypeBypass) {
+@@ -681,6 +685,9 @@
+ 			candidate.IPVersion = 4
+ 		}
+ 		if rule.Match(&candidate) {
++			if candidate.UnavailableRuleSet != "" {
++				metadata.UnavailableRuleSet = candidate.UnavailableRuleSet
++			}
+ 			matched = append(matched, address)
+ 		}
+ 	}
+@@ -725,6 +732,10 @@
+ 		metadata.ResetRuleCache()
+ 		if !matchResolvedRoute(currentRule, metadata) {
+ 			continue
++		}
++		if metadata.UnavailableRuleSet != "" {
++			fatalErr = E.New("remote rule-set unavailable: ", metadata.UnavailableRuleSet)
++			return
+ 		}
+ 		ruleDescription := currentRule.String()
+ 		if ruleDescription != "" {

@@ -95,10 +95,10 @@ t.test("a core that is not sing-box-kabanmax is refused, whatever package files 
 });
 
 t.test("a core of the sing-box-extended line or a build below the required minimum is refused", () => {
-    for (let version in [ "1.13.18-extended-2.6.5-f165", "1.14.0-kabanmax.3", "1.14.4-r0+12", "1.14.4-r8" ])
+    for (let version in [ "1.13.18-extended-2.6.5-f165", "1.14.0-kabanmax.3", "1.14.4-r0+12", "1.14.4-r8", "1.14.4-r9" ])
         t.eq(requirements(version, null, PRESENT).error,
             "sing-box-kabanmax " + version + " is older than the required minimum (" + REQUIRED + "). Update sing-box-kabanmax", version);
-    for (let version in [ "1.14.4-r9", "1.14.4-r9+3", "1.14.5-r1" ])
+    for (let version in [ "1.14.4-r10", "1.14.4-r10+3", "1.14.5-r1" ])
         t.ok(core_accepted(requirements(version, null, PRESENT)), version);
 });
 

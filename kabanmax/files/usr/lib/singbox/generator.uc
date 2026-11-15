@@ -63,6 +63,26 @@ function local_resolver_domain() {
     return value == "" ? "lan" : value;
 }
 
+function local_resolver_zones() {
+    let dhcp = dhcp_dnsmasq_section();
+    let zones = [ "." + local_resolver_domain() ];
+    for (let key in [ "local", "server" ])
+        for (let value in list_option(dhcp, key)) {
+            let parts = split(as_string(value), "/");
+            // Only explicit zones with a real local/conditional target. '#' uses
+            // the default upstream and is deliberately not a local authority.
+            if (parts[0] != "" || length(parts) < 3 ||
+                (key == "server" && (parts[length(parts) - 1] == "#" || parts[length(parts) - 1] == "")))
+                continue;
+            for (let zone in slice(parts, 1, length(parts) - 1)) {
+                zone = lc(trim(zone));
+                if (zone != "" && match(zone, /^[a-z0-9_-]+(\.[a-z0-9_-]+)*$/) != null && index(zones, "." + zone) < 0)
+                    push(zones, "." + zone);
+            }
+        }
+    return zones;
+}
+
 function unmatched_dns_server_tag() {
     return option(runtime_settings(), "unmatched_dns_mode", "kabanmax") == "router"
         ? runtime_constants.DNSMASQ_DNS_SERVER_TAG
@@ -93,9 +113,14 @@ function child_outbound_tag(section, display_name) {
     return runtime_constants.child_tag(connections.section_display_name(section), display_name);
 }
 
+function infrastructure_direct_tag(settings) {
+    return bool_option(settings, "dns_detour_enabled", false)
+        ? runtime_constants.INFRASTRUCTURE_OUTBOUND_TAG : runtime_constants.DIRECT_OUTBOUND_TAG;
+}
+
 function download_detour(settings, purpose) {
     if (!connections.download_via_proxy_enabled(settings, purpose))
-        return runtime_constants.DIRECT_OUTBOUND_TAG;
+        return infrastructure_direct_tag(settings);
     let section_name = connections.download_via_proxy_section(settings, purpose);
     if (section_name == "")
         runtime_generate_unsupported("download " + purpose + " via proxy section is not set");
@@ -168,7 +193,7 @@ function clash_api_config(settings, service_address) {
         result.secret = secret;
     if (bool_option(settings, "enable_yacd", false)) {
         result.external_ui = "ui";
-        result.external_ui_download_detour = runtime_constants.DIRECT_OUTBOUND_TAG;
+        result.external_ui_download_detour = infrastructure_direct_tag(settings);
     }
     return result;
 }
@@ -235,7 +260,7 @@ function apply_matchers(rule, matchers) {
 function base_config(settings, service_address) {
     let log_level = option(settings, "log_level", "warn");
     let rewrite_ttl = int_option(settings, "dns_rewrite_ttl", "60");
-    let cache_path = option(settings, "cache_path", "/tmp/sing-box/cache.db");
+    let cache_path = runtime_constants.cache_path(settings);
     let dns_config = runtime_dns.config(settings);
     if (dns_config.unsupported)
         runtime_generate_unsupported(dns_config.unsupported);
@@ -577,7 +602,17 @@ function add_subscription_provider(config, section, subscription) {
         if (download_section != "")
             provider.download_detour = outbound_tag(download_section);
     }
+    if (source_type != "local" && provider.download_detour == null &&
+        bool_option(runtime_settings(), "dns_detour_enabled", false))
+        provider.download_detour = infrastructure_direct_tag(runtime_settings());
     let override = subscription_override_options(subscription);
+    if (bool_option(runtime_settings(), "dns_detour_enabled", false)) {
+        // Managed import policy. An explicit user patch remains authoritative;
+        // unlike raw outbounds, imported source fields are subject to this patch.
+        override.patch ??= {};
+        if (!("domain_resolver" in override.patch))
+            override.patch.domain_resolver = runtime_constants.BOOTSTRAP_DNS_SERVER_TAG;
+    }
     if (length(keys(override)) > 0)
         provider.override = override;
     push(config.providers, provider);
@@ -1175,9 +1210,13 @@ function add_connection_tunnels(config, section, selector_tags, urltest_candidat
         if (wrapper_kind != "json" && endpoint_type == "openconnect" && endpoint.reconnect_timeout == null)
             endpoint.reconnect_timeout = OPENCONNECT_RECONNECT_TIMEOUT;
 
-        if (wrapper_kind != "json" && endpoint_type == "warp" && endpoint.profile != null &&
-            connections.download_via_proxy_enabled(runtime_settings(), "warp_profiles"))
+        // Even automatic registration must use a core dialer: Go's default HTTP
+        // transport has no outbound mark and can be captured into this very WARP.
+        // Keep API routing independent of the tunnel's transport/cascade.
+        if (wrapper_kind != "json" && endpoint_type == "warp") {
+            endpoint.profile ??= {};
             endpoint.profile.detour = download_detour(runtime_settings(), "warp_profiles");
+        }
 
         if (wrapper_kind != "json" && endpoint_type == "tailscale") {
             let detour_section = connections.option(tunnel, "tailscale_detour_section", "");
@@ -1326,7 +1365,7 @@ function section_dns_server(section) {
 // Single-label names, the DHCP domain and reverse lookups are what the local resolver is
 // authoritative for, so they stay with it.
 function add_local_zone_rules(config, matchers, rewrite_ttl) {
-    for (let zone in [ { domain_regex: "^[^.]+$" }, { domain_suffix: "." + local_resolver_domain() }, { query_type: [ "PTR" ] } ]) {
+    for (let zone in [ { domain_regex: "^[^.]+$" }, ...map(local_resolver_zones(), (zone) => ({ domain_suffix: zone })), { query_type: [ "PTR" ] } ]) {
         let rule = copy_matchers(matchers);
         rule.action = "route";
         rule.server = runtime_constants.DNSMASQ_DNS_SERVER_TAG;
@@ -1356,10 +1395,10 @@ function add_section_dns_matcher_rule(config, section, matchers, rewrite_ttl) {
         rule.server = section_dns_server(section);
         if (rule.server == runtime_constants.FAKEIP_DNS_SERVER_TAG) {
             rule.query_type = FAKEIP_QUERY_TYPES;
-            // A query has no destination port, and a FakeIP answer is in no subnet of a set.
-            if (rule.rule_set != null)
-                rule.rule_set_domain_only = true;
         }
+        // Only domain branches can match a query; IP Bypass uses response rules below.
+        if (rule.rule_set != null)
+            rule.rule_set_domain_only = true;
         rule.rewrite_ttl = rewrite_ttl;
         push_dns_matcher_rule(config, rule);
     }
@@ -1610,6 +1649,44 @@ function constrain_rule_set_by_section(route_rule, target) {
     return result;
 }
 
+// An IP Bypass cannot match a query until a real A/AAAA response exists.
+// Evaluate at the section's position; a miss continues to later sections/FakeIP.
+function add_bypass_response_rules(config, section, ip_cidr, rule_set_tags, rewrite_ttl) {
+    if (option(section, "action", "") != "bypass" || section_has_port_matchers(section) ||
+        (length(ip_cidr) == 0 && length(rule_set_tags) == 0))
+        return;
+    let variants = device_matcher_variants(section, "source_ip_cidr", true);
+    for (let i = 0; i < length(variants); i++) {
+        let matchers = { ...variants[i], query_type: FAKEIP_QUERY_TYPES };
+        add_local_zone_rules(config, matchers, rewrite_ttl);
+        let response_tag = "bypass-response-" + section[".name"] + "-" + i;
+        push_dns_matcher_rule(config, {
+            ...matchers, action: "evaluate", server: runtime_constants.DNS_SERVER_TAG,
+            tag: response_tag, rewrite_ttl
+        });
+        if (length(ip_cidr) > 0)
+            push_dns_matcher_rule(config, {
+                ...matchers, action: "respond", match_response: response_tag, response_address_all: true, ip_cidr
+            });
+        if (length(rule_set_tags) > 0)
+            push_dns_matcher_rule(config, {
+                ...matchers, action: "respond", match_response: response_tag, response_address_all: true,
+                rule_set: single_or_array(rule_set_tags)
+            });
+        // An any-address hit after the all-address checks is heterogeneous.
+        // Keep it captured: exposing its real non-Bypass IPs can evade a later
+        // domain-only Connection section's nft capture.
+        for (let response_matcher in [
+            ...(length(ip_cidr) > 0 ? [ { ip_cidr } ] : []),
+            ...(length(rule_set_tags) > 0 ? [ { rule_set: single_or_array(rule_set_tags) } ] : [])
+        ])
+            push_dns_matcher_rule(config, {
+                ...matchers, ...response_matcher, action: "route", match_response: response_tag,
+                server: runtime_constants.FAKEIP_DNS_SERVER_TAG, rewrite_ttl
+            });
+    }
+}
+
 function add_combined_route_for_section(config, section) {
     let destinations = connections.destinations(section);
     let domain = destinations.domain;
@@ -1655,6 +1732,14 @@ function add_combined_route_for_section(config, section) {
     if (length(route_rules) == 0 && (base_rule.port != null || base_rule.port_range != null))
         push(route_rules, base_rule);
 
+    // A mixed response gets FakeIP even with global pre-resolve disabled.
+    // Resolve only when reaching this IP Bypass section, after earlier sections
+    // had their chance. Candidate isolation in core keeps other IPs off Direct.
+    if (option(section, "action", "") == "bypass" && !section_has_port_matchers(section) &&
+        (length(ip_cidr) > 0 || length(rule_set_tags) > 0))
+        for (let device_matchers in device_matcher_variants(section, "source_ip_cidr", false))
+            push(config.route.rules, { ...device_matchers, domain_regex: ".", action: "resolve", server: runtime_constants.DNS_SERVER_TAG });
+
     for (let route_rule in route_rules)
         for (let device_matchers in device_matcher_variants(section, "source_ip_cidr", false)) {
             let device_route_rule = copy_matchers(route_rule);
@@ -1676,6 +1761,7 @@ function add_combined_route_for_section(config, section) {
             rule_set: single_or_array(rule_set_tags)
         }, rewrite_ttl);
     }
+    add_bypass_response_rules(config, section, ip_cidr, rule_set_tags, rewrite_ttl);
 }
 
 function add_outbound_for_section(config, section) {
@@ -1853,6 +1939,24 @@ function add_server_routes(config, servers, sections) {
     }
 }
 
+// Resolve transport endpoints independently from the main DNS travelling through them.
+// Direct outbounds resolve user destinations and must retain the main resolver.
+function add_infrastructure_resolvers(config, settings) {
+    if (!bool_option(settings, "dns_detour_enabled", false))
+        return;
+    push(config.outbounds, {
+        type: "direct", tag: runtime_constants.INFRASTRUCTURE_OUTBOUND_TAG,
+        domain_resolver: runtime_constants.BOOTSTRAP_DNS_SERVER_TAG
+    });
+    for (let outbound in config.outbounds)
+        if (outbound.type != "direct" &&
+            (outbound.type == "parser" || outbound.server != null) && outbound.domain_resolver == null)
+            outbound.domain_resolver = runtime_constants.BOOTSTRAP_DNS_SERVER_TAG;
+    for (let endpoint in config.endpoints)
+        if (endpoint.domain_resolver == null)
+            endpoint.domain_resolver = runtime_constants.BOOTSTRAP_DNS_SERVER_TAG;
+}
+
 // Throws with the reason when the configuration cannot be expressed.
 // context: { service_address }
 function build(context) {
@@ -1876,6 +1980,10 @@ function build(context) {
         add_outbound_for_section(config, section);
     add_service_route_rules(config, sections);
     add_pre_routing_resolve(config, settings, static_hosts);
+    // Explicit dnsmasq authorities precede section domain rules as well as
+    // speculative Bypass evaluation. The marked loopback query is not recaptured.
+    if (length(local_resolver_zones()) > 1)
+        add_local_zone_rules(config, { inbound: captured_dns_inbound_matcher() }, int_option(settings, "dns_rewrite_ttl", "60"));
     for (let section in sections)
         add_route_for_section(config, section);
     add_static_hosts_dns_rule(config, static_hosts);
@@ -1884,8 +1992,11 @@ function build(context) {
     add_server_routes(config, servers, sections);
     add_service_mixed_proxy(config, settings);
 
+    add_infrastructure_resolvers(config, settings);
     assert_unique_outbound_tags(config);
     assert_compatible_wireguard_endpoints(config);
+    let auto_sources = require("config.auto_routing").sources(config, sections, outbound_tag);
+    if (length(auto_sources) > 0) config.route.kabanmax_auto = auto_sources;
     return strip_internal_fields(config);
 }
 

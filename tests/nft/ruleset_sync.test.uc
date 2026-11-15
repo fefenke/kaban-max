@@ -81,7 +81,7 @@ t.test("a section's providers and its own addresses replace its sets in one tran
     t.eq(length(transactions), 1);
     let s = "kabanmax_rule_mixed_";
     t.eq(filter(lines(transactions[0]), (line) => substr(line, 0, 5) == "flush"),
-        map([ "subnets", "subnets6", "ip_ports", "ip6_ports", "proto_ports", "proto6_ports" ], (name) => "flush set inet KabanMaxTable " + s + name));
+        map([ "subnets", "subnets6", "ip_ports", "ip6_ports", "proto_ports", "proto6_ports", "pending4", "pending6" ], (name) => "flush set inet KabanMaxTable " + s + name));
     t.eq(elements(transactions[0], s + "subnets"), [ "10.0.0.0/8", "192.0.2.0/24", "198.51.100.0/24" ], "the section's ports apply by rule, and a shared prefix is written once");
     t.eq(elements(transactions[0], s + "subnets6"), [ "2001:db8:1::/48", "fd00::/8" ]);
     t.eq(elements(transactions[0], s + "ip_ports"), [ "203.0.113.1 . 1000-1050", "203.0.113.1 . 80" ], "a provider's own ports are narrowed by the section's");
@@ -161,6 +161,19 @@ t.test("a provider the core does not have is reported, one still loading is wait
     t.eq([ transactions, logs ], [ [], [] ], "a download in progress is not a failure");
     run(() => sync.sync(snapshot({ [ALPHA]: provider(1, { ipv4: [ "192.0.2.0/24" ] }) }), [ section ]));
     t.eq(length(transactions), 1, "the section loads once the provider has");
+    t.contains(transactions[0], "flush set inet KabanMaxTable kabanmax_rule_waiting_pending4\n");
+    t.contains(transactions[0], "flush set inet KabanMaxTable kabanmax_rule_waiting_pending6\n");
+});
+
+t.test("a valid domain-only provider clears the initial guard without inventing destination IPs", () => {
+    let section = { ".name": "domains_ready", action: "connection", rule_set: [ ALPHA ] };
+    seed([ section ]);
+    run(() => sync.sync(snapshot({ [ALPHA]: { revision: 0, ip_cidr: null } }), [ section ]));
+    t.eq(transactions, [], "the initial guard stays armed while the first download is missing");
+    run(() => sync.sync(snapshot({ [ALPHA]: provider(1, {}) }), [ section ]));
+    t.eq(length(transactions), 1);
+    t.eq(elements(transactions[0], "kabanmax_rule_domains_ready_subnets"), []);
+    t.contains(transactions[0], "flush set inet KabanMaxTable kabanmax_rule_domains_ready_pending4\n");
 });
 
 t.test("a section is rewritten only when the content of a provider it reads changed", () => {
@@ -377,6 +390,54 @@ t.test("without a table section fed by a provider the worker is stopped and not 
     t.ok(sync.start_worker());
     t.eq(stub.command_lines(), [ "ubus call service delete { \"name\": \"kabanmax-ruleset-sync\" }" ]);
     stub.restore();
+});
+
+t.test("community and mixed IPv4/IPv6 captured sets have matching sing-box routes, including IP literals", () => {
+    let generator = require("singbox.generator");
+    let connections = require("config.connections");
+    let nft_sections = require("nft.sections");
+    let q = require("sbconfig");
+    let uses = (rule, wanted) => q.has(rule.rule_set, wanted) ||
+        length(filter(rule.rules ?? [], (child) => q.has(child.rule_set, wanted))) > 0;
+    let number = 0;
+    // Meta's facebook/instagram are domain lists; whatsapp is subnet-bearing.
+    for (let community in [ "telegram", "discord", "whatsapp", "facebook", "instagram", "mixed", "ipv6_only" ]) {
+        let name = "capture" + number++;
+        let section = { ".name": name, enabled: "1", action: "connection" };
+        if (community == "mixed" || community == "ipv6_only") {
+            section.rule_set_with_subnets = [ ALPHA ];
+            section.destinations = community == "mixed" ? "192.0.2.0/24\n2001:db8:1::/48" : "2001:db8:1::/48";
+        }
+        else
+            section.community_lists = [ community ];
+        fixture.seed({ settings: { config_path }, section: [ section ],
+            connection_link: fixture.links(name, [ "socks://127.0.0.1:1080#VPN" ]) });
+        let config = generator.build({ service_address: "127.0.0.1" });
+        let matcher = nft_sections.matchers(section);
+        let providers = {};
+        for (let source in matcher.subnet_tags) {
+            providers[source] = provider(1, { ipv4: community == "ipv6_only" ? [] : [ "198.51.100.0/24" ], ipv6: [ "2001:db8:2::/48" ] });
+            let route = q.route_rule(config, (r) => r.outbound == name && uses(r, source));
+            t.ok(route != null, "every captured provider is routed to its section: " + community);
+            t.contains(route.inbound ?? route.rules[0].inbound, "tproxy6-in", "IPv6 cannot fall through to direct-out");
+            t.contains(route.inbound ?? route.rules[0].inbound, "system6-in");
+        }
+        run(() => sync.sync({ revision: 1, providers }, [ section ]));
+        if (length(matcher.subnet_tags) > 0) {
+            t.eq(length(transactions), 1);
+            t.contains(elements(transactions[0], matcher.sets.subnets6), "2001:db8:2::/48");
+            if (community != "ipv6_only")
+                t.contains(elements(transactions[0], matcher.sets.subnets), "198.51.100.0/24");
+        }
+        else
+            t.eq(transactions, [], "domain-only Meta lists do not invent IP capture");
+        for (let prefix in connections.destinations(section).ip_cidr) {
+            let route = q.route_rule(config, (r) => r.outbound == name && q.has(r.ip_cidr, prefix));
+            t.ok(route != null, "an IP literal matches a route without DNS: " + prefix);
+            t.eq(route.domain, null);
+            t.eq(route.domain_suffix, null);
+        }
+    }
 });
 
 t.done();

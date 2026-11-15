@@ -274,9 +274,9 @@ function config(settings) {
 }
 
 function default_domain_resolver(settings) {
-    return bool_option(settings, "dns_detour_enabled", false)
-        ? runtime_constants.BOOTSTRAP_DNS_SERVER_TAG
-        : runtime_constants.DNS_SERVER_TAG;
+    // Infrastructure dialers name bootstrap explicitly, so ordinary destinations
+    // keep the main DNS policy even when it travels through a VPN section.
+    return runtime_constants.DNS_SERVER_TAG;
 }
 
 return {

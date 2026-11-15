@@ -40,6 +40,22 @@ t.test("updater uses official embedded releases with a digest and supported arch
     t.eq(updates.architecture("x86_64", "x86_64"), "x86_64");
     t.throws(() => updates.architecture("unknown", "mystery"));
 });
+t.test("status reports managed binary presence independently of a running process", () => {
+    let fs = require("fs"), exec = require("core.exec");
+    let real_stat = fs.stat, real_output = exec.output;
+    let binary = null;
+    fs.stat = (path) => path == "/opt/kabanmax-zapret2/current/nfq2/nfqws2" ? binary : real_stat(path);
+    exec.output = (argv) => argv[0] == "uname" ? "x86_64" : real_output(argv);
+    let absent = updates.status();
+    binary = { type: "file", mode: 0644 };
+    let broken = updates.status();
+    binary = { type: "file", mode: 0755 };
+    let present = updates.status();
+    fs.stat = real_stat;
+    exec.output = real_output;
+    t.eq([ absent.present, broken.present, present.present ], [ false, true, true ]);
+    t.eq([ absent.usable, broken.usable, present.usable ], [ false, false, true ]);
+});
 t.test("failed activation restores the old release and restarts it", () => {
     let calls = [], starts = 0;
     let ops = {

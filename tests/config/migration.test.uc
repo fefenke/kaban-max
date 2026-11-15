@@ -975,4 +975,15 @@ t.test("a takeover without a backup falls back to the stock values, and an untou
     t.eq(v2.dnsmasq_plan({ server: [ "192.168.1.1" ], noresolv: "0", cachesize: "150" }, false, "").changed, false);
 });
 
+t.test("migration preserves custom paths and backend defaults survive missing paths and another save", () => {
+    let paths = require("singbox.constants");
+    for (let extra in [ {}, { config_path: "/tmp/custom/config.json", cache_path: "/srv/custom/cache.db" } ]) {
+        let out = migrated(released({ settings: extra }));
+        t.eq(paths.config_path(out.config.settings), extra.config_path ?? "/etc/sing-box/config.json");
+        t.eq(paths.cache_path(out.config.settings), extra.cache_path ?? "/tmp/sing-box/cache.db");
+        let again = run(out.config);
+        t.eq([ again.status, again.out.decision.result ], [ 0, "current" ]);
+    }
+});
+
 t.done();

@@ -64,4 +64,8 @@ it('keeps Zapret2 check results above its button with success, neutral progress 
     expect(details.textContent).toBe('Update available: v2'),
   );
   expect(details.className).toContain('update-status--success');
+  shell.mockResolvedValue(reply({ installed: 'v1', present: true, usable: false }));
+  button.onclick();
+  await vi.waitFor(() => expect(details.textContent).toBe('failed'));
+  expect(details.className).toContain('update-status--error');
 });

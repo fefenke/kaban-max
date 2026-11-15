@@ -12,10 +12,14 @@ for file in "$output"/*.apk "$output"/*.ipk "$output"/install.sh "$output"/relea
 done
 (cd "$output" && sha256sum -c SHA256SUMS)
 python3 - "$output" <<'PY'
-import json, pathlib, sys
+import json, pathlib, re, sys
 p=pathlib.Path(sys.argv[1]); app=json.loads((p/'release.json').read_text()); core=json.loads((p/'core-release.json').read_text())
 assert app['tag']==core['tag']
-assert app['requires']['sing-box-kabanmax']==core['version']
+def core_version(value):
+ match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)-r(\d+)', value)
+ assert match, 'Invalid core version'
+ return tuple(map(int, match.groups()))
+assert core_version(core['version']) >= core_version(app['requires']['sing-box-kabanmax']), 'Core is older than the application minimum'
 assert core['requires']['kabanmax']==app['version']
 for ext in ('apk','ipk'):
  for name in ('kabanmax','luci-app-kabanmax','luci-i18n-kabanmax-ru'):

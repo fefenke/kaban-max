@@ -163,6 +163,8 @@ function probeFormValue(option) {
   if (cls === 'CBI.DynamicList' || cls === 'CBI.MultiValue') {
     return [pick || 'probe-value'];
   }
+  // A selector with only the empty option cannot accept an invented profile ID.
+  if (cls === 'CBI.ListValue' && !pick) return '';
   if (pick) return pick;
   if (/port/.test(`${option.datatype ?? ''}`) || /_port$/.test(option.option)) {
     return '18080';

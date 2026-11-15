@@ -218,4 +218,11 @@ t.test("free text loses URL paths and credentials, the given hosts and public ad
         t.contains(masked, kept);
 });
 
+t.test("automatic routing contracts and endpoint inventory are masked", () => {
+    let value = mask.sing_box_config({ route: { kabanmax_auto: [{ protected: ["203.0.113.77"], suppressed: ["private-scope"], path: "/private-contract", prefix: "private-prefix", failure_prefix: "private-failure" }] } });
+    let text = sprintf("%J", value);
+    for (let secret in ["203.0.113.77", "private-scope", "/private-contract", "private-prefix", "private-failure"]) t.excludes(text, secret);
+    let uci = mask.kabanmax_config("config section 'zap'\n option auto_routing_contract '{\n \"prefix\": \"private-contract-prefix\"\n }'\n");
+    t.excludes(uci,"private-contract-prefix");
+});
 t.done();

@@ -518,7 +518,7 @@ t.test("a section's own destinations and its rule sets each select traffic on th
     t.ok(has(listed.rules[1].port, 443), "the section's ports still narrow the rule set");
 });
 
-t.test("a FakeIP answer reads only the domains of a rule set, a real answer the whole set", () => {
+t.test("query rules read domains only and Bypass checks subnets against an evaluated response", () => {
     let d = build({ settings: settings(), section: [
         { ".name": "proxy", enabled: "1", action: "connection", outbound_jsons: [ "{\"type\":\"direct\"}" ], rule_set: [ "https://example.com/ports.srs" ] },
         { ".name": "deny", enabled: "1", action: "block", community_lists: [ "discord" ] },
@@ -528,8 +528,12 @@ t.test("a FakeIP answer reads only the domains of a rule set, a real answer the 
     let denied = q.dns_rule(d, (r) => has(r.rule_set, "deny-discord-community-ruleset"));
     t.eq([ denied.server, denied.rule_set_domain_only ], [ "fakeip-server", true ]);
     let direct = q.dns_rule(d, (r) => has(r.rule_set, q.ruleset_url(d, "https://example.com/direct.srs").tag));
-    t.eq([ direct.server, direct.rule_set_domain_only ], [ "dns-server", null ],
-        "a bypass answer is checked against the set's subnets, which keeps a domain resolving into one direct");
+    t.eq([ direct.server, direct.rule_set_domain_only ], [ "dns-server", true ]);
+    let response = q.dns_rule(d, (r) => r.action == "respond" && has(r.rule_set, direct.rule_set));
+    t.ok(response != null, "a separate response rule checks the full SRS");
+    let evaluate = q.dns_rule(d, (r) => r.action == "evaluate" && r.tag == response.match_response);
+    t.eq(evaluate.server, "dns-server");
+    t.eq(response.rule_set_domain_only, null);
 });
 
 t.test("ports on their own select traffic in one rule", () => {
@@ -754,8 +758,8 @@ t.test("WARP profile requests go through the chosen section: the tunnel names it
     t.ok(q.route_rule(through, (r) => r.inbound == "service-warp-in" && r.outbound == "proxy") != null);
 
     let direct = build(data());
-    t.eq([ q.endpoint(direct, "tunnels/WARP").profile.detour, q.inbound(direct, "service-warp-in") ], [ null, null ],
-        "without a section the profile goes the way the router's own traffic goes");
+    t.eq([ q.endpoint(direct, "tunnels/WARP").profile.detour, q.inbound(direct, "service-warp-in") ], [ "direct-out", null ],
+        "without a section the profile uses the marked direct core dialer");
 });
 
 t.test("the Clash API dashboard downloads its interface direct, wherever the lists download", () => {

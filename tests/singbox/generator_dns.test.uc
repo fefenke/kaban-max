@@ -56,7 +56,7 @@ t.test("several DNS servers become native fallback groups with their own query m
         let candidate = q.dns_server_tag(multi, tag);
         t.eq([ candidate.detour, candidate.domain_resolver ], [ "proxy", "bootstrap-dns-server" ]);
     }
-    t.eq(multi.route.default_domain_resolver, "bootstrap-dns-server", "a detoured DNS resolves endpoints through the bootstrap");
+    t.eq(multi.route.default_domain_resolver, "dns-server", "ordinary destinations follow main DNS; transport endpoints have explicit bootstrap resolvers");
 });
 
 t.test("static records answer from a hosts server after the sections and before the local resolver", () => {
