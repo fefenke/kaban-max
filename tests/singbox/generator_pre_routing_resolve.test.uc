@@ -11,8 +11,11 @@ function build(settings) {
     return generator.build({ service_address: "192.168.1.1" });
 }
 
-t.test("disabled by default", () => {
-    t.eq(q.route_rule(build({}), (r) => r.action == "resolve" && r.server == "dns-server"), null);
+t.test("global pre-resolve is disabled by default; IP Bypass resolves only at its own position", () => {
+    let config = build({});
+    t.eq(q.route_rule(config, (r) => r.action == "resolve" && r.server == "dns-server" && r.type == "logical"), null);
+    let at = q.route_rule_index(config, (r) => r.action == "resolve" && r.server == "dns-server" && r.domain_regex == ".");
+    t.ok(at >= 0 && at < q.route_rule_index(config, (r) => r.ip_cidr != null));
 });
 
 t.test("all resolves with real main DNS before ordered user routes", () => {

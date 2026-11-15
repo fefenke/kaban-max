@@ -258,6 +258,7 @@ export function initController(): void {
   let releaseError = '';
 
   async function checkUpdates() {
+    if (releaseBusy) return;
     releaseBusy = true;
     releaseError = '';
     renderActions(runState ?? run.state);
@@ -277,7 +278,7 @@ export function initController(): void {
     const live = state.starting || state.running;
     // a start, stop or apply in progress leaves install.sh nothing safe to stop
     const blocked =
-      releaseBusy || live || (operation !== null && operation !== 'install');
+      releaseBusy || live || Boolean(state.after) || (operation !== null && operation !== 'install');
     const drawn = JSON.stringify([
       blocked,
       live && state.action,

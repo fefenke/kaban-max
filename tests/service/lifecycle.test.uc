@@ -84,7 +84,7 @@ function reset(options) {
     nft.build = () => {
         if (world.build_fails)
             die("duplicate nft section: x");
-        return { script: world.script, skipped: [] };
+        return { script: world.script, skipped: [], kept: world.provider_sets ?? [] };
     };
     nft.apply = (built) => {
         if (world.nft_fails)
@@ -367,6 +367,16 @@ t.test("a reload with nothing changed touches nothing", () => {
     t.contains(world.logs, "[info] Configuration already applied; nothing changed");
 });
 
+t.test("an invalid edited configuration keeps the old core running without signalling reload", () => {
+    let result = reloaded({ invalid: true, config_changed: true });
+    t.eq(result.result, 1);
+    t.eq(world.events, [], "validation fails before writing runtime config or signalling the old core");
+    t.eq(world.pid, 4242);
+    t.eq(world.ports, true);
+    t.eq(world.network, true);
+    t.contains(world.logs, "[error] Section 'x' is broken. Aborted.");
+});
+
 t.test("a changed sing-box configuration is reloaded with the capture paused until the core is ready again, and the worker kept", () => {
     let result = reloaded({ config_changed: true });
     t.eq(result.result, 0);
@@ -381,6 +391,19 @@ t.test("a change to the providers a section reads alone starts the rule-set work
     t.eq(result.result, 0);
     t.eq(world.events, [ "firewall opened", "config written", "rule-set worker started" ]);
     t.contains(world.logs, "[info] Configuration applied");
+});
+
+t.test("a replacement core re-arms provider guards even when nft text is unchanged, while no-op preserves it", () => {
+    let result = reloaded({ config_changed: true, provider_sets: [ "kabanmax_rule_s_subnets" ] });
+    t.eq(result.result, 0);
+    let at = (name) => index(world.events, name);
+    t.ok(at("rule-set worker stopped") < at("nft applied"));
+    t.ok(at("nft applied") < at("sing-box reloaded"));
+    t.ok(at("capture resumed") < at("rule-set worker started"));
+    result = reloaded({ provider_sets: [ "kabanmax_rule_s_subnets" ] });
+    t.eq(result.result, 0);
+    t.excludes(world.events, "nft applied");
+    t.excludes(world.events, "sing-box reloaded");
 });
 
 t.test("a changed table is rebuilt with the rule-set worker stopped around it, and sing-box is left alone", () => {

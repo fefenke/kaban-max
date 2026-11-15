@@ -68,7 +68,7 @@ function system_info() {
 }
 
 function sing_box_config_path() {
-    return common.option(settings(), "config_path", "");
+    return require("singbox.constants").config_path(settings());
 }
 
 function show_config(visibility) {

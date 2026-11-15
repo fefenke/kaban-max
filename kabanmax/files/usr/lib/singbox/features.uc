@@ -6,6 +6,14 @@ let fs = require("fs");
 let exec = require("core.exec");
 let url = require("core.url");
 let singbox_constants = require("singbox.constants");
+let fingerprints = require("singbox.fingerprints");
+
+function fingerprint_known(name) {
+    for (let profile in fingerprints)
+        if (profile.id == name)
+            return true;
+    return false;
+}
 
 let paths = {
     binary: "/usr/bin/sing-box"
@@ -252,8 +260,13 @@ function connection_fingerprint_supported(link, fingerprint) {
     }
     let query = link_query(link);
     let security = lc(query_value(query.security));
-    if (security == "reality" && index([ "android", "360" ], lc(trim(fingerprint ?? ""))) >= 0)
-        return false;
+    if (query_value(query.pbk) != "" && (index([ "tls", "xtls", "reality" ], security) >= 0 ||
+        (type_name == "trojan" && security != "none") || type_name == "anytls"))
+        security = "reality";
+    if (security == "reality")
+        for (let profile in fingerprints)
+            if (profile.id == lc(trim(fingerprint ?? "")) && profile.reality == "unsupported")
+                return false;
     if (type_name == "http")
         return scheme == "https";
     if (type_name == "trojan" && security == "none")
@@ -301,5 +314,5 @@ function report(present) {
 return {
     paths, REQUIRED, FEATURES, OUTBOUND_TYPES, INBOUND_TYPES, ENDPOINT_TYPES,
     parse_tags, tags, version, available, missing_tags, unavailable_reason, core_problem, type_feature, link_features,
-    link_uses_xhttp_http3, connection_fingerprint_supported, report
+    link_uses_xhttp_http3, connection_fingerprint_supported, fingerprint_known, report
 };

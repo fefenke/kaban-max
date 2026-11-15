@@ -15,6 +15,8 @@ const CAPTURE_ACTIONS = {
 };
 
 const SET_SUFFIXES = {
+    pending4: "_pending4",
+    pending6: "_pending6",
     subnets: "_subnets",
     subnets6: "_subnets6",
     ports: "_ports",
@@ -62,13 +64,13 @@ function subnet_source_tags(section) {
 
     for (let community in connections.community_lists(section)) {
         let tag = runtime_rulesets.community_tag(name, community);
-        if (runtime_rulesets.community_has_subnets(community) && !seen[tag]) {
+        if (!seen[tag]) {
             seen[tag] = true;
             push(result, tag);
         }
     }
 
-    for (let reference in connections.rule_sets_with_subnets(section)) {
+    for (let reference in [ ...connections.rule_sets(section), ...connections.rule_sets_with_subnets(section) ]) {
         let tag = runtime_rulesets.custom_reference_tag(reference);
         if (!seen[tag]) {
             seen[tag] = true;

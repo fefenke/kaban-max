@@ -10,6 +10,7 @@
     "fakeip-ruleset-dns-rule-tag",
     "fakeip-server",
     "hosts-server",
+    "infrastructure-direct-out",
     "service-fakeip-dns-rule-tag",
     "service-warp-in",
     "source-dns-in",

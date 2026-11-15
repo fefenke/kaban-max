@@ -380,6 +380,24 @@ function log_tick() {
 
 function object_methods() {
     return {
+        auto_state: {
+            call: () => require("diagnostics.auto_routing").state(),
+            args: { ubus_rpc_session: "" }
+        },
+        auto_action: {
+            call: function(request) {
+                if (!common.ensure_dir("/var/run/kabanmax")) return { success: false, message: "State directory unavailable" };
+                let answer = "/var/run/kabanmax/auto-action." + ++import_runs;
+                let finish = () => { let reply = common.read_json_file(answer); fs.unlink(answer); request.reply(reply ?? { success: false, message: "Automatic routing worker failed" }); };
+                request.defer();
+                let child = require("uloop").process("/bin/sh", [ "-c", "umask 077; exec \"$@\" > \"$0\"", answer,
+                    constants.KABANMAX_BIN, "auto_action_internal", request.args.op, request.args.id ],
+                    { ...getenv(), KABANMAX_RPC_SESSION: request.args.ubus_rpc_session ?? "" }, finish);
+                if (child == null) finish();
+                return null;
+            },
+            args: { op: "", id: "", ubus_rpc_session: "" }
+        },
         state: {
             call: function(request) {
                 return reply_payload();

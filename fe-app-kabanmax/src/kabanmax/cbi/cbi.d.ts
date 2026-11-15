@@ -84,6 +84,7 @@ declare global {
     // Every entry is a child section from the moment it is added, where other lists stage an entry
     // until the section is saved.
     entriesAreSections?: boolean;
+    openSettingsOnAdd?: boolean;
     // Entries are added through a dialog rather than typed into the list.
     buttonAdd?: boolean;
     // Left out of the table load: the column renders from something other than a stored value.
@@ -161,6 +162,7 @@ declare global {
   type ChildItemNameValidator = (value: unknown) => true | string;
 
   interface ChildItemDialog {
+    prepareSave?: (settings: ChildSettings) => ChildSettings;
     typeName: string;
     // Absent for a child whose entry is addressed by its section id alone.
     valueOption?: string;
@@ -223,6 +225,7 @@ declare global {
 
   // The dynamic list asks its options what an entry is called and whether settings stand behind it.
   interface CBIWidgetOptions {
+    openSettingsOnAdd?: boolean;
     addButtonLabel?: string;
     addable?: boolean;
     // A child item is addressed by both its section id and its name; adding it under the other

@@ -123,6 +123,8 @@ function installer_log() {
 }
 
 const COMMANDS = {
+    auto_state: { help: "Read automatic routing candidates, leases and history", run: json(() => require("diagnostics.auto_routing").state()) },
+    auto_action_internal: { args: 2, run: reply((op, id) => require("diagnostics.auto_routing").action(op, id, getenv("KABANMAX_RPC_SESSION"))) },
     zapret2_status: { help: "Zapret2 installation and update status", run: json(() => require("zapret2.updater").status()) },
     zapret2_update: { args: 1, usage: "<check|install>", help: "Check or install the current official Zapret2 release", run: reply((action) => require("zapret2.updater").start(action)) },
     zapret2_update_run: { args: 1, run: (args) => require("zapret2.updater").run(args[0]) },
@@ -135,6 +137,7 @@ const COMMANDS = {
     uninstall: { help: "Remove KabanMax files installed outside opkg/apk", run: () => lifecycle().uninstall() },
     check_service: { help: "Check the service, memory, clock and conflicting interceptors in JSON format", run: json(() => checks().service()) },
     check_dns: { help: "Check the DNS servers sing-box resolves with in JSON format", run: json(() => checks().dns()) },
+    check_route: { args: 3, usage: "<domain|IP> [LAN-IP|@system] [port]", help: "Read-only TCP route forecast; no DNS queries or active probes", run: json((destination, source, port) => require("diagnostics.route_policy").inspect(destination, source, port)) },
     check_traffic: { help: "Check that the router's own traffic goes through KabanMax in JSON format", run: json(() => checks().traffic()) },
     check_servers: { help: "Check the listeners of the enabled servers in JSON format", run: json(() => checks().servers()) },
     check_logs: { help: "Show KabanMax logs from system journal", run: () => {

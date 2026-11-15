@@ -1,4 +1,5 @@
 import { renderChildItemLabel } from '../../cbi/listItems';
+import { attachAutoRouting } from './autoRouting';
 import { KABANMAX_UCI_PACKAGE, RESERVED_RUNTIME_TAGS } from '../../../constants';
 import { validateOutboundJson } from '../../../validators/validateOutboundJson';
 import { message } from '../../../validators/messages';
@@ -60,6 +61,7 @@ import {
 import {
   connectionLinkListItemLabel,
   nextLinkName,
+  removeConnectionLinkReferences,
   showConnectionLinkSettingsModal,
   validateConnectionLink,
 } from './links';
@@ -121,6 +123,7 @@ export function createSectionContent(section: CBISection) {
 
   section.tab('settings', _('Route'));
   section.tab('conditions', _('Conditions'));
+  attachAutoRouting(section);
 
   o = section.taboption('settings', form.Flag, 'enabled', _('Enable'));
   o.default = '1';
@@ -274,7 +277,9 @@ export function createSectionContent(section: CBISection) {
   links.modalonly = true;
   links.childType = 'connection_link';
   links.entriesAreSections = true;
+  links.openSettingsOnAdd = true;
   links.childValueOption = 'uri';
+  links.removeNestedChildItems = removeConnectionLinkReferences;
   links.createId = () => nextSectionId('connection_link');
   links.childDefaults = {
     name: (value: unknown, sectionId: string) =>

@@ -38,7 +38,7 @@ t.test("the base table captures the source interfaces, FakeIP and the TProxy inb
     has(lines, "add element inet KabanMaxTable kabanmax_interfaces { br-lan }");
     has(lines, "add element inet KabanMaxTable kabanmax_interfaces { tun0 }");
     has(lines, "add chain inet KabanMaxTable mangle { type filter hook prerouting priority -149; policy accept; }", "mangle runs after the Tailscale connmark restore");
-    has(lines, T + "priority_output_rules meta mark != 0 return", "a provider mark is preserved");
+    has(lines, T + "priority_output_rules meta mark & 0x1c000000 != 0 return", "a provider mark is preserved");
     has(lines, "add chain inet KabanMaxTable dns_redirect { type nat hook prerouting priority -101; policy accept; }");
     has(lines, T + "dns_redirect iifname @kabanmax_interfaces udp dport 53 counter redirect to :1603");
     has(lines, T + "dns_redirect iifname @kabanmax_interfaces tcp dport 53 counter redirect to :1603");
@@ -59,12 +59,12 @@ t.test("the base table captures the source interfaces, FakeIP and the TProxy inb
         "the router's own lookups are captured whatever the sections say");
     for (let address in [ "ip daddr 127.0.0.1", "ip6 daddr ::1" ])
         for (let proto in [ "tcp", "udp" ])
-            before(lines, T + "system_dns_redirect meta mark != 0 return",
+            before(lines, T + "system_dns_redirect meta mark & 0x08000000 == 0x08000000 return",
                 T + "system_dns_redirect " + address + " " + proto + " dport 53 counter redirect to :1605", "sing-box asking the resolver itself passes");
     lacks(lines, "system_dns_redirect udp dport 53", "the resolver's upstream queries are not taken back");
     for (let pair in [ [ "ip", "198.18.0.0/16" ], [ "ip6", "fc00::/112" ] ])
         for (let proto in [ "tcp", "udp" ])
-            has(lines, T + "mangle_output " + pair[0] + " daddr " + pair[1] + " meta l4proto " + proto + " meta mark set 0x10000000 counter",
+            has(lines, T + "mangle_output " + pair[0] + " daddr " + pair[1] + " meta l4proto " + proto + " meta mark set meta mark | 0x10000000 counter",
                 "the router's own FakeIP traffic");
     for (let absent in [ "kabanmax_subnets", "kabanmax_ports", "kabanmax_ip_ports", "kabanmax_dns_sources", "kabanmax_excluded" ])
         lacks(lines, absent);
@@ -72,7 +72,7 @@ t.test("the base table captures the source interfaces, FakeIP and the TProxy inb
 
 t.test("a flow handed to sing-box stays captured whatever the sets hold, and a pause holds back what goes to it", () => {
     let lines = script_lines({ settings: { routing_excluded_ips: "192.168.1.50 @system" } });
-    let held = (mark) => "ct direction original ct mark & " + mark + " == " + mark + " meta mark set " + mark + " counter accept";
+    let held = (mark) => "ct direction original ct mark & " + mark + " == " + mark + " meta mark set meta mark | " + mark + " counter accept";
     for (let pair in [ [ "mangle", "0x04000000" ], [ "mangle_output", "0x10000000" ] ]) {
         let first = filter(lines, (line) => index(line, T + pair[0] + " ") == 0)[0];
         t.eq(first, T + pair[0] + " " + held(pair[1]), pair[0] + ": a held flow is not matched against the sets or the exclusions");
@@ -112,7 +112,7 @@ t.test("the excluded System device keeps the router's own traffic and lookups ou
     t.eq(result.skipped, [], "the System device is not an address to skip");
     has(lines, "add element inet KabanMaxTable kabanmax_excluded { 192.168.1.50 }");
     before(lines, T + "mangle_output counter return", T + "mangle_output ip daddr @localv4 return", "the router's traffic");
-    before(lines, T + "system_dns_redirect counter return", T + "system_dns_redirect meta mark != 0 return", "the router's lookups");
+    before(lines, T + "system_dns_redirect counter return", T + "system_dns_redirect meta mark & 0x08000000 == 0x08000000 return", "the router's lookups");
     lacks(lines, T + "mangle counter return", "clients stay captured");
     lacks(lines, T + "dns_redirect counter return", "client DNS stays captured");
 });
@@ -143,26 +143,26 @@ t.test("section rules keep configuration order and reach only the traffic their 
     has(lines, T + "priority_rules iifname @kabanmax_interfaces ip saddr @kabanmax_rule_bypass_first_fully_sources " + local + "ip daddr != 198.18.0.0/16 counter accept",
         "a fully routed bypass takes real addresses");
     has(lines, T + "priority_rules iifname @kabanmax_interfaces ip6 saddr @kabanmax_rule_bypass_first_fully_sources6 ip6 daddr != @localv6 ip6 daddr != fc00::/112 counter accept");
-    has(lines, T + "priority_rules iifname @kabanmax_interfaces ip saddr @kabanmax_rule_wide_proxy_fully_sources " + local + "meta l4proto tcp meta mark set 0x04000000 counter accept");
+    has(lines, T + "priority_rules iifname @kabanmax_interfaces ip saddr @kabanmax_rule_wide_proxy_fully_sources " + local + "meta l4proto tcp meta mark set meta mark | 0x04000000 counter accept");
     has(lines, T + "priority_output_rules " + local + "ip daddr != 198.18.0.0/16 counter accept", "the System device fully routed around the proxy");
-    has(lines, T + "priority_output_rules " + local + "meta l4proto tcp meta mark set 0x10000000 counter accept", "the System device fully routed through it");
-    has(lines, T + "priority_output_rules " + local + "ip daddr @kabanmax_rule_system_filter_subnets meta mark set 0x10000000 counter accept");
-    has(lines, T + "priority_rules iifname @kabanmax_interfaces ip saddr @kabanmax_rule_client_filter_sources " + local + "ip daddr @kabanmax_rule_client_filter_subnets meta mark set 0x04000000 counter accept");
+    has(lines, T + "priority_output_rules " + local + "meta l4proto tcp meta mark set meta mark | 0x10000000 counter accept", "the System device fully routed through it");
+    has(lines, T + "priority_output_rules " + local + "ip daddr @kabanmax_rule_system_filter_subnets meta mark set meta mark | 0x10000000 counter accept");
+    has(lines, T + "priority_rules iifname @kabanmax_interfaces ip saddr @kabanmax_rule_client_filter_sources " + local + "ip daddr @kabanmax_rule_client_filter_subnets meta mark set meta mark | 0x04000000 counter accept");
     t.eq(filter(lines, (l) => index(l, "priority_rules iifname") >= 0 && index(l, "system_filter") >= 0), [], "a System-only filter on forwarded traffic");
     t.eq(filter(lines, (l) => index(l, "priority_output_rules") >= 0 && index(l, "client_filter") >= 0), [], "a client filter on the router's traffic");
     lacks(lines, "@system", "the System sentinel is not an address");
     has(lines, T + "priority_rules iifname @kabanmax_interfaces " + local + "ip daddr != 198.18.0.0/16 tcp dport @kabanmax_rule_port_bypass_ports counter accept");
     before(lines, T + "priority_rules iifname @kabanmax_interfaces " + local + "ip daddr != 198.18.0.0/16 ip daddr @kabanmax_rule_bypass_first_subnets counter accept",
-        T + "priority_rules iifname @kabanmax_interfaces " + local + "ip daddr @kabanmax_rule_wide_proxy_subnets meta mark set 0x04000000 counter accept", "bypass order");
+        T + "priority_rules iifname @kabanmax_interfaces " + local + "ip daddr @kabanmax_rule_wide_proxy_subnets meta mark set meta mark | 0x04000000 counter accept", "bypass order");
 
     has(lines, "add set inet KabanMaxTable kabanmax_rule_builtin_subnets_ip_ports { type ipv4_addr . inet_service; flags interval; auto-merge; }",
         "a built-in list's port-scoped addresses have a set a rule reads");
-    has(lines, T + "priority_rules iifname @kabanmax_interfaces " + local + "ip daddr . udp dport @kabanmax_rule_builtin_subnets_ip_ports meta mark set 0x04000000 counter accept");
+    has(lines, T + "priority_rules iifname @kabanmax_interfaces " + local + "ip daddr . udp dport @kabanmax_rule_builtin_subnets_ip_ports meta mark set meta mark | 0x04000000 counter accept");
     has(lines, "add set inet KabanMaxTable kabanmax_rule_builtin_subnets_proto6_ports { type ipv6_addr . inet_proto . inet_service; flags interval; auto-merge; }");
     t.eq(length(filter(lines, (l) => index(l, "th dport @kabanmax_rule_builtin_subnets_proto_ports") >= 0)), 2, "one rule per chain covers both transports");
-    has(lines, T + "priority_rules iifname @kabanmax_interfaces " + local + "ip daddr @kabanmax_rule_ip_and_ports_subnets tcp dport @kabanmax_rule_ip_and_ports_ports meta mark set 0x04000000 counter accept",
+    has(lines, T + "priority_rules iifname @kabanmax_interfaces " + local + "ip daddr @kabanmax_rule_ip_and_ports_subnets tcp dport @kabanmax_rule_ip_and_ports_ports meta mark set meta mark | 0x04000000 counter accept",
         "an address with a port is matched against both plain sets");
-    has(lines, T + "priority_output_rules ip6 daddr != @localv6 ip6 daddr @kabanmax_rule_ip_and_ports_subnets6 udp dport @kabanmax_rule_ip_and_ports_ports meta mark set 0x10000000 counter accept");
+    has(lines, T + "priority_output_rules ip6 daddr != @localv6 ip6 daddr @kabanmax_rule_ip_and_ports_subnets6 udp dport @kabanmax_rule_ip_and_ports_ports meta mark set meta mark | 0x10000000 counter accept");
     lacks(lines, "ip daddr @kabanmax_rule_ip_and_ports_subnets meta mark", "an address with a port is never matched without it");
     lacks(lines, T + "priority_rules iifname @kabanmax_interfaces " + local + "tcp dport @kabanmax_rule_ip_and_ports_ports", "a port next to an address on its own");
 
@@ -211,14 +211,14 @@ t.test("the script is the same for the same configuration and moves with anythin
         { ".name": "s", action: "connection" },
         { ".name": "s", action: "connection", destinations: "a.example\nb.example" },
         { ".name": "s", action: "connection", label: "Renamed" },
-        { ".name": "s", enabled: "0", action: "connection", destinations: "192.0.2.0/24" },
-        { ".name": "s", action: "connection", rule_set: "https://example.com/domains.lst" }
+        { ".name": "s", enabled: "0", action: "connection", destinations: "192.0.2.0/24" }
     ])
         t.eq(script([ section ]), baseline, "nothing of " + sprintf("%J", section) + " reaches nft");
     for (let section in [
         { ".name": "s", action: "connection", destinations: "192.0.2.0/24" },
         { ".name": "s", action: "connection", ports: "443" },
         { ".name": "s", action: "connection", rule_set_with_subnets: "https://example.com/subnets.srs" },
+        { ".name": "s", action: "connection", rule_set: "https://example.com/domains.lst" },
         { ".name": "s", action: "connection", community_lists: "telegram" },
         { ".name": "s", action: "bypass", fully_routed_ips: "192.168.1.10/32" }
     ])

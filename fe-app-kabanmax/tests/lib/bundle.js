@@ -43,6 +43,7 @@ const classesNamed = (names) =>
 function defaultGlobals() {
   const noop = () => {};
   return {
+    URL,
     form: classesNamed([
       'Button',
       'DummyValue',

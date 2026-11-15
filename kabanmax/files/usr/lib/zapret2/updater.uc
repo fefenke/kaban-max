@@ -63,7 +63,10 @@ function latest() {
 function status() {
     let state = {};
     try { state = json(fs.readfile(STATE) ?? "{}"); } catch (e) {}
+    let binary = fs.stat(ROOT + "/current/nfq2/nfqws2");
     return { ...state, installed: trim(fs.readfile(ROOT + "/current/version") ?? ""),
+        present: binary?.type == "file",
+        usable: binary?.type == "file" && (binary.mode & 0111) != 0,
         running: lock.held(LOCK), architecture: device_arch() };
 }
 

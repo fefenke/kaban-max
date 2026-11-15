@@ -1,0 +1,606 @@
+diff --git a/common/autoroute/lease.go b/common/autoroute/lease.go
+index 869ba1e..97cc946 100755
+--- a/common/autoroute/lease.go
++++ b/common/autoroute/lease.go
+@@ -8,6 +8,8 @@ import (
+ )
+ 
+ type Lease struct {
++	Evidence         string       `json:"evidence,omitempty"`
++	DomainKnown      bool         `json:"domain_known"`
+ 	ID               string       `json:"id"`
+ 	Owner            string       `json:"owner"`
+ 	Source           string       `json:"source"`
+@@ -30,6 +32,11 @@ type Lease struct {
+ }
+ 
+ func (l Lease) matches(source string, m *adapter.InboundContext, now time.Time) bool {
++	// Choosing one address from a multi-address name here would also reroute
++	// connections which the original dialer would send to a healthy sibling.
++	if len(m.DestinationAddresses) != 1 {
++		return false
++	}
+ 	if !now.Before(l.Deadline) || source != l.Source || m.Network != "tcp" || m.Inbound != l.Inbound || m.Source.Addr.Unmap().String() != l.SourceIP || m.Destination.Port != l.Port {
+ 		return false
+ 	}
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+index 8f746fe..d840fdc 100755
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -31,6 +31,9 @@ type Query struct {
+ }
+ type Event struct {
+ 	Query
++	SourceID    string    `json:"source_id"`
++	RoutingMark uint32    `json:"routing_mark"`
++	DomainKnown bool      `json:"domain_known"`
+ 	ID          string    `json:"id"`
+ 	Network     string    `json:"network"`
+ 	Status      string    `json:"status"`
+@@ -48,10 +51,12 @@ type Event struct {
+ }
+ type Decision struct {
+ 	Lease
+-	Generation uint64       `json:"-"`
+-	Attempts   []Attempt    `json:"attempts"`
+-	DNS        []netip.Addr `json:"dns"`
+-	Scope      string       `json:"scope"`
++	ApplyAllowed      bool         `json:"apply_allowed"`
++	AutoApplyEligible bool         `json:"auto_apply_eligible"`
++	Generation        uint64       `json:"-"`
++	Attempts          []Attempt    `json:"attempts"`
++	DNS               []netip.Addr `json:"dns"`
++	Scope             string       `json:"scope"`
+ }
+ type Manager struct {
+ 	mu           sync.Mutex
+@@ -187,12 +192,15 @@ func (m *Manager) guard(ctx context.Context, q Query) (option.KabanmaxAutoSource
+ 	if !ok {
+ 		return s, errors.New("disabled_or_unattributed")
+ 	}
+-	if q.Domain == "" {
++	if q.Domain == "" && s.Mode != "web" {
+ 		return s, errors.New("identity_unknown")
+ 	}
+-	if q.Domain != s.Domain || q.Port != s.Port || m.protected(q) {
++	if (s.Domain != "" && q.Domain != s.Domain) || q.Port != s.Port || m.protected(q) {
+ 		return s, errors.New("blocked_by_policy")
+ 	}
++	if s.Mode == "web" && !m.flowKnown(q) {
++		return s, errors.New("original_flow_not_attested")
++	}
+ 	if e := sourceContext(s, q); e != nil {
+ 		return s, e
+ 	}
+@@ -239,6 +247,9 @@ func (m *Manager) guard(ctx context.Context, q Query) (option.KabanmaxAutoSource
+ 		return s, errors.New("source_mark_unattributed")
+ 	}
+ 	meta := metadata(q)
++	if q.Domain == "" {
++		meta.Protocol = ""
++	}
+ 	selected, e := m.Match(ctx, &meta)
+ 	if e != nil {
+ 		return s, e
+@@ -246,7 +257,7 @@ func (m *Manager) guard(ctx context.Context, q Query) (option.KabanmaxAutoSource
+ 	if selected != q.Source {
+ 		return s, errors.New("first_match_changed")
+ 	}
+-	if !meta.Destination.IsDomain() || strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".") != q.Domain || meta.Destination.Port != q.Port {
++	if (q.Domain != "" && (!meta.Destination.IsDomain() || strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".") != q.Domain)) || meta.Destination.Port != q.Port {
+ 		return s, errors.New("route_override_requires_identity_evidence")
+ 	}
+ 	a, _ := netip.ParseAddr(q.IP)
+@@ -268,7 +279,11 @@ func metadata(q Query) adapter.InboundContext {
+ 	if a.Is4() {
+ 		version = 4
+ 	}
+-	return adapter.InboundContext{Network: "tcp", Protocol: "tls", IPVersion: version, Inbound: q.Inbound, Source: M.Socksaddr{Addr: src, Port: q.SourcePort}, Destination: M.Socksaddr{Fqdn: q.Domain, Port: q.Port}, DestinationAddresses: []netip.Addr{a}}
++	destination := M.Socksaddr{Fqdn: q.Domain, Port: q.Port}
++	if q.Domain == "" {
++		destination = M.Socksaddr{Addr: a, Port: q.Port}
++	}
++	return adapter.InboundContext{Network: "tcp", Protocol: "tls", IPVersion: version, Inbound: q.Inbound, Source: M.Socksaddr{Addr: src, Port: q.SourcePort}, Destination: destination, DestinationAddresses: []netip.Addr{a}}
+ }
+ func (m *Manager) target(s option.KabanmaxAutoSource, tag string) (adapter.Outbound, error) {
+ 	o, ok := m.Outbound(tag)
+@@ -331,6 +346,9 @@ func (m *Manager) Observe(meta *adapter.InboundContext, source string) *Event {
+ 		delete(m.events, oldest)
+ 	}
+ 	e := &Event{Query: q, ID: id(), Network: meta.Network, Status: "observing", Count: repeats, Created: now, Updated: now, progress: now}
++	e.DomainKnown = q.Domain != ""
++	e.SourceID = s.ID
++	e.RoutingMark = s.Mark
+ 	e.active = 1
+ 	if q.Domain == "" {
+ 		e.Status = "identity_unknown"
+@@ -660,7 +678,7 @@ func (m *Manager) Sweep(ctx context.Context) {
+ 		q := Query{IP: previous.IP, Domain: previous.Domain, SourceIP: previous.SourceIP, SourcePort: previous.OriginSourcePort, Inbound: previous.Inbound, Port: previous.Port, Source: previous.Source}
+ 		answer, e := m.Probe(ctx, q)
+ 		if e == nil {
+-			if d, ok := answer.(Decision); ok && d.Status == "proposed" {
++			if d, ok := answer.(Decision); ok && d.Status == "proposed" && d.AutoApplyEligible && d.Target == previous.Target {
+ 				answer, e = m.Apply(ctx, d.ID)
+ 			}
+ 		}
+diff --git a/common/autoroute/probe.go b/common/autoroute/probe.go
+index dd5af59..2c5a2f0 100755
+--- a/common/autoroute/probe.go
++++ b/common/autoroute/probe.go
+@@ -19,6 +19,13 @@ import (
+ )
+ 
+ type Attempt struct {
++	RoutingMark uint32    `json:"routing_mark,omitempty"`
++	Hostname    string    `json:"hostname,omitempty"`
++	Port        uint16    `json:"port"`
++	Path        string    `json:"path,omitempty"`
++	Method      string    `json:"method"`
++	BodyBytes   int       `json:"body_bytes,omitempty"`
++	ContentType string    `json:"content_type,omitempty"`
+ 	Outbound    string    `json:"outbound"`
+ 	DialIP      string    `json:"dial_ip"`
+ 	Peer        string    `json:"peer,omitempty"`
+@@ -31,12 +38,21 @@ type Attempt struct {
+ }
+ 
+ func validContract(s option.KabanmaxAutoSource) bool {
++	if s.Mode != "" && s.Mode != "strict" && s.Mode != "web" {
++		return false
++	}
+ 	p, e := url.Parse(s.Path)
++	if s.Mode == "web" {
++		return e == nil && strings.HasPrefix(s.Path, "/") && !strings.HasPrefix(s.Path, "//") && p.Host == "" && p.Fragment == "" && len(s.Path) <= 1024 && s.Port > 0 && s.Status >= 200 && s.Status < 300 && len(s.Prefix) <= 128 && s.FailureStatus == 0
++	}
+ 	return e == nil && strings.HasPrefix(s.Path, "/") && !strings.HasPrefix(s.Path, "//") && p.Host == "" && p.Fragment == "" && len(s.Path) <= 1024 && s.Port > 0 && s.Status >= 200 && s.Status < 300 && s.Prefix != "" && len(s.Prefix) <= 128 &&
+ 		(s.FailureStatus == 0 || (s.FailureStatus >= 400 && s.FailureStatus <= 599 && s.FailurePrefix != "" && s.FailurePrefix != s.Prefix && len(s.FailurePrefix) <= 128))
+ }
+ func (m *Manager) attempt(ctx context.Context, q Query, s option.KabanmaxAutoSource, tag string) Attempt {
+-	a := Attempt{Outbound: tag, DialIP: q.IP, Status: "inconclusive", At: time.Now()}
++	if s.Mode == "web" {
++		return m.webAttempt(ctx, q, s, tag)
++	}
++	a := Attempt{Outbound: tag, DialIP: q.IP, Status: "inconclusive", At: time.Now(), Hostname: q.Domain, Port: q.Port, Path: s.Path, Method: "GET"}
+ 	if _, e := m.guard(ctx, q); e != nil {
+ 		a.Reason = e.Error()
+ 		return a
+@@ -47,6 +63,9 @@ func (m *Manager) attempt(ctx context.Context, q Query, s option.KabanmaxAutoSou
+ 		a.Reason = e.Error()
+ 		return a
+ 	}
++	if marked, ok := outbound.(interface{ KabanmaxRoutingMark() uint32 }); ok {
++		a.RoutingMark = marked.KabanmaxRoutingMark()
++	}
+ 	nonce := id()
+ 	target := url.URL{Scheme: "https", Host: net.JoinHostPort(q.Domain, strconv.Itoa(int(q.Port)))}
+ 	path, _ := url.Parse(s.Path)
+@@ -146,6 +165,10 @@ func (m *Manager) Probe(ctx context.Context, q Query) (any, error) {
+ 		return m.probeSingle(ctx, q)
+ 	}
+ 	source, ok := m.source(q.Source)
++	if source.Mode == "web" {
++		m.stage(q, "inconclusive", "actual_destination_ip_unknown")
++		return map[string]any{"status": "inconclusive", "reason": "actual_destination_ip_unknown"}, nil
++	}
+ 	if !ok || q.Domain == "" || q.Domain != source.Domain || q.Port != source.Port {
+ 		return map[string]any{"status": "inconclusive", "reason": "identity_or_source_unknown"}, nil
+ 	}
+@@ -234,13 +257,17 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 	m.cooldown[key] = now
+ 	m.mu.Unlock()
+ 	m.stage(q, "checking", "application_contract")
+-	initial, ttl, e := m.Lookup(ctx, q.Domain)
+-	if e != nil || ttl == 0 || len(initial) > 4 || !containsIP(initial, q.IP) {
++	initial, ttl := []netip.Addr{}, uint32(60)
++	if q.Domain != "" {
++		initial, ttl, e = m.Lookup(ctx, q.Domain)
++	}
++	if e != nil || ttl == 0 || len(initial) > 4 || (q.Domain != "" && !containsIP(initial, q.IP)) {
+ 		m.stage(q, "inconclusive", "dns_unstable_or_negative")
+ 		return map[string]any{"status": "inconclusive", "reason": "dns_unstable_or_negative"}, nil
+ 	}
+ 	d := Decision{Lease: Lease{ID: id(), Owner: "auto-routing", Source: q.Source, SourceID: s.ID, IP: q.IP, Domain: q.Domain, SourceIP: q.SourceIP, Inbound: q.Inbound, Port: q.Port, Created: now, Status: "inconclusive"}, DNS: initial, Scope: key}
+ 	d.Generation = generation
++	d.DomainKnown = q.Domain != ""
+ 	d.OriginSourcePort = q.SourcePort
+ 	d.DNSSet = append([]netip.Addr(nil), initial...)
+ 	originalFailed := false
+@@ -263,17 +290,30 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		first := m.attempt(ctx, q, s, tag)
+ 		second := m.attempt(ctx, q, s, tag)
+ 		d.Attempts = append(d.Attempts, first, second)
++		if s.Mode == "web" && q.Domain == "" {
++			originalFailed = true // diagnostic enumeration only; never an apply verdict
++			continue
++		}
+ 		if i == 0 {
+ 			if first.Status == "verified" && second.Status == "verified" {
+ 				d.Status = "unchanged"
++				d.Evidence = "healthy"
+ 				d.Reason = "zapret_verified"
+ 				break
+ 			}
+-			if first.Status != "failed" || second.Status != "failed" {
++			failureKind := "failed"
++			if s.Mode == "web" {
++				failureKind = "transport_failure"
++			}
++			if first.Status != failureKind || second.Status != failureKind {
+ 				d.Reason = "original_failure_unproven"
++				if s.Mode == "web" {
++					d.Reason = "original_https_inconclusive"
++				}
+ 				break
+ 			}
+ 			originalFailed = true
++			d.Evidence = "suspected_failure"
+ 		} else if first.Status == "verified" && second.Status == "verified" {
+ 			d.Target = tag
+ 			if tag == "direct-out" {
+@@ -282,11 +322,21 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 				d.TargetSection = s.WARPSection
+ 			}
+ 			d.Status = "proposed"
++			d.ApplyAllowed = true
++			d.AutoApplyEligible = s.Mode != "web"
++			d.Evidence = "verified_for_apply"
+ 			d.Reason = "verified_alternative_after_contract_failure"
++			if s.Mode == "web" {
++				d.Evidence = "alternative_reachable"
++				d.Reason = "repeated_transport_failure_alternative_reachable"
++			}
+ 			break
+ 		}
+ 	}
+-	final, finalTTL, e := m.Lookup(ctx, q.Domain)
++	final, finalTTL := initial, ttl
++	if q.Domain != "" {
++		final, finalTTL, e = m.Lookup(ctx, q.Domain)
++	}
+ 	if e != nil || finalTTL == 0 || !dnsEqual(initial, final) {
+ 		d.Status = "inconclusive"
+ 		d.Reason = "dns_changed"
+@@ -304,6 +354,15 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		d.Status = "inconclusive"
+ 		d.Reason = "dns_ttl_elapsed"
+ 	}
++	if q.Domain == "" {
++		d.Status = "identity_unknown"
++		d.Evidence = "transport_diagnostic"
++		d.Reason = "no_connection_identity"
++	}
++	if d.Status != "proposed" {
++		d.ApplyAllowed = false
++		d.AutoApplyEligible = false
++	}
+ 	m.stage(q, d.Status, d.Reason)
+ 	m.mu.Lock()
+ 	if m.generation != generation || m.closed || m.disabled[q.Source] || m.suppressed[key] {
+@@ -322,7 +381,7 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		m.decisions[d.ID] = d
+ 	}
+ 	m.mu.Unlock()
+-	if d.Status == "proposed" && s.AutoApply {
++	if d.Status == "proposed" && d.AutoApplyEligible && s.AutoApply {
+ 		return m.Apply(ctx, d.ID)
+ 	}
+ 	return d, nil
+@@ -333,7 +392,7 @@ func (m *Manager) Apply(ctx context.Context, decisionID string) (any, error) {
+ 	delete(m.decisions, decisionID)
+ 	validGeneration := d.Generation == m.generation
+ 	m.mu.Unlock()
+-	if !ok || !validGeneration || d.Status != "proposed" || !time.Now().Before(d.Deadline) {
++	if !ok || !validGeneration || d.Status != "proposed" || !d.ApplyAllowed || d.Domain == "" || !time.Now().Before(d.Deadline) {
+ 		return nil, errors.New("expired_or_consumed_decision")
+ 	}
+ 	q := Query{IP: d.IP, Domain: d.Domain, SourceIP: d.SourceIP, SourcePort: d.OriginSourcePort, Inbound: d.Inbound, Port: d.Port, Source: d.Source}
+diff --git a/common/autoroute/web.go b/common/autoroute/web.go
+new file mode 100755
+index 0000000..f220050
+--- /dev/null
++++ b/common/autoroute/web.go
+@@ -0,0 +1,201 @@
++package autoroute
++
++import (
++	"context"
++	"crypto/tls"
++	"crypto/x509"
++	"errors"
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/option"
++	M "github.com/sagernet/sing/common/metadata"
++	"io"
++	"mime"
++	"net"
++	"net/http"
++	"net/netip"
++	"net/url"
++	"strconv"
++	"strings"
++	"time"
++)
++
++// Ordinary checks attest only a bounded HTTPS response, never DPI or freshness
++// equivalent to the strict nonce contract. They can propose, never auto-apply.
++func (m *Manager) webAttempt(ctx context.Context, q Query, s option.KabanmaxAutoSource, tag string) Attempt {
++	a := Attempt{Outbound: tag, DialIP: q.IP, Status: "inconclusive", At: time.Now(), Hostname: q.Domain, Port: q.Port, Path: s.Path, Method: "GET"}
++	if _, e := m.guard(ctx, q); e != nil {
++		a.Reason = e.Error()
++		return a
++	}
++	outbound, e := m.target(s, tag)
++	if e != nil {
++		a.Status = "blocked_by_policy"
++		a.Reason = e.Error()
++		return a
++	}
++	if marked, ok := outbound.(interface{ KabanmaxRoutingMark() uint32 }); ok {
++		a.RoutingMark = marked.KabanmaxRoutingMark()
++	}
++	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
++	defer cancel()
++	dial := func(c context.Context, network, address string) (net.Conn, error) {
++		conn, err := outbound.DialContext(c, "tcp", M.Socksaddr{Addr: netip.MustParseAddr(q.IP), Port: q.Port})
++		if err == nil {
++			a.Reachable = true
++			a.Peer = conn.RemoteAddr().String()
++		}
++		return conn, err
++	}
++	if q.Domain == "" {
++		a.Method = "TCP"
++		a.Path = ""
++		conn, err := dial(ctx, "tcp", "")
++		if err != nil {
++			a.Status = "transport_failure"
++			a.Reason = "tcp_dial_failed_identity_unknown"
++		} else {
++			conn.Close()
++			a.Status = "transport_reachable"
++			a.Reason = "tcp_only_not_application_evidence"
++		}
++		return a
++	}
++	target := url.URL{Scheme: "https", Host: net.JoinHostPort(q.Domain, strconv.Itoa(int(q.Port)))}
++	path, _ := url.Parse(s.Path)
++	target.Path = path.Path
++	query := path.Query()
++	query.Set("__kabanmax_probe", id())
++	target.RawQuery = query.Encode()
++	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, DisableCompression: true, MaxResponseHeaderBytes: 8192, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: q.Domain, RootCAs: adapter.RootPoolFromContext(m.ctx)}, DialContext: dial}
++	defer transport.CloseIdleConnections()
++	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
++	req, err := http.NewRequestWithContext(ctx, "GET", target.String(), nil)
++	if err != nil {
++		a.Reason = "invalid_contract"
++		return a
++	}
++	req.Header.Set("Cache-Control", "no-cache, no-store, max-age=0")
++	req.Header.Set("Pragma", "no-cache")
++	req.Header.Set("Accept", "text/html, application/json, text/plain")
++	response, err := client.Do(req)
++	if err != nil {
++		a.Reason = "tls_or_protocol_unconfirmed"
++		var invalid x509.CertificateInvalidError
++		var unknown x509.UnknownAuthorityError
++		var hostname x509.HostnameError
++		var verification *tls.CertificateVerificationError
++		if errors.As(err, &invalid) || errors.As(err, &unknown) || errors.As(err, &hostname) || errors.As(err, &verification) {
++			a.Reason = "tls_verification_failed"
++			return a
++		}
++		var op *net.OpError
++		if !errors.Is(err, context.Canceled) && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &op)) {
++			a.Status = "transport_failure"
++			a.Reason = "transport_failure_not_dpi_proof"
++		}
++		return a
++	}
++	defer response.Body.Close()
++	a.HTTPStatus = response.StatusCode
++	a.TLSVerified = response.TLS != nil && len(response.TLS.VerifiedChains) > 0
++	a.ContentType, _, _ = mime.ParseMediaType(response.Header.Get("Content-Type"))
++	if !a.TLSVerified {
++		a.Reason = "tls_verification_failed"
++		return a
++	}
++	switch {
++	case a.HTTPStatus >= 300 && a.HTTPStatus < 400:
++		a.Reason = "redirect"
++	case a.HTTPStatus == 401:
++		a.Reason = "authentication_required"
++	case a.HTTPStatus == 403:
++		a.Reason = "access_denied"
++	case a.HTTPStatus == 429:
++		a.Reason = "rate_limited"
++	case a.HTTPStatus == 405:
++		a.Reason = "method_unsupported"
++	case a.HTTPStatus >= 500:
++		a.Reason = "server_error"
++	case a.HTTPStatus != s.Status:
++		a.Reason = "unexpected_http_status"
++	}
++	if a.Reason != "" {
++		return a
++	}
++	body, err := io.ReadAll(io.LimitReader(response.Body, 4096))
++	a.BodyBytes = len(body)
++	if err != nil {
++		a.Reason = "body_read_error"
++		var failure *net.OpError
++		if !errors.Is(err, context.Canceled) && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &failure)) {
++			a.Status = "transport_failure"
++			a.Reason = "body_transport_failure_not_dpi_proof"
++		}
++		return a
++	}
++	lower := strings.ToLower(string(body))
++	for _, marker := range []string{"captcha", "cf-chl-", "verify you are human", "just a moment", "access denied", "bot verification"} {
++		if strings.Contains(lower, marker) {
++			a.Reason = "anti_bot"
++			return a
++		}
++	}
++	if age := response.Header.Get("Age"); age != "" && age != "0" {
++		a.Reason = "cached_response"
++		return a
++	}
++	if response.Header.Get("Content-Encoding") != "" && response.Header.Get("Content-Encoding") != "identity" {
++		a.Reason = "encoded_body_unconfirmed"
++		return a
++	}
++	if len(strings.TrimSpace(string(body))) < 32 || (a.ContentType != "text/html" && a.ContentType != "application/json" && a.ContentType != "text/plain") || (s.Prefix != "" && !strings.HasPrefix(string(body), s.Prefix)) {
++		a.Reason = "content_contract_unconfirmed"
++		return a
++	}
++	a.Status = "verified"
++	a.Reason = "bounded_https_content_freshness_unproven"
++	return a
++}
++
++func (m *Manager) flowKnown(q Query) bool {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	for _, e := range m.events {
++		if e.Network == "tcp" && e.Query == q && time.Since(e.Updated) <= time.Hour {
++			return true
++		}
++	}
++	return false
++}
++
++type observationKey struct{}
++type observation struct {
++	manager *Manager
++	event   *Event
++}
++
++func BindObservation(ctx context.Context, m *Manager, e *Event) context.Context {
++	if e == nil {
++		return ctx
++	}
++	return context.WithValue(ctx, observationKey{}, observation{m, e})
++}
++
++// Called only for the actual routed connection's selected direct Zapret dial,
++// not for a DNS lookup, probe, sibling connection or alternative tunnel.
++func ReportDial(ctx context.Context, conn net.Conn, err error) {
++	item, ok := ctx.Value(observationKey{}).(observation)
++	if !ok || err != nil || conn == nil {
++		return
++	}
++	endpoint, e := netip.ParseAddrPort(conn.RemoteAddr().String())
++	if e != nil {
++		return
++	}
++	item.manager.mu.Lock()
++	defer item.manager.mu.Unlock()
++	if item.event.routedLease != "" || endpoint.Port() != item.event.Port {
++		return
++	}
++	item.event.IP = endpoint.Addr().Unmap().String()
++}
+diff --git a/option/kabanmax_auto.go b/option/kabanmax_auto.go
+index 66ff25a..90c84aa 100755
+--- a/option/kabanmax_auto.go
++++ b/option/kabanmax_auto.go
+@@ -2,6 +2,7 @@ package option
+ 
+ // Explicitly opted-in control resource; no wildcard status or arbitrary proxy.
+ type KabanmaxAutoSource struct {
++	Mode            string   `json:"mode,omitempty"`
+ 	ID              string   `json:"id"`
+ 	Outbound        string   `json:"outbound"`
+ 	Mark            uint32   `json:"mark"`
+diff --git a/route/conn.go b/route/conn.go
+index d3a8708..492c207 100644
+--- a/route/conn.go
++++ b/route/conn.go
+@@ -13,6 +13,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/common/autoroute"
+ 	"github.com/sagernet/sing-box/common/dialer"
+ 	"github.com/sagernet/sing-box/common/sniff"
+ 	tf "github.com/sagernet/sing-box/common/tlsfragment"
+@@ -110,6 +111,7 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+ 	} else {
+ 		remoteConn, err = this.DialContext(ctx, N.NetworkTCP, metadata.Destination)
+ 	}
++	autoroute.ReportDial(ctx, remoteConn, err)
+ 	if err != nil {
+ 		var remoteString string
+ 		if len(metadata.DestinationAddresses) > 0 {
+diff --git a/route/kabanmax_auto.go b/route/kabanmax_auto.go
+index 0c8fa3f..ca7f7cb 100755
+--- a/route/kabanmax_auto.go
++++ b/route/kabanmax_auto.go
+@@ -34,7 +34,7 @@ func (r *Router) initKabanmaxAuto() {
+ 				count = len(r.ruleOptions)
+ 			}
+ 			for i := 0; i < count; i++ {
+-				if i >= len(r.ruleOptions) || !r.probeContextKnown(r.ruleOptions[i], metadata.Source.Port, 0) {
++				if i >= len(r.ruleOptions) || !r.probeContextKnown(r.ruleOptions[i], metadata.Source.Port, metadata.Protocol != "", 0) {
+ 					return "", errors.New("probe_scope_requires_connection_metadata")
+ 				}
+ 			}
+@@ -96,13 +96,13 @@ func (r *Router) initKabanmaxAuto() {
+ // The actual core matcher chooses the first rule. This check only refuses
+ // negative matches whose missing process/client metadata could hide an earlier
+ // rule; it never reconstructs a positive routing decision in another engine.
+-func (r *Router) probeContextKnown(spec option.Rule, sourcePort uint16, depth int) bool {
++func (r *Router) probeContextKnown(spec option.Rule, sourcePort uint16, protocolKnown bool, depth int) bool {
+ 	if depth > 8 {
+ 		return false
+ 	}
+ 	if spec.Type == "logical" {
+ 		for _, child := range spec.LogicalOptions.Rules {
+-			if !r.probeContextKnown(child, sourcePort, depth+1) {
++			if !r.probeContextKnown(child, sourcePort, protocolKnown, depth+1) {
+ 				return false
+ 			}
+ 		}
+@@ -118,7 +118,11 @@ func (r *Router) probeContextKnown(spec option.Rule, sourcePort uint16, depth in
+ 	}
+ 	for key := range fields {
+ 		switch key {
+-		case "inbound", "ip_version", "network", "protocol", "domain", "domain_suffix", "domain_keyword", "domain_regex", "source_geoip", "geoip", "geosite", "source_ip_cidr", "source_ip_is_private", "ip_cidr", "ip_is_private", "port", "port_range", "rule_set_ip_cidr_match_source", "rule_set_ipcidr_match_source", "invert":
++		case "inbound", "ip_version", "network", "domain", "domain_suffix", "domain_keyword", "domain_regex", "source_geoip", "geoip", "geosite", "source_ip_cidr", "source_ip_is_private", "ip_cidr", "ip_is_private", "port", "port_range", "rule_set_ip_cidr_match_source", "rule_set_ipcidr_match_source", "invert":
++		case "protocol":
++			if !protocolKnown {
++				return false
++			}
+ 		case "source_port", "source_port_range":
+ 			if sourcePort == 0 {
+ 				return false
+@@ -130,7 +134,7 @@ func (r *Router) probeContextKnown(spec option.Rule, sourcePort uint16, depth in
+ 					return false
+ 				}
+ 				md := set.Metadata()
+-				if md.ContainsProcessRule || md.ContainsWIFIRule || (sourcePort == 0 && md.ContainsNonIPCIDRRule) {
++				if md.ContainsProcessRule || md.ContainsWIFIRule || ((sourcePort == 0 || !protocolKnown) && md.ContainsNonIPCIDRRule) {
+ 					return false
+ 				}
+ 			}
+diff --git a/route/route.go b/route/route.go
+index 5c66c56..2124df3 100644
+--- a/route/route.go
++++ b/route/route.go
+@@ -11,6 +11,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/common/autoroute"
+ 	"github.com/sagernet/sing-box/common/interrupt"
+ 	"github.com/sagernet/sing-box/common/sniff"
+ 	C "github.com/sagernet/sing-box/constant"
+@@ -163,6 +164,7 @@ func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata ad
+ 		r.initKabanmaxAuto()
+ 		original := selectedOutbound.Tag()
+ 		event := r.autoRouting.Observe(&metadata, original)
++		ctx = autoroute.BindObservation(ctx, r.autoRouting, event)
+ 		autoTrack = func(c net.Conn) net.Conn { return r.autoRouting.Track(c, event) }
+ 		onClose = N.AppendClose(onClose, func(err error) { r.autoRouting.Failed(event, err) })
+ 		if target := r.autoRouting.SelectForEvent(ctx, original, &metadata, event); target != original {

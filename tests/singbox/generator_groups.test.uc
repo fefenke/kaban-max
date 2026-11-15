@@ -8,6 +8,32 @@ function build(data) {
     return generator.build({ service_address: "127.0.0.1" });
 }
 
+t.test("fallback regeneration reads the current URI under the same connection id", () => {
+    let data = {
+        settings: { dns_server: "1.1.1.1" },
+        section: [ { ".name": "proxy", enabled: "1", action: "connection" } ],
+        connection_link: [
+            { ".name": "austria", section: "proxy", name: "Austria", order: "0", uri: "socks://127.0.0.1:1080#Austria" },
+            { ".name": "poland", section: "proxy", name: "Poland", order: "1", uri: "socks://127.0.0.1:1081#Poland" }
+        ],
+        fallback_group: [ { ".name": "backup", section: "proxy", name: "Backup" } ],
+        fallback_level: [
+            { ".name": "primary", group: "backup", name: "Primary", order: "0", server_filter_mode: "include", include_outbounds: [ "Austria" ] },
+            { ".name": "reserve", group: "backup", name: "Reserve", order: "1", server_filter_mode: "include", include_outbounds: [ "Poland" ] }
+        ]
+    };
+    let first = build(data);
+    t.eq(q.outbound(first, "proxy/Poland").link, data.connection_link[1].uri);
+    data.connection_link[1].uri = "socks://127.0.0.1:1082#Changed";
+    for (let attempt in [ 1, 2 ]) {
+        let config = build(data);
+        t.eq(q.outbound(config, "proxy/Poland").link, data.connection_link[1].uri);
+        let groups = q.outbound(config, "proxy/Backup").groups;
+        t.eq([ groups[0].outbounds, groups[1].outbounds ], [ [ "proxy/Austria" ], [ "proxy/Poland" ] ]);
+        t.eq(length(filter(config.outbounds, (o) => o.tag == "proxy/Poland")), 1);
+    }
+});
+
 t.test("one filter picks manual servers as the core picks provider nodes", () => {
     let config = build({
         settings: { dns_server: "1.1.1.1" },

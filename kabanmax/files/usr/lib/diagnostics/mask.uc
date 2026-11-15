@@ -46,11 +46,12 @@ function delete_token_space(line, token) {
     return space_pos < length(line) && is_space_char(substr(line, space_pos, 1));
 }
 
-const MULTILINE_OPTIONS = [ "option destinations", "option outbound_json", "list outbound_jsons", "option endpoint_json", "option inbound_json",
+const MULTILINE_OPTIONS = [ "option auto_routing_contract", "option destinations", "option outbound_json", "list outbound_jsons", "option endpoint_json", "option inbound_json",
     "option openvpn_certificate", "option openvpn_key", "option openvpn_tls_crypt_key",
     "option tls_certificate", "option tls_key", "option tls_self_signed_certificate", "option tls_self_signed_key" ];
 
 function kabanmax_config_line(line) {
+    line = mask_after_token(line, "option auto_routing_contract");
     line = mask_after_token(line, "option proxy_string");
     line = mask_after_token(line, "option hwid");
     line = mask_after_token(line, "list header");
@@ -244,6 +245,9 @@ function sing_box_config(value) {
     let result = mask_sing_box_value(value);
     if (type(result) != "object")
         return result;
+    for (let source in result.route?.kabanmax_auto ?? [])
+        for (let key in [ "protected", "suppressed", "path", "prefix", "failure_prefix" ])
+            if (source[key] != null) source[key] = "MASKED";
     for (let provider in (type(result.providers) == "array" ? result.providers : []))
         if (type(provider) == "object" && provider.url != null)
             provider.url = "MASKED";

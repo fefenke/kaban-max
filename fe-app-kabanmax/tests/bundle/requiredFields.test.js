@@ -97,12 +97,15 @@ async function everyForm() {
 describe('a field that must not stay empty', () => {
   it('never leaves the refusal to LuCI', async () => {
     const forms = await everyForm();
+    const uriFields = forms.link.children.filter((field) => field.option === 'uri' || field.option.startsWith('_uri_'));
+    expect(uriFields.find((field) => field.option === 'uri').validate('link1', '')).not.toBe(true);
     const leftToLuci = Object.entries(forms).flatMap(([form, section]) =>
       section.children
         .filter(
           (field) =>
             ['CBI.Value', 'CBI.TextValue'].includes(field.__name__) &&
-            field.rmempty === false,
+            field.rmempty === false &&
+            !(form === 'link' && (field.option === 'uri' || field.option.startsWith('_uri_'))),
         )
         .map((field) => `${form}: ${field.option}`),
     );

@@ -220,6 +220,13 @@ const SettingsUIDynamicList = ui.DynamicList.extend({
     item.after(settingsButton);
     this.settingsButtonResizeObserver?.observe(item);
     this.syncSettingsButtonSize(item);
+    if (flash && this.options.openSettingsOnAdd && !this.options.disabled) {
+      Promise.resolve().then(() => {
+        if (dl.isConnected && typeof this.options.settingsHandler === 'function') {
+          this.options.settingsHandler(value, item, this, {});
+        }
+      });
+    }
   },
 
   removeItem(dl: HTMLElement, item: Element) {
@@ -484,6 +491,7 @@ export const SettingsDynamicList = form.DynamicList.extend({
           ? (inputValue: string) =>
               this.createTypedItem!(section_id, inputValue)
           : null,
+      openSettingsOnAdd: this.openSettingsOnAdd,
       hasEquivalentValue: (itemValue: string, dl: HTMLElement) => {
         const inputValueForItem = (value: unknown) =>
           `${this.inputValueForItem!(this.childOwner(section_id), `${value || ''}`) || ''}`.trim();

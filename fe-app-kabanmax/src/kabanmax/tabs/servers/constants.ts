@@ -1,3 +1,5 @@
+import { TLS_FINGERPRINTS } from '../../services/tlsFingerprints';
+
 export const STYLE_ID = 'kabanmax-server-styles';
 
 export const DEFAULT_PROTOCOL = 'mixed';
@@ -59,16 +61,8 @@ export const ALPN_PROTOCOLS = ['vless', 'vmess', 'trojan', 'anytls'];
 // REALITY clients refuse a link without a fingerprint.
 export const DEFAULT_CLIENT_FINGERPRINT = 'chrome';
 
-export const CLIENT_FINGERPRINTS = [
-  'chrome',
-  'chrome_155',
-  'firefox',
-  'edge',
-  'safari',
-  'ios',
-  'android',
-  'random',
-];
+export { selectableFingerprints } from '../../services/tlsFingerprints';
+export const CLIENT_FINGERPRINTS = TLS_FINGERPRINTS.map((profile) => profile.id);
 
 export const CLIENT_KEYS = [
   'name',

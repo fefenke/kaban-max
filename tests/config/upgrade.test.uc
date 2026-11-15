@@ -140,12 +140,12 @@ t.test("1.0.5: groups and subscriptions behave as they did", () => {
         [ "fallback", "https://www.gstatic.com/generate_204", true, 3, [ "direct-out" ] ]);
     t.eq(sb.outbound(built105, "Main proxy").default, "Main proxy/Fastest");
     let own = sb.provider(built105, "Main proxy/sub1");
-    t.eq([ own.url, own.update_interval, own.download_detour ], [ "https://panel.example.com/sub/abcdef", "6h", null ]);
+    t.eq([ own.url, own.update_interval, own.download_detour ], [ "https://panel.example.com/sub/abcdef", "6h", "infrastructure-direct-out" ]);
     t.matches(own.headers["User-Agent"][0], /^sing-box/);
     t.eq([ own.headers["Accept-Language"], own.headers["X-Device-Locale"] ], [ [ "ru-RU,en,*" ], [ "EN" ] ]);
     let other = sb.provider(built105, "Main proxy/Other");
     t.eq([ other.headers["User-Agent"], other.headers["X-HWID"], other.download_detour, other.override ],
-        [ [ "Happ" ], [ "MY-HWID-0001" ], "Backup", { prefix: "Other " } ]);
+        [ [ "Happ" ], [ "MY-HWID-0001" ], "Backup", { prefix: "Other ", patch: { domain_resolver: "bootstrap-dns-server" } } ]);
 });
 
 t.test("1.0.5: servers take the same clients on the same ports", () => {

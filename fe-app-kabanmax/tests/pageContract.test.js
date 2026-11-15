@@ -165,7 +165,9 @@ describe('a password field', () => {
 
   it('is one the contract names', async () => {
     const found = await renderedPasswordFields();
-    expect([...new Set(found.map(({ field }) => field))].sort()).toEqual(
+    const transient = found.filter(({ typeName, field }) => typeName === 'connection_link' && field.startsWith('_uri_'));
+    expect(transient.map(({ field }) => field).sort()).toEqual(['_uri_credential', '_uri_extra', '_uri_password', '_uri_shortId']);
+    expect([...new Set(found.filter(({ typeName, field }) => !(typeName === 'connection_link' && field.startsWith('_uri_'))).map(({ field }) => field))].sort()).toEqual(
       Object.keys(contract.password_fields).sort(),
     );
   });
@@ -174,6 +176,11 @@ describe('a password field', () => {
     const PROBE = 'probe-secret';
     const found = await renderedPasswordFields();
     for (const { field, typeName } of found) {
+      // The connection editor's transient modal fields serialize into the masked URI.
+      if (typeName === 'connection_link' && field.startsWith('_uri_')) {
+        expect(contract.password_fields.uri).toBe('uri');
+        continue;
+      }
       const stored = contract.password_fields[field];
       if (typeName !== 'tunnel') {
         expect(stored, field).toBe(field);

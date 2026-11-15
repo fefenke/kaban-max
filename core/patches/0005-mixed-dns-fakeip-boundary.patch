@@ -1,0 +1,75 @@
+diff --git a/option/rule_dns.go b/option/rule_dns.go
+--- a/option/rule_dns.go
++++ b/option/rule_dns.go
+@@ -135,6 +135,8 @@
+ }
+ 
+ type RawDefaultDNSRule struct {
++	ResponseAddressAll bool `json:"response_address_all,omitempty"`
++
+ 	Inbound                  badoption.Listable[string]                                                  `json:"inbound,omitempty" reference:"inbound"`
+ 	IPVersion                int                                                                         `json:"ip_version,omitempty" enum:"4,6"`
+ 	QueryType                badoption.Listable[DNSQueryType]                                            `json:"query_type,omitempty"`
+diff --git a/route/rule/rule_dns.go b/route/rule/rule_dns.go
+--- a/route/rule/rule_dns.go
++++ b/route/rule/rule_dns.go
+@@ -2,6 +2,7 @@
+ 
+ import (
+ 	"context"
++	M "github.com/sagernet/sing/common/metadata"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+ 	C "github.com/sagernet/sing-box/constant"
+@@ -102,9 +103,10 @@
+ 
+ type DefaultDNSRule struct {
+ 	abstractDefaultRule
+-	matchResponse    bool
+-	matchResponseTag string
+-	race             bool
++	responseAddressAll bool
++	matchResponse      bool
++	matchResponseTag   string
++	race               bool
+ }
+ 
+ func NewDefaultDNSRule(ctx context.Context, logger log.ContextLogger, options option.DefaultDNSRule, legacyDNSMode bool) (*DefaultDNSRule, error) {
+@@ -113,9 +115,10 @@
+ 			invert: options.Invert,
+ 			action: NewDNSRuleAction(logger, options.DNSRuleAction),
+ 		},
+-		matchResponse:    options.MatchResponse.IsEnabled(),
+-		matchResponseTag: options.MatchResponse.ResponseTag(),
+-		race:             options.Race,
++		responseAddressAll: options.ResponseAddressAll,
++		matchResponse:      options.MatchResponse.IsEnabled(),
++		matchResponseTag:   options.MatchResponse.ResponseTag(),
++		race:               options.Race,
+ 	}
+ 	if len(options.Inbound) > 0 {
+ 		item := NewInboundRule(options.Inbound)
+@@ -455,6 +458,23 @@
+ 		matchMetadata := *metadata
+ 		matchMetadata.DNSResponse = response
+ 		matchMetadata.DestinationAddressMatchFromResponse = true
++		if r.responseAddressAll {
++			addresses := adapter.DNSResponseAddresses(response)
++			if len(addresses) == 0 {
++				return false
++			}
++			for _, address := range addresses {
++				candidate := matchMetadata
++				candidate.ResetRuleCache()
++				candidate.DestinationAddressMatchFromResponse = false
++				candidate.Destination = M.Socksaddr{Addr: address}
++				candidate.DestinationAddresses = nil
++				if !r.abstractDefaultRule.Match(&candidate) {
++					return false
++				}
++			}
++			return true
++		}
+ 		return r.abstractDefaultRule.Match(&matchMetadata)
+ 	}
+ 	return r.abstractDefaultRule.Match(metadata)

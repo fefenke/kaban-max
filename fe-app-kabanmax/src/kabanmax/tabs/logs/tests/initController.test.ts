@@ -120,15 +120,37 @@ describe('the Logs tab', () => {
     expect(node('logs-clear').disabled).toBe(false);
   });
 
-  it('does not clear logs while a read is still loading', async () => {
+  it('accepts one clear click during a read and ignores its stale result', async () => {
     const node = page();
-    mocks.checkLogs.mockReturnValue(new Promise(() => {}));
+    let finishRead!: (value: unknown) => void;
+    mocks.checkLogs.mockReturnValue(new Promise((resolve) => { finishRead = resolve; }));
+    mocks.clearLogs.mockResolvedValue({ success: true, data: '' });
     await (
       await openedOn('logs')
     )();
-    expect(node('logs-clear').disabled).toBe(true);
+    expect(node('logs-clear').disabled).toBe(false);
     (node('logs-clear').click as () => void)();
-    expect(mocks.clearLogs).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(mocks.clearLogs).toHaveBeenCalledTimes(1);
+    finishRead({ success: true, data: 'stale line' });
+    await Promise.resolve();
+    expect(node('logs-output').textContent).toBe('No logs available');
+  });
+  it('keeps new records after repeated clears and a later poll', async () => {
+    const node = page();
+    mocks.checkLogs.mockResolvedValueOnce({ success: true, data: 'old' });
+    mocks.clearLogs.mockResolvedValue({ success: true, data: '' });
+    await (await openedOn('logs'))();
+    await vi.advanceTimersByTimeAsync(0);
+    (node('logs-clear').click as () => void)();
+    await vi.advanceTimersByTimeAsync(0);
+    (node('logs-clear').click as () => void)();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.clearLogs).toHaveBeenCalledTimes(2);
+    expect(node('logs-output').textContent).toBe('No logs available');
+    mocks.checkLogs.mockResolvedValue({ success: true, data: 'new error' });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(node('logs-output').textContent).toBe('new error');
   });
   it('says there are no logs once an empty log arrives', async () => {
     const node = page();

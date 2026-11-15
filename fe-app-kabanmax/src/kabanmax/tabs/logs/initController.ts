@@ -12,6 +12,8 @@ const AUTO_REFRESH_INTERVAL_MS = 2000;
 
 let controllerInitialized = false;
 let loading = false;
+let clearing = false;
+let readGeneration = 0;
 let rawLogs = '';
 let logsLoaded = false;
 
@@ -73,12 +75,14 @@ function renderLogs(scrollToTop = false) {
 function setLoading(nextLoading: boolean) {
   loading = nextLoading;
   element('logs-output').setAttribute('aria-busy', String(nextLoading));
-  element<HTMLButtonElement>('logs-clear').disabled = nextLoading;
+  element<HTMLButtonElement>('logs-clear').disabled = clearing;
 }
 
 async function clearLogs() {
-  if (loading) return;
-  setLoading(true);
+  if (clearing) return;
+  clearing = true;
+  readGeneration++;
+  setLoading(loading);
   try {
     const response = await KabanMaxShellMethods.clearLogs();
     if (!response.success) throw new Error(response.error);
@@ -91,12 +95,13 @@ async function clearLogs() {
       'error',
     );
   } finally {
-    setLoading(false);
+    clearing = false;
+    setLoading(loading);
   }
 }
 
 async function refreshLogs() {
-  if (loading) {
+  if (loading || clearing) {
     return;
   }
 
@@ -108,9 +113,12 @@ async function refreshLogs() {
   const previousScrollLeft = output.scrollLeft;
 
   setLoading(true);
+  const generation = readGeneration;
 
   try {
     const response = await KabanMaxShellMethods.checkLogs();
+
+    if (generation !== readGeneration) return;
 
     if (!response.success) {
       throw new Error(response.error);
@@ -129,6 +137,7 @@ async function refreshLogs() {
       output.scrollLeft = previousScrollLeft;
     });
   } catch (error) {
+    if (generation !== readGeneration) return;
     console.error('[LOGS] Failed to load logs', error);
     if (!logsLoaded) {
       element('logs-output').textContent = _('Failed to load logs');

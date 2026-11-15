@@ -3,6 +3,8 @@ import { executeShellCommand } from '../../../helpers/executeShellCommand';
 
 interface Zapret2Status {
   installed?: string;
+  present?: boolean;
+  usable?: boolean;
   latest?: string;
   architecture?: string;
   running?: boolean;
@@ -21,7 +23,7 @@ export function zapretAction(
     state.latest &&
     state.latest !== state.installed;
   return {
-    action: available ? (state.installed ? 'update' : 'install') : 'check',
+    action: state.present === false ? 'install' : available && state.installed ? 'update' : available && state.present === undefined ? 'install' : 'check',
     disabled: busy,
   };
 }
@@ -86,9 +88,11 @@ export function renderZapret2(): HTMLElement {
     try {
       state = await command(['zapret2_status']);
       busy = Boolean(state.running);
-      status.textContent = state.installed || '\u2014';
+      status.textContent = state.present === false ? _('Not installed') : state.installed || '\u2014';
       showDetails(
-        state.success === false || busy
+        state.present && state.usable === false
+          ? _('failed')
+          : state.success === false || busy
           ? state.message || (busy ? _('in progress') : _('failed'))
           : checked && state.latest
             ? state.latest === state.installed
@@ -97,7 +101,7 @@ export function renderZapret2(): HTMLElement {
             : '',
         busy
           ? ''
-          : state.success === false
+          : state.success === false || (state.present && state.usable === false)
             ? 'error'
             : checked && state.latest
               ? 'success'
@@ -109,6 +113,7 @@ export function renderZapret2(): HTMLElement {
       showDetails((error as Error).message, 'error');
       busy = false;
       checked = false;
+      state = {};
     }
     draw();
   }

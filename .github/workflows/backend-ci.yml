@@ -7,6 +7,7 @@ on:
       - 'kabanmax/Makefile'
       - 'build.sh'
       - 'tests/**'
+      - 'scripts/check-release.sh'
       # The packaging checks read the LuCI app's package scripts and bundle.
       - 'luci-app-kabanmax/**'
       - '.github/workflows/build.yml'
@@ -19,6 +20,7 @@ on:
       - 'kabanmax/Makefile'
       - 'build.sh'
       - 'tests/**'
+      - 'scripts/check-release.sh'
       - 'luci-app-kabanmax/**'
       - '.github/workflows/build.yml'
       - '.github/workflows/backend-ci.yml'
@@ -60,6 +62,11 @@ jobs:
 
       - name: Check explicit release selection
         run: bash tests/installer-release-pin.sh
+
+      - name: Check installer language and release core minimum
+        run: |
+          bash tests/installer-translation-smoke.sh
+          bash tests/release-manifest-smoke.sh
 
       - name: Check namespace migration
         run: bash tests/legacy-namespace.sh

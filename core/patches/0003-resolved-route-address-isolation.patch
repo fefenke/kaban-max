@@ -1,0 +1,62 @@
+diff --git a/route/route.go b/route/route.go
+--- a/route/route.go
++++ b/route/route.go
+@@ -378,7 +378,7 @@
+ 	}
+ 	for currentRuleIndex, currentRule := range r.rules {
+ 		metadata.ResetRuleCache()
+-		if !currentRule.Match(&metadata) {
++		if !matchResolvedRoute(currentRule, &metadata) {
+ 			continue
+ 		}
+ 		ruleDescription := currentRule.String()
+@@ -655,6 +655,40 @@
+ 		metadata.IPVersion = 6
+ 	}
+ 	return nil
++}
++
++// matchResolvedRoute keeps a domain dial's candidate addresses within the selected
++// rule. Matching one answer must not authorize dialing every other DNS answer.
++// The destination name is retained for TLS and proxy protocols; only dial
++// candidates are narrowed. A failed dial never falls through to another route.
++func matchResolvedRoute(rule adapter.Rule, metadata *adapter.InboundContext) bool {
++	action := rule.Action().Type()
++	if metadata.Destination.IsIP() || len(metadata.DestinationAddresses) == 0 ||
++		(action != C.RuleActionTypeRoute && action != C.RuleActionTypeBypass) {
++		return rule.Match(metadata)
++	}
++	var matched []netip.Addr
++	for _, address := range metadata.DestinationAddresses {
++		candidate := *metadata
++		candidate.ResetRuleCache()
++		if candidate.Domain == "" {
++			candidate.Domain = candidate.Destination.Fqdn
++		}
++		candidate.Destination = M.Socksaddr{Addr: address, Port: metadata.Destination.Port}
++		candidate.DestinationAddresses = nil
++		candidate.IPVersion = 6
++		if address.Is4() {
++			candidate.IPVersion = 4
++		}
++		if rule.Match(&candidate) {
++			matched = append(matched, address)
++		}
++	}
++	if len(matched) == 0 {
++		return false
++	}
++	metadata.DestinationAddresses = matched
++	return true
+ }
+ 
+ func (r *Router) matchRule(
+@@ -689,7 +723,7 @@
+ match:
+ 	for currentRuleIndex, currentRule := range r.rules {
+ 		metadata.ResetRuleCache()
+-		if !currentRule.Match(metadata) {
++		if !matchResolvedRoute(currentRule, metadata) {
+ 			continue
+ 		}
+ 		ruleDescription := currentRule.String()

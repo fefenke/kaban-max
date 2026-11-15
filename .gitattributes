@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.png binary
 *.lmo binary
+# Unified diff context contains literal space/tab and blank-line prefixes.
+core/patches/*.patch -whitespace

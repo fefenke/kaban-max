@@ -291,6 +291,7 @@ export function showChildItemSettingsModal(
     settings.title(inputValue),
     map,
     (nextSettings: ChildSettings) => {
+      if (settings.prepareSave) nextSettings = settings.prepareSave(nextSettings);
       if (existing) {
         const diff = changedSettings(
           initialSettings,

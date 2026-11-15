@@ -21,7 +21,7 @@ function configure_service() {
         die("Failed to create the sing-box service section in /etc/config/sing-box");
 
     let changed = [];
-    for (let option in [ [ "enabled", "1" ], [ "user", "root" ], [ "conffile", common.option(settings(), "config_path", "") ] ]) {
+    for (let option in [ [ "enabled", "1" ], [ "user", "root" ], [ "conffile", singbox_constants.config_path(settings()) ] ]) {
         if (trim(uci.get("sing-box.main." + option[0])) == option[1])
             continue;
         if (!uci.set("sing-box.main." + option[0], option[1]))
@@ -99,12 +99,10 @@ function check(text) {
 // checks it regardless, since the core may have been replaced.
 function write_config(checked) {
     let values = settings();
-    let path = common.option(values, "config_path", "");
-    if (path == "")
-        die("The sing-box configuration file path is not set in Settings");
+    let path = singbox_constants.config_path(values);
 
     // sing-box needs its cache directory, and a reboot empties /tmp.
-    let cache_dir = common.parent_dir(common.option(values, "cache_path", singbox_constants.TMP_SING_BOX_FOLDER + "/cache.db"));
+    let cache_dir = common.parent_dir(singbox_constants.cache_path(values));
     if (!common.ensure_dir(cache_dir))
         die("Failed to create " + cache_dir + " for the sing-box cache file");
 
@@ -136,7 +134,7 @@ function write_config(checked) {
 
 // The devices the running configuration binds the core's own sockets to.
 function bound_devices() {
-    let config = common.read_json_file(common.option(settings(), "config_path", ""));
+    let config = common.read_json_file(singbox_constants.config_path(settings()));
     let bound = map([ ...(config?.outbounds ?? []), ...(config?.endpoints ?? []) ], (item) => item?.bind_interface);
     let devices = [];
     for (let name in [ config?.route?.default_interface, ...bound ])

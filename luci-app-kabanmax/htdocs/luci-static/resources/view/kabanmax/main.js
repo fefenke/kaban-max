@@ -25,6 +25,7 @@ var RESERVED_RUNTIME_TAGS = /* @__PURE__ */ new Set([
   "bootstrap-dns-server",
   "dnsmasq-server",
   "hosts-server",
+  "infrastructure-direct-out",
   "fakeip-dns-rule-tag",
   "fakeip-ruleset-dns-rule-tag",
   "service-fakeip-dns-rule-tag",
@@ -284,7 +285,7 @@ async function executeShellCommand({
 function zapretAction(state, checked, busy) {
   const available = checked && state.success !== false && state.latest && state.latest !== state.installed;
   return {
-    action: available ? state.installed ? "update" : "install" : "check",
+    action: state.present === false ? "install" : available && state.installed ? "update" : available && state.present === void 0 ? "install" : "check",
     disabled: busy
   };
 }
@@ -337,10 +338,10 @@ function renderZapret2() {
     try {
       state = await command(["zapret2_status"]);
       busy = Boolean(state.running);
-      status.textContent = state.installed || "\u2014";
+      status.textContent = state.present === false ? _("Not installed") : state.installed || "\u2014";
       showDetails(
-        state.success === false || busy ? state.message || (busy ? _("in progress") : _("failed")) : checked && state.latest ? state.latest === state.installed ? _("No updates available") : `${_("Update available")}: ${state.latest}` : "",
-        busy ? "" : state.success === false ? "error" : checked && state.latest ? "success" : ""
+        state.present && state.usable === false ? _("failed") : state.success === false || busy ? state.message || (busy ? _("in progress") : _("failed")) : checked && state.latest ? state.latest === state.installed ? _("No updates available") : `${_("Update available")}: ${state.latest}` : "",
+        busy ? "" : state.success === false || state.present && state.usable === false ? "error" : checked && state.latest ? "success" : ""
       );
       if (busy && root.isConnected)
         window.setTimeout(() => void refresh(), 1500);
@@ -348,6 +349,7 @@ function renderZapret2() {
       showDetails(error.message, "error");
       busy = false;
       checked = false;
+      state = {};
     }
     draw();
   }
@@ -2147,13 +2149,7 @@ async function readLogs() {
       return { success: true, data: text8 };
     }
   }
-  servedLog = null;
-  const response = await executeShellCommand({
-    command: "/usr/bin/kabanmax",
-    args: [KabanMax.AvailableMethods.CHECK_LOGS],
-    timeout: 15e3
-  });
-  return response.code ? { success: false, error: response.stderr || response.stdout || "" } : { success: true, data: response.stdout };
+  return { success: false, error: served.success ? _("Failed to load logs") : served.message };
 }
 function checkLogs() {
   if (!checkLogsRequest) {
@@ -3845,6 +3841,9 @@ async function checkRelease() {
   if (reply.code || !state.success) {
     throw new Error(state.message || reply.stderr || _("Failed to execute"));
   }
+  if (typeof state.update_available !== "boolean") {
+    throw new Error(_("Unknown response"));
+  }
   return state;
 }
 
@@ -3965,6 +3964,7 @@ function createInstallerRun(options) {
   let catchingUp = false;
   let failingSince = null;
   let stopAsked = false;
+  let generation = 0;
   const emit = () => options.onChange({ ...state });
   const shouldPoll = () => state.running || shown2 && !state.loaded;
   function follow(id) {
@@ -4019,16 +4019,21 @@ function createInstallerRun(options) {
     }
   }
   async function poll() {
+    const requestedGeneration = generation;
     try {
       let snapshot = null;
       if (hot && state.id) {
         const read = await options.api.read(state.id, offset);
+        if (requestedGeneration !== generation) return;
         hot = !read.gone;
         snapshot = read.snapshot;
       }
-      apply(snapshot ?? await options.api.status(offset));
+      snapshot ?? (snapshot = await options.api.status(offset));
+      if (requestedGeneration !== generation) return;
+      apply(snapshot);
       failingSince = null;
     } catch {
+      if (requestedGeneration !== generation) return;
       failingSince ?? (failingSince = Date.now());
     }
     state.lost = failingSince !== null && Date.now() - failingSince >= LOST_AFTER_MS;
@@ -4068,9 +4073,10 @@ function createInstallerRun(options) {
       }
     },
     async start(action, variant = "", purge = false, release) {
-      if (state.running || state.starting) {
+      if (state.running || state.starting || state.after) {
         return;
       }
+      generation++;
       state.starting = true;
       emit();
       try {
@@ -4603,11 +4609,11 @@ function createTerminal(options) {
       lineNodes[row2] = node;
       output.appendChild(node);
     }
-    const parts = row2 === 0 ? [] : [document.createTextNode("\n")];
+    const parts2 = row2 === 0 ? [] : [document.createTextNode("\n")];
     for (const run of lineRuns(screen.lines[row2], cursor2)) {
-      parts.push(span(run));
+      parts2.push(span(run));
     }
-    node.replaceChildren(...parts);
+    node.replaceChildren(...parts2);
   }
   function draw() {
     const cursorRow = inputEnabled ? screen.row : null;
@@ -4906,6 +4912,7 @@ function initController() {
   let releaseBusy = false;
   let releaseError = "";
   async function checkUpdates() {
+    if (releaseBusy) return;
     releaseBusy = true;
     releaseError = "";
     renderActions(runState ?? run.state);
@@ -4922,7 +4929,7 @@ function initController() {
   function renderActions(state) {
     const operation = store.get().serviceState.data.kabanmaxBusy;
     const live = state.starting || state.running;
-    const blocked = releaseBusy || live || operation !== null && operation !== "install";
+    const blocked = releaseBusy || live || Boolean(state.after) || operation !== null && operation !== "install";
     const drawn = JSON.stringify([
       blocked,
       live && state.action,
@@ -6810,6 +6817,49 @@ function getLocalActionOverlay() {
   };
 }
 
+// ../shared/tls-fingerprints.json
+var tls_fingerprints_default = [
+  { id: "chrome", family: "chrome", label: "Chrome", version: "133", reality: "modern", client: "Chrome" },
+  { id: "chrome_155", family: "chrome", label: "Chrome", version: "155", reality: "modern", client: "Chrome" },
+  { id: "firefox", family: "firefox", label: "Firefox", version: "148", reality: "modern", client: "Firefox" },
+  { id: "edge", family: "edge", label: "Edge", version: "85", reality: "legacy", client: "Edge" },
+  { id: "safari", family: "safari", label: "Safari", version: "26.3", reality: "modern", client: "Safari" },
+  { id: "ios", family: "ios", label: "iOS", version: "14", reality: "legacy", client: "iOS" },
+  { id: "android", family: "android", label: "Android / OkHttp", version: "11", reality: "unsupported", client: "Android" },
+  { id: "random", family: "random", label: "Random", version: "", reality: "modern" },
+  { id: "randomized", family: "randomized", label: "Randomized", version: "", reality: "modern" },
+  { id: "qq", family: "qq", label: "QQ", version: "11.1", reality: "legacy", client: "QQBrowser" },
+  { id: "360", family: "360", label: "360", version: "7.5", reality: "unsupported", client: "360Browser" },
+  { id: "chrome_psk", family: "chrome", label: "Chrome", version: "133", reality: "modern", aliasOf: "chrome", client: "Chrome" },
+  { id: "chrome_psk_shuffle", family: "chrome", label: "Chrome", version: "133", reality: "modern", aliasOf: "chrome", client: "Chrome" },
+  { id: "chrome_padding_psk_shuffle", family: "chrome", label: "Chrome", version: "133", reality: "modern", aliasOf: "chrome", client: "Chrome" },
+  { id: "chrome_pq", family: "chrome", label: "Chrome", version: "133", reality: "modern", aliasOf: "chrome", client: "Chrome" },
+  { id: "chrome_pq_psk", family: "chrome", label: "Chrome", version: "133", reality: "modern", aliasOf: "chrome", client: "Chrome" }
+];
+
+// src/kabanmax/services/tlsFingerprints.ts
+var TLS_FINGERPRINTS = tls_fingerprints_default;
+var selectableFingerprints = tls_fingerprints_default.filter((item) => !item.aliasOf);
+var fingerprintProfile = (id) => tls_fingerprints_default.find((item) => item.id === id.trim().toLowerCase());
+var fingerprintFamily = (id) => fingerprintProfile(id)?.family || id;
+function fingerprintLabel(id) {
+  const profile = fingerprintProfile(id);
+  return profile ? `${profile.label}${profile.version ? ` ${profile.version}` : ""}` : id;
+}
+function selectedFingerprint(family, variant, original = "") {
+  const id = `${family || ""}`;
+  if (id !== "chrome") return id;
+  if (variant === "chrome_155") return "chrome_155";
+  const previous = fingerprintProfile(`${original || ""}`);
+  return previous?.aliasOf === "chrome" ? previous.id : "chrome";
+}
+function fingerprintSelectionDefaults(id) {
+  return {
+    _tls_original: id,
+    _tls_variant: fingerprintProfile(id)?.id === "chrome_155" ? "chrome_155" : "chrome"
+  };
+}
+
 // src/kabanmax/services/coreFeatures.service.ts
 var report = null;
 function setCoreFeatures(value) {
@@ -6905,8 +6955,10 @@ function connectionFingerprintSupported(link, fingerprint2 = "") {
     }
   }
   const query = linkQuery(link);
-  const security = queryValue(query.get("security")).toLowerCase();
-  if (security === "reality" && ["android", "360"].includes(fingerprint2.trim().toLowerCase()))
+  let security = queryValue(query.get("security")).toLowerCase();
+  if (queryValue(query.get("pbk")) && (["tls", "xtls", "reality"].includes(security) || type === "trojan" && security !== "none" || type === "anytls"))
+    security = "reality";
+  if (security === "reality" && fingerprintProfile(fingerprint2)?.reality === "unsupported")
     return false;
   if (type === "http") return scheme === "https";
   if (type === "trojan" && security === "none") return false;
@@ -7646,16 +7698,7 @@ var TRANSPORTS = [
 ];
 var ALPN_PROTOCOLS = ["vless", "vmess", "trojan", "anytls"];
 var DEFAULT_CLIENT_FINGERPRINT = "chrome";
-var CLIENT_FINGERPRINTS = [
-  "chrome",
-  "chrome_155",
-  "firefox",
-  "edge",
-  "safari",
-  "ios",
-  "android",
-  "random"
-];
+var CLIENT_FINGERPRINTS = TLS_FINGERPRINTS.map((profile) => profile.id);
 var CLIENT_KEYS = [
   "name",
   "uuid",
@@ -7761,9 +7804,9 @@ function extensionValue(der, oid) {
   );
   const list3 = extensions && children(der, extensions)[0];
   for (const extension of list3 ? children(der, list3) : []) {
-    const parts = children(der, extension);
-    const value = parts[parts.length - 1];
-    if (parts[0]?.tag === 6 && hex(der.subarray(parts[0].start, parts[0].end)) === oid && value?.tag === 4) {
+    const parts2 = children(der, extension);
+    const value = parts2[parts2.length - 1];
+    if (parts2[0]?.tag === 6 && hex(der.subarray(parts2[0].start, parts2[0].end)) === oid && value?.tag === 4) {
       return readTlv(der, value.start, value.end);
     }
   }
@@ -9040,17 +9083,17 @@ function parseUnsigned(value, maximum) {
   return Number.isSafeInteger(parsed) && parsed <= maximum ? parsed : void 0;
 }
 function parseRange(value, maximum = UINT32_MAX) {
-  const parts = value.split("-");
-  if (parts.length > 2 || parts.some((part2) => part2 === "")) return void 0;
-  const from = parseUnsigned(parts[0], maximum);
-  const to = parts.length === 2 ? parseUnsigned(parts[1], maximum) : from;
+  const parts2 = value.split("-");
+  if (parts2.length > 2 || parts2.some((part2) => part2 === "")) return void 0;
+  const from = parseUnsigned(parts2[0], maximum);
+  const to = parts2.length === 2 ? parseUnsigned(parts2[1], maximum) : from;
   if (from === void 0 || to === void 0 || from > to) return void 0;
-  return parts.length === 2 ? value : from;
+  return parts2.length === 2 ? value : from;
 }
 function validateRange(value) {
   if (parseRange(value) !== void 0) return true;
-  const parts = value.split("-");
-  return parts.length === 2 && parts.every((part2) => parseUnsigned(part2, UINT32_MAX) !== void 0) ? message.rangeReversed() : message.numberOrRange();
+  const parts2 = value.split("-");
+  return parts2.length === 2 && parts2.every((part2) => parseUnsigned(part2, UINT32_MAX) !== void 0) ? message.rangeReversed() : message.numberOrRange();
 }
 function validateWireGuardKey(value) {
   const normalized = value.trim();
@@ -9097,8 +9140,8 @@ function validateAmneziaValue(key, value) {
   }
 }
 function rangeBounds(value) {
-  const parts = value.split("-").map(Number);
-  return [parts[0], parts[parts.length - 1]];
+  const parts2 = value.split("-").map(Number);
+  return [parts2[0], parts2[parts2.length - 1]];
 }
 function validateAmneziaSet(values) {
   const text8 = (key) => `${values[key] ?? ""}`.trim();
@@ -13577,6 +13620,105 @@ var DashboardTab = {
   styles: styles4
 };
 
+// src/kabanmax/tabs/diagnostic/routeForecast.ts
+async function requestRouteForecast(destination, source, port2) {
+  const response = await executeShellCommand({
+    command: "/usr/bin/kabanmax",
+    args: ["check_route", destination, source, port2],
+    timeout: 15e3
+  });
+  if (response.code)
+    throw new Error(response.stderr || "Route forecast failed");
+  const result = JSON.parse(response.stdout);
+  if (!result?.predicted || typeof result.predicted.status !== "string") {
+    throw new Error("Invalid route forecast response");
+  }
+  return result;
+}
+function formatRouteForecast(result) {
+  return JSON.stringify(
+    {
+      ...result,
+      observed: result.observed ?? { status: "unavailable" },
+      verified: result.verified ?? { status: "not_run", requests: 0 }
+    },
+    null,
+    2
+  );
+}
+
+// src/kabanmax/tabs/diagnostic/renderRouteForecast.ts
+function renderRouteForecast() {
+  const destination = textE("input", {
+    type: "text",
+    placeholder: "example.test / IPv4 / IPv6",
+    "aria-label": _("Destination"),
+    maxLength: 253
+  });
+  const source = textE("input", {
+    type: "text",
+    placeholder: "LAN IP / @system",
+    "aria-label": _("Source"),
+    maxLength: 45
+  });
+  const port2 = textE("input", {
+    type: "number",
+    value: "443",
+    min: "1",
+    max: "65535",
+    "aria-label": _("Port")
+  });
+  const output = textE("pre", {}, "");
+  output.setAttribute("aria-live", "polite");
+  const button = textE(
+    "button",
+    {
+      type: "button",
+      class: "cbi-button",
+      click: async () => {
+        if (button.disabled) return;
+        button.disabled = true;
+        output.textContent = "\u2026";
+        try {
+          const result = await requestRouteForecast(
+            destination.value.trim(),
+            source.value.trim(),
+            port2.value
+          );
+          output.textContent = formatRouteForecast(result);
+        } catch (error) {
+          output.textContent = error instanceof Error ? error.message : String(error);
+        } finally {
+          button.disabled = false;
+        }
+      }
+    },
+    _("Route forecast")
+  );
+  return textE("div", { class: "cbi-section" }, [
+    textE("h3", {}, _("Route forecast")),
+    textE(
+      "p",
+      {},
+      _(
+        "Read-only forecast for non-DNS TCP from the generated configuration. DNS, live core state and nft/PBR are not verified. Rule indexes start at zero."
+      )
+    ),
+    destination,
+    source,
+    port2,
+    button,
+    textE(
+      "p",
+      {},
+      _(
+        "This forecast does not run probes or change routes. Configure opt-in automatic routing in the Zapret2 section; it requires the r11 core extension."
+      )
+    ),
+    output
+  ]);
+}
+
 // src/kabanmax/tabs/diagnostic/renderDiagnostic.ts
 function render3() {
   return textE("div", { id: "diagnostic-status", class: "fkp_diagnostic-page" }, [
@@ -13585,6 +13727,7 @@ function render3() {
       textE("div", { id: "fkp_diagnostic-page-system-info" })
     ]),
     textE("div", { class: "fkp_diagnostic-page__results" }, [
+      renderRouteForecast(),
       textE("div", { id: "fkp_diagnostic-page-run-check" }),
       textE("div", {
         class: "fkp_diagnostic-page__checks",
@@ -17559,6 +17702,8 @@ function filterLogText(text8, query) {
 var AUTO_REFRESH_INTERVAL_MS = 2e3;
 var controllerInitialized2 = false;
 var loading2 = false;
+var clearing = false;
+var readGeneration = 0;
 var rawLogs = "";
 var logsLoaded = false;
 function logsTabShown() {
@@ -17603,11 +17748,13 @@ function renderLogs(scrollToTop = false) {
 function setLoading(nextLoading) {
   loading2 = nextLoading;
   element2("logs-output").setAttribute("aria-busy", String(nextLoading));
-  element2("logs-clear").disabled = nextLoading;
+  element2("logs-clear").disabled = clearing;
 }
 async function clearLogs2() {
-  if (loading2) return;
-  setLoading(true);
+  if (clearing) return;
+  clearing = true;
+  readGeneration++;
+  setLoading(loading2);
   try {
     const response = await KabanMaxShellMethods.clearLogs();
     if (!response.success) throw new Error(response.error);
@@ -17620,11 +17767,12 @@ async function clearLogs2() {
       "error"
     );
   } finally {
-    setLoading(false);
+    clearing = false;
+    setLoading(loading2);
   }
 }
 async function refreshLogs() {
-  if (loading2) {
+  if (loading2 || clearing) {
     return;
   }
   const output = element2("logs-output");
@@ -17633,8 +17781,10 @@ async function refreshLogs() {
   const previousScrollTop = output.scrollTop;
   const previousScrollLeft = output.scrollLeft;
   setLoading(true);
+  const generation = readGeneration;
   try {
     const response = await KabanMaxShellMethods.checkLogs();
+    if (generation !== readGeneration) return;
     if (!response.success) {
       throw new Error(response.error);
     }
@@ -17650,6 +17800,7 @@ async function refreshLogs() {
       output.scrollLeft = previousScrollLeft;
     });
   } catch (error) {
+    if (generation !== readGeneration) return;
     console.error("[LOGS] Failed to load logs", error);
     if (!logsLoaded) {
       element2("logs-output").textContent = _("Failed to load logs");
@@ -18190,6 +18341,430 @@ function validateUniqueDynamicListItemName(widget, itemNode, value) {
   ) ? message.nameTaken() : true;
 }
 
+// src/kabanmax/tabs/sections/autoRouting.ts
+var emptyState = {
+  sources: [],
+  candidates: [],
+  unattributed: [],
+  leases: [],
+  decisions: [],
+  history: []
+};
+function canApply(row2, now = Date.now()) {
+  return row2.status === "proposed" && row2.apply_allowed === true && row2.domain_known === true && !!row2.domain && Date.parse(row2.expires || "") > now;
+}
+function evidenceText(evidence) {
+  const labels = {
+    healthy: _("Original HTTPS resource responds; no change"),
+    suspected_failure: _("Repeated transport failure; blocking is not proven"),
+    alternative_reachable: _(
+      "Alternative HTTPS response verified; manual confirmation only"
+    ),
+    verified_for_apply: _(
+      "Strict application contract verified; eligible for automatic application"
+    ),
+    transport_diagnostic: _(
+      "TCP diagnostic only; application identity unknown"
+    )
+  };
+  return labels[evidence] || _("Insufficient evidence");
+}
+function statusText(status) {
+  const labels = {
+    observing: _("Detected"),
+    detected: _("Detected"),
+    checking: _("Checking"),
+    inconclusive: _("Insufficient evidence"),
+    identity_unknown: _("Insufficient evidence"),
+    unattributed: _("Source section not established"),
+    proposed: _("Proposed"),
+    applied: _("Applied"),
+    unchanged: _("Zapret2 verified; no change"),
+    expired: _("Expired"),
+    removed: _("Removed"),
+    rolled_back: _("Rolled back"),
+    rechecked: _("Rechecked"),
+    replaced: _("Replaced"),
+    closed: _("Connection closed"),
+    blocked_by_policy: _("Forbidden by policy")
+  };
+  return labels[status] || _("See diagnostic details");
+}
+function reasonText(reason) {
+  if (reason === "original_https_inconclusive")
+    return _(
+      "Original HTTPS checks are inconclusive; no route change is authorized"
+    );
+  if (reason === "repeated_transport_failure_alternative_reachable")
+    return _(
+      "The same IP and hostname responded through the alternative; this does not prove DPI"
+    );
+  if (reason === "actual_destination_ip_unknown")
+    return _(
+      "The actual dialled IP is unknown; other DNS addresses will not be checked"
+    );
+  if (reason === "original_flow_not_attested")
+    return _("No matching original flow attests this IP and identity");
+  if ([
+    "identity_unknown",
+    "no_connection_identity",
+    "connection_error_without_identity"
+  ].includes(reason))
+    return _("Destination identity is not established");
+  if (["first_match_changed", "first_match_not_routable"].includes(reason))
+    return _("A different rule wins; no automatic change");
+  if (reason === "source_mark_unattributed")
+    return _("The source is not an attested Zapret2 route");
+  if (reason === "probe_scope_requires_connection_metadata")
+    return _("Earlier rules require unavailable connection metadata");
+  if (reason === "original_failure_unproven")
+    return _("The application failure contract was not confirmed");
+  if (reason.startsWith("dns_"))
+    return _("DNS evidence is unavailable, changed or expired");
+  if (reason === "suppressed") return _("Excluded by the user");
+  if (reason === "udp_not_supported")
+    return _("UDP is observed but is not checked by this HTTPS mechanism");
+  if (reason === "connection_error" || reason === "no_progress")
+    return _(
+      "A connection problem was observed; application verification is required"
+    );
+  if (reason.includes("infrastructure"))
+    return _("Infrastructure protection forbids this check");
+  if (reason === "verified_alternative_after_contract_failure")
+    return _("The alternative passed the configured application contract");
+  return reason ? _("See diagnostic details") : "";
+}
+async function autoState() {
+  const reply = await callUbus({
+    object: "kabanmax",
+    method: "auto_state",
+    timeoutMs: 15e3
+  });
+  if (!reply.success) throw new Error(reply.message);
+  const result = { ...emptyState, ...reply.data };
+  for (const key of [
+    "sources",
+    "candidates",
+    "unattributed",
+    "leases",
+    "decisions",
+    "history"
+  ]) {
+    if (!Array.isArray(result[key])) result[key] = [];
+  }
+  return result;
+}
+async function autoAction(op, id) {
+  const reply = await callUbus({
+    object: "kabanmax",
+    method: "auto_action",
+    params: { op, id },
+    timeoutMs: 75e3,
+    retryUnavailable: false
+  });
+  if (!reply.success) throw new Error(reply.message);
+  if (!reply.data.success)
+    throw new Error(reply.data.message || _("Automatic routing action failed"));
+  return reply.data;
+}
+function sourceRows(state, sectionId) {
+  const tag = state.sources.find((source) => source.id === sectionId)?.outbound;
+  const owned = (row2) => row2.source_id === sectionId || !!tag && row2.source === tag;
+  return {
+    candidates: [...state.candidates.filter(owned), ...state.unattributed],
+    leases: state.leases.filter(owned),
+    decisions: state.decisions.filter(owned).filter((row2) => row2.status === "proposed"),
+    results: state.decisions.filter(owned).filter((row2) => row2.status !== "proposed"),
+    history: state.history.filter(owned)
+  };
+}
+function targetRows(state, sectionId, tag) {
+  return state.leases.filter(
+    (row2) => row2.target_section === sectionId || row2.target !== "direct-out" && row2.target?.startsWith(`${tag}/`)
+  );
+}
+function renderAutoRouting(sectionId) {
+  const root = textE("div", {}, []);
+  const body = textE(
+    "div",
+    {},
+    _("Refresh to view backend candidates and temporary routes.")
+  );
+  const message2 = textE("p", {}, "");
+  const source = uci.get(KABANMAX_UCI_PACKAGE, sectionId, "action") === "zapret2";
+  let state = emptyState;
+  let busy = false;
+  const tag = () => state.sources.find((s) => s.id === sectionId)?.outbound || String(uci.get(KABANMAX_UCI_PACKAGE, sectionId, "label") || sectionId);
+  const run = async (op, id) => {
+    if (busy) return;
+    busy = true;
+    message2.textContent = "\u2026";
+    try {
+      if (op && id) await autoAction(op, id);
+      state = await autoState();
+      body.replaceChildren();
+      if (source) {
+        const rows = sourceRows(state, sectionId);
+        const processed = new Set(
+          [...rows.leases, ...rows.decisions, ...rows.results, ...rows.history].map((row2) => row2.ip).filter(Boolean)
+        ).size;
+        body.appendChild(
+          textE(
+            "p",
+            {},
+            `${_("Candidates")}: ${rows.candidates.length}; ${_("Processed IPs (recent results)")}: ${processed}; ${_("Active")}: ${rows.leases.length}; ${_("Suppressed")}: ${state.suppressed_counts?.[sectionId] ?? 0}`
+          )
+        );
+        for (const [title, entries] of [
+          [_("Candidates"), rows.candidates],
+          [_("Active redirects"), rows.leases],
+          [_("Proposals"), rows.decisions],
+          [_("Check results"), rows.results],
+          [_("History"), rows.history]
+        ]) {
+          body.appendChild(textE("h4", {}, title));
+          body.appendChild(table(entries));
+        }
+      } else {
+        body.appendChild(textE("h4", {}, _("Added automatically")));
+        body.appendChild(table(targetRows(state, sectionId, tag())));
+      }
+      message2.textContent = state.version ? _(
+        "Temporary routes are scoped inside the original Zapret2 section. No manual entries are changed."
+      ) : state.reason || _(
+        "Enable automatic routing in a Zapret2 section and apply with the test core."
+      );
+      if (state.disabled_sources?.includes(tag()))
+        message2.textContent = _(
+          "Stopped until the next configuration apply. Disable the section option and Save & Apply to persist this choice."
+        );
+      if (state.suppression_error)
+        message2.textContent = state.suppression_error;
+    } catch (error) {
+      message2.textContent = error instanceof Error ? error.message : String(error);
+    } finally {
+      busy = false;
+    }
+  };
+  const button = (label, op, id, disabled = false) => textE(
+    "button",
+    {
+      type: "button",
+      class: "cbi-button",
+      disabled,
+      click: () => run(op, id)
+    },
+    label
+  );
+  function table(entries) {
+    return textE("table", { class: "table" }, [
+      textE(
+        "tr",
+        {},
+        [
+          "IP",
+          _("Domain"),
+          _("Source"),
+          _("Route"),
+          _("Status"),
+          _("Evidence"),
+          _("Created"),
+          _("Expires"),
+          _("Details")
+        ].map((text8) => textE("th", {}, text8))
+      ),
+      ...entries.map(
+        (row2) => textE("tr", {}, [
+          textE(
+            "td",
+            {},
+            `${row2.ip || "\u2014"}:${row2.port ?? "\u2014"} (${row2.network || "tcp"})`
+          ),
+          textE("td", {}, row2.domain || _("Not established")),
+          textE(
+            "td",
+            {},
+            `${row2.source || _("Unattributed")} / ${row2.source_ip || "\u2014"}`
+          ),
+          textE("td", {}, row2.target || "\u2014"),
+          textE(
+            "td",
+            {},
+            `${statusText(row2.status)}. ${reasonText(row2.reason || "")}`
+          ),
+          textE("td", {}, [
+            evidenceText(row2.evidence || ""),
+            ...row2.status === "proposed" && !canApply(row2) ? [
+              textE(
+                "p",
+                {},
+                _(
+                  "Apply unavailable: identity, permission or validity period is not confirmed"
+                )
+              )
+            ] : []
+          ]),
+          textE(
+            "td",
+            {},
+            row2.created ? new Date(row2.created).toLocaleString() : "\u2014"
+          ),
+          textE(
+            "td",
+            {},
+            row2.expires ? new Date(row2.expires).toLocaleString() : "\u2014"
+          ),
+          textE("td", {}, [
+            textE("details", {}, [
+              textE("summary", {}, _("Details")),
+              textE("pre", {}, JSON.stringify(row2, null, 2))
+            ]),
+            ...row2.id && row2.status === "proposed" ? [
+              button(_("Apply"), "apply", row2.id, !canApply(row2)),
+              button(_("Delete"), "delete", row2.id)
+            ] : [],
+            ...row2.id && row2.status === "applied" && state.leases.some((active) => active.id === row2.id) ? [button(_("Delete"), "delete", row2.id)] : [],
+            ...row2.id && row2.source && row2.network === "tcp" && !["applied", "proposed"].includes(row2.status) ? [button(_("Check"), "probe", row2.id)] : []
+          ])
+        ])
+      )
+    ]);
+  }
+  root.appendChild(
+    textE("h3", {}, source ? _("Automatic routing") : _("Added automatically"))
+  );
+  root.appendChild(button(_("Refresh")));
+  if (source) {
+    root.appendChild(
+      textE(
+        "p",
+        {},
+        _(
+          "Deleting a route withdraws it and stores persistent suppression. Reset suppression to allow automatic selection again."
+        )
+      )
+    );
+    root.appendChild(
+      textE(
+        "button",
+        {
+          type: "button",
+          class: "cbi-button",
+          click: () => run("clear", sectionId)
+        },
+        _("Clear automatic list")
+      )
+    );
+    root.appendChild(
+      textE(
+        "button",
+        {
+          type: "button",
+          class: "cbi-button",
+          click: () => run("reset", sectionId)
+        },
+        _("Reset suppression")
+      )
+    );
+    root.appendChild(
+      textE(
+        "button",
+        {
+          type: "button",
+          class: "cbi-button",
+          click: () => run("disable", sectionId)
+        },
+        _("Stop automatic routing now")
+      )
+    );
+  }
+  root.appendChild(message2);
+  root.appendChild(body);
+  return root;
+}
+function attachAutoRouting(section2) {
+  section2.tab("auto_routing", _("Automatic routing"));
+  for (const [key, label, defaultValue] of [
+    ["auto_routing_enabled", _("Enable automatic routing"), "0"],
+    ["auto_routing_probe_zapret", _("Allow Zapret2 probes"), "1"],
+    ["auto_routing_direct", _("Allow Direct probes"), "0"],
+    [
+      "auto_routing_apply",
+      _("Apply verified temporary routes automatically"),
+      "0"
+    ]
+  ]) {
+    const option2 = section2.taboption("auto_routing", form.Flag, key, label);
+    option2.modalonly = true;
+    option2.depends("action", "zapret2");
+    option2.default = defaultValue;
+    option2.retain = true;
+  }
+  const contract = section2.taboption(
+    "auto_routing",
+    form.TextValue,
+    "auto_routing_contract",
+    _("HTTPS verification settings"),
+    _(
+      "Leave empty for ordinary HTTPS checks on port 443 using the trusted flow hostname and GET /. These checks only propose scoped routes for manual confirmation, even when automatic application is enabled. Optional JSON mode web configures path, port, status and content prefix. Existing nonce contracts use mode strict and can qualify for automatic application. Timeout is not proof of DPI; UDP is not verified. Save & Apply may interrupt TCP connections."
+    )
+  );
+  contract.modalonly = true;
+  contract.depends("action", "zapret2");
+  contract.retain = true;
+  contract.rows = 5;
+  contract.placeholder = '{"mode":"web","path":"/","port":443,"status":200}';
+  contract.validate = (_sectionId, value) => {
+    if (!value.trim()) return true;
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? true : _("Expected a JSON object");
+    } catch {
+      return _("Expected a JSON object");
+    }
+  };
+  const warp = section2.taboption(
+    "auto_routing",
+    form.ListValue,
+    "auto_routing_warp",
+    _("WARP profile for automatic routing")
+  );
+  warp.modalonly = true;
+  warp.depends("action", "zapret2");
+  warp.retain = true;
+  warp.value("", _("Do not use WARP"));
+  warp.load = async function(sectionId) {
+    const snapshot = await autoState().catch(() => emptyState);
+    for (const profile of snapshot.warp_profiles || [])
+      this.value(profile, profile);
+    return uci.get(KABANMAX_UCI_PACKAGE, sectionId, "auto_routing_warp") || "";
+  };
+  const direct = section2.taboption(
+    "auto_routing",
+    form.ListValue,
+    "auto_routing_direct_section",
+    _("Show Direct routes in Bypass section")
+  );
+  direct.modalonly = true;
+  direct.depends("action", "zapret2");
+  direct.retain = true;
+  direct.value("", _("Direct without a section"));
+  for (const entry of uci.sections(KABANMAX_UCI_PACKAGE, "section") || []) {
+    if (entry.action === "bypass")
+      direct.value(entry[".name"], String(entry.label || entry[".name"]));
+  }
+  const list3 = section2.taboption(
+    "auto_routing",
+    form.DummyValue,
+    "_automatic_routes",
+    _("Automatic IP records")
+  );
+  list3.modalonly = true;
+  list3.write = () => void 0;
+  list3.remove = () => void 0;
+  list3.renderWidget = (sectionId) => renderAutoRouting(sectionId);
+}
+
 // src/validators/validateOutboundJson.ts
 function validateOutboundJson(value, usedTags = []) {
   const normalized = `${value || ""}`.trim();
@@ -18624,20 +19199,20 @@ function validAsciiDomain(hostname, requireDot = true) {
   if (!hostname || hostname.length > 253) {
     return false;
   }
-  const parts = hostname.split(".");
-  if (parts.some((part2) => !part2 || part2.length > 63)) {
+  const parts2 = hostname.split(".");
+  if (parts2.some((part2) => !part2 || part2.length > 63)) {
     return false;
   }
-  if (parts.some((part2) => !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(part2))) {
+  if (parts2.some((part2) => !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(part2))) {
     return false;
   }
   if (!requireDot) {
     return true;
   }
-  if (parts.length < 2) {
+  if (parts2.length < 2) {
     return false;
   }
-  const tld = parts[parts.length - 1];
+  const tld = parts2[parts2.length - 1];
   return /^(?:[a-z]{2,}|xn--[a-z0-9-]{2,59})$/.test(tld);
 }
 function validateDomain(domain, allowDotTLD = false) {
@@ -18990,6 +19565,13 @@ var SettingsUIDynamicList = ui.DynamicList.extend({
     item.after(settingsButton);
     this.settingsButtonResizeObserver?.observe(item);
     this.syncSettingsButtonSize(item);
+    if (flash && this.options.openSettingsOnAdd && !this.options.disabled) {
+      Promise.resolve().then(() => {
+        if (dl.isConnected && typeof this.options.settingsHandler === "function") {
+          this.options.settingsHandler(value, item, this, {});
+        }
+      });
+    }
   },
   removeItem(dl, item) {
     const settingsButton = item && item.fkpDynamicListSettingsButton;
@@ -19179,6 +19761,7 @@ var SettingsDynamicList = form.DynamicList.extend({
       },
       hasSettings: (itemValue) => this.hasItemSettings(this.childOwner(section_id), `${itemValue}`),
       createItem: this.entriesAreSections && !this.buttonAdd ? (inputValue) => this.createTypedItem(section_id, inputValue) : null,
+      openSettingsOnAdd: this.openSettingsOnAdd,
       hasEquivalentValue: (itemValue, dl) => {
         const inputValueForItem = (value2) => `${this.inputValueForItem(this.childOwner(section_id), `${value2 || ""}`) || ""}`.trim();
         const normalized = inputValueForItem(itemValue);
@@ -19802,6 +20385,7 @@ function showChildItemSettingsModal(section_id, itemValue, option2, settings) {
     settings.title(inputValue),
     map,
     (nextSettings) => {
+      if (settings.prepareSave) nextSettings = settings.prepareSave(nextSettings);
       if (existing) {
         const diff = changedSettings(
           initialSettings,
@@ -20680,11 +21264,11 @@ function digestName(value) {
   return name === "RMD160" ? "RIPEMD160" : name;
 }
 function netmaskLength(mask) {
-  const parts = `${mask || ""}`.split(".");
-  if (parts.length !== 4 || parts.some((part2) => !/^\d{1,3}$/.test(part2))) {
+  const parts2 = `${mask || ""}`.split(".");
+  if (parts2.length !== 4 || parts2.some((part2) => !/^\d{1,3}$/.test(part2))) {
     return -1;
   }
-  const bits = parts.map((part2) => Number(part2).toString(2).padStart(8, "0")).join("");
+  const bits = parts2.map((part2) => Number(part2).toString(2).padStart(8, "0")).join("");
   return /^1*0*$/.test(bits) && bits.length === 32 ? bits.indexOf("0") : -1;
 }
 function looksLikeOpenVPNConfig(input) {
@@ -24417,8 +25001,8 @@ function validateExpectedStatus(value) {
   if (!normalized || normalized === "*") {
     return true;
   }
-  const parts = normalized.replaceAll(",", "/").split("/");
-  const valid = parts.length <= 28 && parts.every((part2) => {
+  const parts2 = normalized.replaceAll(",", "/").split("/");
+  const valid = parts2.length <= 28 && parts2.every((part2) => {
     if (!part2.trim()) {
       return true;
     }
@@ -24978,6 +25562,333 @@ function validateRealityTlsOption(uri, enabled) {
   return /^vless:\/\//i.test(uri) && /[?&]security=reality(?:[&#]|$)/i.test(uri) ? true : _("This TLS option requires a VLESS connection with REALITY.");
 }
 
+// src/kabanmax/tabs/sections/fingerprintOptions.ts
+function currentFingerprintSelection(map, itemId = "settings") {
+  const read = (key) => modalOptionFormValue(map, itemId, key) ?? map.data.get(map.config, itemId, key);
+  return selectedFingerprint(
+    read("tls_fingerprint"),
+    read("_tls_variant"),
+    read("_tls_original")
+  );
+}
+function addFingerprintOptions(section2, getUri) {
+  const o = section2.option(
+    form.ListValue,
+    "tls_fingerprint",
+    _("TLS fingerprint")
+  );
+  o.value("", _("Inherit from connection URI"));
+  for (const profile of selectableFingerprints) {
+    if (profile.id === "chrome_155") continue;
+    o.value(
+      profile.id,
+      profile.family === "chrome" ? "Chrome" : `${profile.label}${profile.version ? ` ${profile.version}` : ""}`
+    );
+  }
+  o.default = "";
+  o.rmempty = true;
+  o.retain = true;
+  o.load = function(id) {
+    return fingerprintFamily(
+      `${this.map.data.get(this.map.config, id, "tls_fingerprint") || ""}`
+    );
+  };
+  o.description = _(
+    "Random selects Chrome, Firefox or Safari once per process. Randomized builds a seeded ClientHello with ALPN. Neither has a browser version. Android and 360 do not support REALITY; Edge, iOS and QQ require older REALITY servers."
+  );
+  if (coreHas("utls")) {
+    for (const protocol of ["vless", "trojan", "anytls"]) {
+      for (const security of ["tls", "xtls", "reality"])
+        o.depends({
+          _uri_editor: "fields",
+          _uri_protocol: protocol,
+          _uri_security: security
+        });
+    }
+    o.depends({ _uri_editor: "fields", _uri_protocol: "https" });
+    if (connectionFingerprintSupported(
+      `${section2.map.data.get(section2.map.config, "settings", "uri") || ""}`
+    ))
+      o.depends("_uri_editor", "raw");
+  } else o.depends("_tls_unavailable", "1");
+  o.validate = function(id) {
+    const fingerprint2 = currentFingerprintSelection(this.map, id);
+    if (!fingerprint2) return true;
+    if (!fingerprintProfile(fingerprint2))
+      return _("Unsupported TLS fingerprint.");
+    if (!connectionFingerprintSupported(getUri(this.map, id), fingerprint2))
+      return _(
+        "TLS fingerprint requires a supported TCP connection with TLS enabled."
+      );
+    return validateCoreFeature("utls");
+  };
+  const variant = section2.option(
+    form.ListValue,
+    "_tls_variant",
+    _("Fingerprint version")
+  );
+  variant.value("chrome", _("Standard (Chrome 133)"));
+  variant.value("chrome_155", "Chrome 155");
+  variant.default = "chrome";
+  variant.rmempty = false;
+  variant.retain = true;
+  variant.depends("tls_fingerprint", "chrome");
+  variant.validate = (_id, value) => ["chrome", "chrome_155"].includes(`${value}`) ? true : _("Unsupported fingerprint version");
+}
+
+// src/kabanmax/tabs/sections/connectionUri.ts
+var PARAMETERS = {
+  security: ["security"],
+  sni: ["sni", "peer", "servername"],
+  alpn: ["alpn"],
+  publicKey: ["pbk", "public-key"],
+  shortId: ["sid", "short-id"],
+  fingerprint: ["fp", "client-fingerprint"],
+  flow: ["flow"],
+  encryption: ["encryption"],
+  transport: ["type", "net"],
+  host: ["host"],
+  path: ["path"],
+  serviceName: ["serviceName", "grpc-service-name", "servicename"],
+  mode: ["mode"],
+  extra: ["extra"]
+};
+var TRANSPORTS2 = /* @__PURE__ */ new Set([
+  "",
+  "tcp",
+  "raw",
+  "none",
+  "ws",
+  "websocket",
+  "grpc",
+  "gun",
+  "httpupgrade",
+  "http",
+  "h2",
+  "h3",
+  "xhttp",
+  "splithttp"
+]);
+var TLS_SCHEMES = /* @__PURE__ */ new Set(["vless", "trojan", "anytls"]);
+var URI_FINGERPRINTS = /* @__PURE__ */ new Set([
+  "",
+  ...TLS_FINGERPRINTS.map((profile) => profile.id),
+  "unsafe",
+  "none",
+  "hellogolang"
+]);
+var SCHEMES = /* @__PURE__ */ new Set([
+  ...TLS_SCHEMES,
+  "socks",
+  "socks4",
+  "socks4a",
+  "socks5",
+  "http",
+  "https"
+]);
+function decode(value, query = false) {
+  return decodeURIComponent(query ? value.replaceAll("+", " ") : value);
+}
+function parts(source) {
+  const match = /^([a-z0-9+]+):\/\/([^?#]*)(\?[^#]*)?(#.*)?$/i.exec(source);
+  if (!match)
+    throw new Error(_("Use the original URI editor for this format."));
+  const authorityEnd = match[2].lastIndexOf("@");
+  const user = authorityEnd >= 0 ? match[2].slice(0, authorityEnd) : "";
+  const endpoint = match[2].slice(authorityEnd + 1);
+  const address = /^(\[[^\]]+\]|[^:/]+)(?::([^/]*))?(\/.*)?$/.exec(endpoint);
+  if (!address) throw new Error(_("Invalid server address"));
+  return {
+    scheme: match[1],
+    user,
+    address: address[1],
+    port: address[2] || "",
+    suffix: address[3] || "",
+    query: match[3]?.slice(1) ?? "",
+    hadQuery: !!match[3],
+    fragment: match[4] || ""
+  };
+}
+function queryKey(pair) {
+  try {
+    return decode(pair.split("=", 1)[0], true).toLowerCase().replace(/^amp;/, "");
+  } catch {
+    return "";
+  }
+}
+function getParameter(query, names) {
+  for (const name of names) {
+    const pair = query.split("&").find((part2) => queryKey(part2) === name.toLowerCase());
+    if (pair == null) continue;
+    try {
+      const value = decode(
+        pair.includes("=") ? pair.slice(pair.indexOf("=") + 1) : "",
+        true
+      ).trim();
+      if (value) return value;
+    } catch {
+    }
+  }
+  return "";
+}
+function setParameter(query, names, value) {
+  const aliases = new Set(names.map((name) => name.toLowerCase()));
+  const pairs = query ? query.split("&").filter((pair) => !aliases.has(queryKey(pair))) : [];
+  if (value) pairs.push(`${names[0]}=${encodeURIComponent(value)}`);
+  return pairs.join("&");
+}
+function parseConnectionUri(source) {
+  const fields = {
+    supported: false,
+    protocol: source.split(":", 1)[0].toLowerCase(),
+    server: "",
+    port: "",
+    credential: "",
+    password: "",
+    security: "",
+    sni: "",
+    alpn: "",
+    publicKey: "",
+    shortId: "",
+    fingerprint: "",
+    flow: "",
+    encryption: "",
+    transport: "",
+    host: "",
+    path: "",
+    serviceName: "",
+    mode: "",
+    extra: ""
+  };
+  try {
+    const raw = parts(source);
+    if (!SCHEMES.has(fields.protocol)) return fields;
+    fields.server = raw.address.replace(/^\[|\]$/g, "");
+    fields.port = raw.port || (fields.protocol === "https" ? "443" : fields.protocol === "http" ? "80" : "");
+    const colon = raw.user.indexOf(":");
+    fields.credential = decode(
+      colon >= 0 ? raw.user.slice(0, colon) : raw.user
+    );
+    fields.password = colon >= 0 ? decode(raw.user.slice(colon + 1)) : "";
+    if (fields.protocol === "socks" && raw.user && colon < 0 || TLS_SCHEMES.has(fields.protocol) && colon >= 0)
+      return fields;
+    for (const key of Object.keys(PARAMETERS))
+      fields[key] = getParameter(raw.query, PARAMETERS[key]);
+    if (TLS_SCHEMES.has(fields.protocol)) {
+      fields.security || (fields.security = fields.protocol === "vless" ? "none" : "tls");
+      if (fields.protocol === "anytls" && fields.security === "none")
+        fields.security = "tls";
+      if (fields.security !== "none" && getParameter(raw.query, ["pbk"]))
+        fields.security = "reality";
+      fields.transport || (fields.transport = "tcp");
+      if (!["none", "tls", "xtls", "reality"].includes(fields.security) || !TRANSPORTS2.has(fields.transport))
+        return fields;
+      if (fields.protocol === "anytls" && fields.transport !== "tcp")
+        return fields;
+    }
+    fields.supported = true;
+  } catch {
+  }
+  return fields;
+}
+function serializeConnectionUri(source, fields) {
+  const original = parseConnectionUri(source);
+  if (!original.supported) return source;
+  if (!fields.server || /[\s/?#@%[\]]/.test(fields.server) || fields.server.includes(":") && !fields.server.includes("::") && fields.server.split(":").length < 3)
+    throw new Error(_("Invalid server address"));
+  try {
+    new URL(
+      `http://${fields.server.includes(":") ? `[${fields.server}]` : fields.server}/`
+    );
+  } catch {
+    throw new Error(_("Invalid server address"));
+  }
+  if (!/^\d+$/.test(fields.port) || +fields.port < 1 || +fields.port > 65535)
+    throw new Error(_("Port must be between 1 and 65535"));
+  if (TLS_SCHEMES.has(original.protocol) && !fields.credential)
+    throw new Error(_("Credentials are required"));
+  if (/\p{Cc}/u.test(
+    fields.credential + fields.password + fields.sni + fields.host + fields.serviceName
+  ))
+    throw new Error(_("Control characters are not allowed"));
+  if (TLS_SCHEMES.has(original.protocol) && (!TRANSPORTS2.has(fields.transport) || !["none", "tls", "xtls", "reality"].includes(fields.security)))
+    throw new Error(_("Unsupported TLS or transport value"));
+  if (original.protocol === "anytls" && fields.security === "none")
+    throw new Error(_("AnyTLS requires TLS"));
+  if (fields.fingerprint !== original.fingerprint && !URI_FINGERPRINTS.has(fields.fingerprint.toLowerCase()) && !/^(hello(?:chrome|firefox|safari|ios|edge|360|qq|android)_|hellorandomized|randomizednoalpn)/i.test(
+    fields.fingerprint
+  ))
+    throw new Error(_("Unsupported TLS fingerprint."));
+  if (original.protocol === "vless") {
+    if (!["", "xtls-rprx-vision", "xtls-rprx-vision-udp443"].includes(fields.flow))
+      throw new Error(_("Unsupported VLESS flow"));
+    if (fields.flow && ["", "none"].includes(fields.encryption) && (fields.security === "none" || !["tcp", "raw", "none"].includes(fields.transport)))
+      throw new Error(
+        _("VLESS Vision requires raw TCP with TLS or VLESS encryption")
+      );
+  }
+  if (fields.extra && fields.extra !== original.extra) {
+    try {
+      const extra = JSON.parse(fields.extra);
+      if (!extra || typeof extra !== "object" || Array.isArray(extra))
+        throw new Error();
+    } catch {
+      throw new Error(_("XHTTP extra must be a JSON object"));
+    }
+  }
+  if (fields.security === "reality" && !fields.publicKey)
+    throw new Error(_("REALITY public key is required"));
+  const raw = parts(source);
+  let query = raw.query;
+  for (const key of Object.keys(PARAMETERS)) {
+    if (fields[key] !== original[key])
+      query = setParameter(query, PARAMETERS[key], fields[key]);
+  }
+  if (fields.security !== original.security && fields.security !== "reality") {
+    query = setParameter(
+      setParameter(query, PARAMETERS.publicKey, ""),
+      PARAMETERS.shortId,
+      ""
+    );
+  }
+  let authority = raw.address + (raw.port ? `:${raw.port}` : "");
+  if (fields.server !== original.server || fields.port !== original.port)
+    authority = `${fields.server.includes(":") ? `[${fields.server}]` : fields.server}:${fields.port}`;
+  let user = raw.user;
+  if (fields.credential !== original.credential || fields.password !== original.password) {
+    user = encodeURIComponent(fields.credential);
+    if (fields.password || raw.user.includes(":"))
+      user += `:${encodeURIComponent(fields.password)}`;
+  }
+  return `${raw.scheme}://${user ? `${user}@` : ""}${authority}${raw.suffix}${query || raw.hadQuery ? `?${query}` : ""}${raw.fragment}`;
+}
+function exportConnectionUri(source, fingerprint2 = "", name = "") {
+  const fields = parseConnectionUri(source);
+  if (fingerprint2 && (!fields.supported || !TLS_SCHEMES.has(fields.protocol)))
+    throw new Error(
+      _(
+        "This format cannot export a TLS fingerprint override. Use the original URI and its separate settings."
+      )
+    );
+  let result = source;
+  if (fingerprint2) {
+    const raw = parts(source);
+    const query = setParameter(raw.query, PARAMETERS.fingerprint, fingerprint2);
+    result = `${raw.scheme}://${raw.user ? `${raw.user}@` : ""}${raw.address}${raw.port ? `:${raw.port}` : ""}${raw.suffix}?${query}${raw.fragment}`;
+  }
+  if (name && fields.supported) {
+    const marker = result.indexOf("#");
+    let currentName = "";
+    try {
+      currentName = marker >= 0 ? decode(result.slice(marker + 1)) : "";
+    } catch {
+    }
+    if (currentName !== name)
+      result = result.split("#", 1)[0] + `#${encodeURIComponent(name)}`;
+  }
+  return result;
+}
+
 // src/validators/validateProxyUrl.ts
 var NATIVE_PROXY_SCHEMES = /* @__PURE__ */ new Set([
   "anytls",
@@ -25019,6 +25930,258 @@ function validateProxyUrl(url) {
     return _("Unsupported link");
   }
   return isSubscriptionAddress(link) ? _("Probably a subscription URL: paste it into Subscription") : true;
+}
+
+// src/kabanmax/tabs/sections/connectionEditor.ts
+var FIELD_KEYS = [
+  "protocol",
+  "server",
+  "port",
+  "credential",
+  "password",
+  "security",
+  "sni",
+  "alpn",
+  "publicKey",
+  "shortId",
+  "fingerprint",
+  "flow",
+  "encryption",
+  "transport",
+  "host",
+  "path",
+  "serviceName",
+  "mode",
+  "extra"
+];
+function connectionEditorDefaults(uri) {
+  const fields = parseConnectionUri(uri);
+  return Object.fromEntries([
+    ["_uri_editor", fields.supported ? "fields" : "raw"],
+    ["_uri_source", uri],
+    ...FIELD_KEYS.map((key) => [`_uri_${key}`, fields[key]])
+  ]);
+}
+function connectionEditorUri(settings) {
+  const uri = `${settings.uri || ""}`.trim();
+  if (settings._uri_editor !== "fields") return uri;
+  if (uri !== settings._uri_source)
+    throw new Error(_("Import the changed URI into fields before saving."));
+  const fields = parseConnectionUri(uri);
+  if (!fields.supported)
+    throw new Error(_("Import this URI again or use the original URI editor."));
+  for (const key of FIELD_KEYS)
+    fields[key] = `${settings[`_uri_${key}`] ?? ""}`;
+  return serializeConnectionUri(uri, fields);
+}
+function currentSettings(map, itemId = "settings") {
+  const read = (key) => modalOptionFormValue(map, itemId, key) ?? map.data.get(map.config, itemId, key);
+  const settings = Object.fromEntries(
+    [
+      "uri",
+      "name",
+      "tls_fingerprint",
+      "_uri_editor",
+      "_uri_source",
+      ...FIELD_KEYS.map((key) => `_uri_${key}`)
+    ].map((key) => [key, read(key)])
+  );
+  settings.tls_fingerprint = currentFingerprintSelection(map, itemId);
+  return settings;
+}
+function currentConnectionEditorUri(map, itemId) {
+  try {
+    return connectionEditorUri(currentSettings(map, itemId));
+  } catch {
+    return "";
+  }
+}
+function addConnectionEditorOptions(section2, validateUri) {
+  let option2 = section2.option(
+    form.ListValue,
+    "_uri_editor",
+    _("Connection parameters")
+  );
+  option2.value("fields", _("Editable fields"));
+  option2.value("raw", _("Original URI"));
+  option2.rmempty = false;
+  option2.description = _(
+    "Fields are available for VLESS, Trojan, AnyTLS, SOCKS and HTTP proxies. Other formats keep the original URI. Unknown parameters are preserved."
+  );
+  const modeOption = option2;
+  option2.validate = (_id, value) => value !== "fields" || parseConnectionUri(
+    `${modeOption.map.data.get(modeOption.map.config, "settings", "uri") || ""}`
+  ).supported ? true : _("Use the original URI editor for this format.");
+  option2 = section2.option(form.Value, "uri", _("Original connection URI"));
+  option2.password = true;
+  option2.retain = true;
+  option2.rmempty = false;
+  option2.depends("_uri_editor", "raw");
+  option2.validate = (_id, value) => `${value || ""}`.trim() ? validateUri(`${value}`) : _("Required");
+  option2 = section2.option(form.Button, "_uri_import", _("Import URI"));
+  option2.inputtitle = _("Import into fields");
+  option2.depends("_uri_editor", "raw");
+  option2.onclick = () => {
+    const raw = `${modalOptionFormValue(section2.map, "settings", "uri") ?? ""}`.trim();
+    const defaults = connectionEditorDefaults(raw);
+    if (defaults._uri_editor === "raw") {
+      showToast(
+        _(
+          "This format stays in the original URI editor; its data is preserved."
+        ),
+        "error"
+      );
+      return;
+    }
+    setModalOptionValue(section2.map, modeOption, "raw");
+    section2.map.data.set(section2.map.config, "settings", "uri", raw);
+    section2.map.data.set(section2.map.config, "settings", "_uri_source", raw);
+    for (const key of FIELD_KEYS) {
+      const field3 = section2.map.lookupOption(`_uri_${key}`, "settings")?.[0];
+      if (field3)
+        setModalOptionValue(section2.map, field3, defaults[`_uri_${key}`]);
+    }
+    setModalOptionValue(section2.map, modeOption, "fields");
+    section2.map.checkDepends();
+  };
+  const field2 = (key, label, protocols, choices) => {
+    const o = section2.option(
+      choices ? form.ListValue : form.Value,
+      `_uri_${key}`,
+      label
+    );
+    o.retain = true;
+    o.rmempty = false;
+    o.optional = true;
+    if (choices)
+      choices.forEach((value) => o.value(value, value || _("Default")));
+    if (protocols)
+      protocols.forEach((protocol) => {
+        const tlsField = [
+          "sni",
+          "alpn",
+          "publicKey",
+          "shortId",
+          "fingerprint"
+        ].includes(key);
+        if (tlsField) {
+          const securityModes = ["publicKey", "shortId"].includes(key) ? ["reality"] : ["tls", "xtls", "reality"];
+          securityModes.forEach(
+            (security) => o.depends({
+              _uri_editor: "fields",
+              _uri_protocol: protocol,
+              _uri_security: security
+            })
+          );
+        } else o.depends({ _uri_editor: "fields", _uri_protocol: protocol });
+      });
+    else o.depends("_uri_editor", "fields");
+    return o;
+  };
+  const tls = ["vless", "trojan", "anytls"];
+  const transport3 = ["vless", "trojan"];
+  field2("protocol", _("Protocol")).readonly = true;
+  field2("server", _("Server address"));
+  field2("port", _("Server port"));
+  const credential = field2("credential", _("UUID / username / password"));
+  credential.password = true;
+  credential.description = _(
+    "VLESS: UUID. Trojan and AnyTLS: server password. HTTP and SOCKS: username."
+  );
+  field2("password", _("Account password"), [
+    "socks",
+    "socks5",
+    "http",
+    "https"
+  ]).password = true;
+  field2("security", _("TLS / REALITY"), tls, [
+    "none",
+    "tls",
+    "xtls",
+    "reality"
+  ]);
+  field2("sni", _("TLS server name (SNI)"), tls);
+  field2("alpn", _("TLS ALPN (comma separated)"), tls).description = _(
+    "WebSocket, gRPC, HTTPUpgrade and HTTP transports select ALPN in the core; this value applies only where the transport permits it."
+  );
+  field2("publicKey", _("REALITY public key"), tls);
+  field2("shortId", _("REALITY short ID"), tls).password = true;
+  const fingerprint2 = field2("fingerprint", _("Fingerprint in URI"), tls);
+  selectableFingerprints.forEach(
+    (profile) => fingerprint2.value(profile.id, fingerprintLabel(profile.id))
+  );
+  fingerprint2.description = _(
+    "The separate TLS fingerprint below overrides this value. Copy link exports the effective fingerprint."
+  );
+  field2("flow", _("VLESS flow"), ["vless"]);
+  field2("encryption", _("VLESS encryption"), ["vless"]);
+  field2("transport", _("Transport"), transport3, [
+    "tcp",
+    "raw",
+    "none",
+    "ws",
+    "websocket",
+    "grpc",
+    "gun",
+    "httpupgrade",
+    "http",
+    "h2",
+    "h3",
+    "xhttp",
+    "splithttp"
+  ]);
+  for (const [key, label] of [
+    ["host", _("Transport host")],
+    ["path", _("Transport path")],
+    ["serviceName", _("gRPC service name")],
+    ["mode", _("XHTTP mode")],
+    ["extra", _("XHTTP extra (JSON)")]
+  ]) {
+    const o = field2(key, label, []);
+    const transports = key === "serviceName" ? ["grpc", "gun"] : key === "mode" || key === "extra" ? ["xhttp", "splithttp"] : [
+      "ws",
+      "websocket",
+      "httpupgrade",
+      "http",
+      "h2",
+      "h3",
+      "xhttp",
+      "splithttp"
+    ];
+    transport3.forEach(
+      (protocol) => transports.forEach(
+        (type) => o.depends({
+          _uri_editor: "fields",
+          _uri_protocol: protocol,
+          _uri_transport: type
+        })
+      )
+    );
+    if (key === "extra") o.password = true;
+  }
+  option2 = section2.option(form.Button, "_uri_export", _("Export connection"));
+  option2.inputtitle = _("Copy link");
+  option2.description = _(
+    "Copies effective portable parameters. ClientHello splitting, classical key exchange and cascade settings remain local and are not included in a share URI."
+  );
+  option2.onclick = () => {
+    try {
+      const settings = currentSettings(section2.map);
+      const uri = connectionEditorUri(settings);
+      copyToClipboard(
+        exportConnectionUri(
+          uri,
+          `${settings.tls_fingerprint || ""}`,
+          `${settings.name || ""}`
+        )
+      );
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : _("Unable to export this connection"),
+        "error"
+      );
+    }
+  };
 }
 
 // src/kabanmax/tabs/sections/cascade.ts
@@ -25106,6 +26269,50 @@ function connectionLinkListItemLabel(sectionId, value) {
     listedLinkName(sectionId, value)
   );
 }
+function updateManualLinkReferences(sectionId, previousName, nextName = "") {
+  if (!previousName || previousName === nextName) return;
+  const groups = new Set(getChildItemIds(sectionId, "fallback_group"));
+  const filters = [
+    ...uci.sections(KABANMAX_UCI_PACKAGE, "fallback_level").filter((level) => groups.has(`${level.group || ""}`)),
+    ...uci.sections(KABANMAX_UCI_PACKAGE, "urltest").filter((group) => group.section === sectionId)
+  ];
+  filters.forEach((level) => {
+    for (const key of ["include_outbounds", "exclude_outbounds"]) {
+      const names = L.toArray(level[key]).map((name) => `${name}`);
+      if (!names.some((name) => `${name}`.trim() === previousName)) continue;
+      const updated = names.flatMap(
+        (name) => `${name}`.trim() === previousName ? nextName ? [nextName] : [] : [name]
+      );
+      if (updated.length) {
+        uci.set(KABANMAX_UCI_PACKAGE, level[".name"], key, updated);
+      } else {
+        uci.unset(KABANMAX_UCI_PACKAGE, level[".name"], key);
+      }
+    }
+  });
+  const urltestOption = outboundNameSourceOptions.get("urltest");
+  if (urltestOption) {
+    for (const settings of Object.values(
+      childPendingSettingsStore(urltestOption, sectionId)
+    )) {
+      for (const key of ["include_outbounds", "exclude_outbounds"]) {
+        const values = L.toArray(settings[key]).map((value) => `${value}`);
+        if (!values.some((value) => value.trim() === previousName)) continue;
+        const updated = values.flatMap(
+          (value) => value.trim() === previousName ? nextName ? [nextName] : [] : [value]
+        );
+        if (updated.length) settings[key] = updated;
+        else delete settings[key];
+      }
+    }
+  }
+}
+function removeConnectionLinkReferences(itemId) {
+  updateManualLinkReferences(
+    `${uci.get(KABANMAX_UCI_PACKAGE, itemId, "section") || ""}`,
+    `${uci.get(KABANMAX_UCI_PACKAGE, itemId, "name") || ""}`.trim()
+  );
+}
 function connectionLinkSettingsKeys() {
   return [
     "name",
@@ -25121,13 +26328,55 @@ function writeTrimmed(itemId, value) {
 }
 function showConnectionLinkSettingsModal(sectionId, itemValue, option2, widget, itemNode) {
   const name = listedLinkName(sectionId, `${itemValue ?? ""}`);
+  let editorMap;
   return showChildItemSettingsModal(sectionId, itemValue, option2, {
     typeName: "connection_link",
     valueOption: "uri",
     keys: connectionLinkSettingsKeys(),
     itemNode,
-    defaults: (inputValue) => ({ uri: inputValue, name }),
+    defaults: (inputValue) => ({
+      uri: inputValue,
+      name,
+      ...connectionEditorDefaults(inputValue),
+      ...fingerprintSelectionDefaults(
+        `${uci.get(KABANMAX_UCI_PACKAGE, `${itemValue || ""}`, "tls_fingerprint") || ""}`
+      )
+    }),
+    prepareSave: (settings) => {
+      settings = {
+        ...settings,
+        tls_fingerprint: currentFingerprintSelection(editorMap)
+      };
+      const uri = connectionEditorUri({
+        ...settings,
+        uri: modalOptionFormValue(editorMap, "settings", "uri") ?? settings.uri
+      });
+      const validation = validateConnectionLink(uri);
+      if (validation !== true) throw new Error(validation);
+      const parsed = parseConnectionUri(uri);
+      const effectiveFingerprint = `${settings.tls_fingerprint || parsed.fingerprint}`;
+      if (parsed.security === "reality" && fingerprintProfile(effectiveFingerprint)?.reality === "unsupported")
+        throw new Error(_("This fingerprint does not support REALITY."));
+      for (const key of ["tls_record_fragment", "tls_classical"]) {
+        const result = validateRealityTlsOption(uri, settings[key]);
+        if (result !== true) throw new Error(result);
+      }
+      if (settings.tls_fingerprint && !connectionFingerprintSupported(uri, `${settings.tls_fingerprint}`))
+        throw new Error(
+          _(
+            "TLS fingerprint requires a supported TCP connection with TLS enabled."
+          )
+        );
+      if (settings.tls_fingerprint) {
+        if (!fingerprintProfile(`${settings.tls_fingerprint}`))
+          throw new Error(_("Unsupported TLS fingerprint."));
+        const coreValidation = validateCoreFeature("utls");
+        if (coreValidation !== true) throw new Error(coreValidation);
+      }
+      return { ...settings, uri };
+    },
     addOptions: (itemSection) => {
+      editorMap = itemSection.map;
       let o = itemSection.option(form.Value, "name", _("Server name"));
       o.write = writeTrimmed;
       o.validate = required(function(_itemId, value) {
@@ -25139,10 +26388,7 @@ function showConnectionLinkSettingsModal(sectionId, itemValue, option2, widget, 
           value
         );
       });
-      o = itemSection.option(form.Value, "uri", _("Connection URI"));
-      o.password = true;
-      o.write = writeTrimmed;
-      o.validate = required((_itemId, value) => validateConnectionLink(value));
+      addConnectionEditorOptions(itemSection, validateConnectionLink);
       o = itemSection.option(
         form.Flag,
         "tls_record_fragment",
@@ -25155,7 +26401,7 @@ function showConnectionLinkSettingsModal(sectionId, itemValue, option2, widget, 
       o.rmempty = true;
       o.validate = function(itemId, value) {
         return validateRealityTlsOption(
-          `${currentOptionValue(this, itemId, "uri") || ""}`,
+          currentConnectionEditorUri(this.map, itemId),
           value
         );
       };
@@ -25171,33 +26417,11 @@ function showConnectionLinkSettingsModal(sectionId, itemValue, option2, widget, 
       o.rmempty = true;
       o.validate = function(itemId, value) {
         return validateRealityTlsOption(
-          `${currentOptionValue(this, itemId, "uri") || ""}`,
+          currentConnectionEditorUri(this.map, itemId),
           value
         );
       };
-      o = itemSection.option(
-        form.ListValue,
-        "tls_fingerprint",
-        _("TLS fingerprint")
-      );
-      o.value("", _("Inherit from connection URI"));
-      for (const fingerprint2 of CLIENT_FINGERPRINTS)
-        o.value(fingerprint2, fingerprint2);
-      o.default = "";
-      o.rmempty = true;
-      o.validate = function(itemId, value) {
-        if (!value) return true;
-        if (!CLIENT_FINGERPRINTS.includes(`${value}`))
-          return _("Unsupported TLS fingerprint.");
-        if (!connectionFingerprintSupported(
-          `${currentOptionValue(this, itemId, "uri") || ""}`,
-          `${value}`
-        ))
-          return _(
-            "TLS fingerprint requires a supported TCP connection with TLS enabled."
-          );
-        return validateCoreFeature("utls");
-      };
+      addFingerprintOptions(itemSection, currentConnectionEditorUri);
       addCascadeOptions(
         itemSection,
         () => sectionId,
@@ -25206,6 +26430,11 @@ function showConnectionLinkSettingsModal(sectionId, itemValue, option2, widget, 
     },
     title: () => name ? _("Server: %s").format(name) : _("Server settings"),
     afterSave: (_itemId, _inputValue, settings) => {
+      updateManualLinkReferences(
+        sectionId,
+        name,
+        `${settings.name || ""}`.trim()
+      );
       updateDynamicListItemLabel(itemNode, `${settings.name || ""}`.trim());
       refreshLiveChoiceWidgets(sectionId);
     }
@@ -28314,6 +29543,7 @@ function createSectionContent(section2) {
   let o;
   section2.tab("settings", _("Route"));
   section2.tab("conditions", _("Conditions"));
+  attachAutoRouting(section2);
   o = section2.taboption("settings", form.Flag, "enabled", _("Enable"));
   o.default = "1";
   o.rmempty = false;
@@ -28450,7 +29680,9 @@ function createSectionContent(section2) {
   links.modalonly = true;
   links.childType = "connection_link";
   links.entriesAreSections = true;
+  links.openSettingsOnAdd = true;
   links.childValueOption = "uri";
+  links.removeNestedChildItems = removeConnectionLinkReferences;
   links.createId = () => nextSectionId("connection_link");
   links.childDefaults = {
     name: (value, sectionId) => nextLinkName(sectionId, links, `${value ?? ""}`)
@@ -29911,7 +31143,15 @@ function addSecurityOptions(section2) {
     "client_fingerprint",
     _("Client fingerprint")
   );
-  CLIENT_FINGERPRINTS.forEach((value) => o.value(value, value));
+  selectableFingerprints.forEach(
+    (profile) => o.value(profile.id, fingerprintLabel(profile.id))
+  );
+  o.load = function(id) {
+    const value = form.ListValue.prototype.load.call(this, id);
+    if (fingerprintProfile(`${value || ""}`)?.aliasOf)
+      this.value(`${value}`, fingerprintLabel(`${value}`));
+    return value;
+  };
   o.default = DEFAULT_CLIENT_FINGERPRINT;
   o.rmempty = true;
   o.modalonly = true;

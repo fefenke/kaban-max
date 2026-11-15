@@ -51,9 +51,86 @@ t.test("the running core is the service's sing-box run, not a one-shot command",
 
 const CHECK = /'sing-box' '--disable-color' '-c' .* 'check'/;
 
+t.test("missing and LuCI-omitted default paths still write, configure and re-read the same runtime", () => {
+    let common = require("core.common");
+    let real = { readfile: fs.readfile, ensure_dir: common.ensure_dir, write_file_atomic: common.write_file_atomic };
+    let written = null;
+    let ensured = [];
+    // Exercise real default names without writing the test host's /etc or /tmp/sing-box.
+    fs.readfile = (path) => path == "/etc/sing-box/config.json" ? written : real.readfile(path);
+    common.ensure_dir = (path) => {
+        if (path != "/tmp/sing-box")
+            return real.ensure_dir(path);
+        push(ensured, path);
+        return true;
+    };
+    common.write_file_atomic = (path, text) => {
+        t.eq(path, "/etc/sing-box/config.json");
+        written = text;
+        return true;
+    };
+    let failure = null;
+    try {
+        for (let extra in [ { config_path: null, cache_path: null }, { config_path: "", cache_path: "" },
+            { config_path: "/etc/sing-box/config.json", cache_path: "/tmp/sing-box/cache.db" } ]) {
+            let data = configuration(stub.tmpdir(), extra);
+            data.settings.output_network_interface = "testwan";
+            if (extra.config_path == null) {
+                delete data.settings.config_path;
+                delete data.settings.cache_path;
+            }
+            fixture.seed(data);
+            tools([ [ CHECK, {} ] ]);
+            runtime.write_config(false);
+            runtime.configure_service();
+            t.eq(core_uci.get("sing-box.main.conffile"), "/etc/sing-box/config.json");
+            t.eq(json(fs.readfile("/etc/sing-box/config.json")).experimental.cache_file.path, "/tmp/sing-box/cache.db");
+            t.eq(runtime.bound_devices(), [ "testwan" ], "runtime re-reads the effective default path");
+            t.eq(runtime.write_config(false), false, "a second save is a no-op");
+            stub.restore();
+        }
+        t.ok(length(ensured) >= 3, "the default cache directory is prepared on every save");
+    }
+    catch (e) { failure = e; }
+    fs.readfile = real.readfile;
+    common.ensure_dir = real.ensure_dir;
+    common.write_file_atomic = real.write_file_atomic;
+    stub.restore();
+    if (failure != null)
+        die(failure.message);
+});
+
 function checks_run() {
     return length(filter(stub.command_lines(), (line) => match(line, / check$/)));
 }
+
+t.test("WARP first apply, no-op, unrelated edits and obfuscation use the actual generated config", () => {
+    let dir = stub.tmpdir();
+    let data = configuration(dir);
+    push(data.section, { ".name": "disabled", enabled: "0", action: "connection", destinations: "old.example" });
+    data.tunnel = [ { ".name": "warp", section: "main", kind: "warp", name: "WARP",
+        warp_profile_id: "test-id", warp_profile_auth_token: "test-token", warp_profile_private_key: "test-key",
+        amnezia_jc: "4", amnezia_jmin: "10", amnezia_jmax: "20", amnezia_i1: "<r 2>" } ];
+    fixture.seed(data);
+    tools([ [ CHECK, {} ] ]);
+    t.eq(runtime.write_config(false), true, "first apply writes WARP immediately");
+    let path = dir + "/etc/sing-box/config.json";
+    let first = fs.readfile(path);
+    t.eq(json(first).endpoints[0].amnezia.i1, "<r 2>");
+    t.eq(runtime.write_config(false), false, "no-op does not request a core reload");
+    data.settings.badwan_reload_delay = "3000";
+    data.section[1].destinations = "new.example";
+    fixture.seed(data);
+    t.eq(runtime.write_config(false), false, "monitoring and a disabled section do not touch WARP");
+    t.eq(fs.readfile(path), first);
+    data.tunnel[0].amnezia_i1 = "<r 4>";
+    fixture.seed(data);
+    t.eq(runtime.write_config(false), true, "a real WARP edit is checked and applied on the first attempt");
+    t.eq(json(fs.readfile(path)).endpoints[0].amnezia.i1, "<r 4>");
+    t.eq(runtime.write_config(false), false, "the following save needs no second initialization");
+    t.eq(checks_run(), 2);
+    stub.restore();
+});
 
 t.test("the configuration is written where the service reads it, and only when it changed", () => {
     let dir = stub.tmpdir();

@@ -1,9 +1,13 @@
 import {
   ALPN_PROTOCOLS,
-  CLIENT_FINGERPRINTS,
+  selectableFingerprints,
   DEFAULT_CLIENT_FINGERPRINT,
   TRANSPORTS,
 } from '../constants';
+import {
+  fingerprintProfile,
+  fingerprintLabel,
+} from '../../../services/tlsFingerprints';
 import { configureMaterialOption } from '../../../cbi/material';
 import { message } from '../../../../validators/messages';
 import {
@@ -224,7 +228,15 @@ export function addSecurityOptions(section: CBISection) {
     'client_fingerprint',
     _('Client fingerprint'),
   );
-  CLIENT_FINGERPRINTS.forEach((value: string) => o.value(value, value));
+  selectableFingerprints.forEach((profile) =>
+    o.value(profile.id, fingerprintLabel(profile.id)),
+  );
+  o.load = function (id: string) {
+    const value = form.ListValue.prototype.load.call(this, id);
+    if (fingerprintProfile(`${value || ''}`)?.aliasOf)
+      this.value(`${value}`, fingerprintLabel(`${value}`));
+    return value;
+  };
   o.default = DEFAULT_CLIENT_FINGERPRINT;
   o.rmempty = true;
   o.modalonly = true;

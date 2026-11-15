@@ -1,5 +1,52 @@
 # Изменения
 
+## 0.1.6 — предварительная версия
+
+- Core 1.14.4-r11, pinned upstream + patches 0001–0007: mixed DNS/FakeIP isolation, scoped fail-closed и opt-in проверка маршрута. Обычный HTTPS даёт ручное предложение; auto-apply требует strict nonce-контракта.
+- Редактор VPN, общий каталог TLS fingerprints, сохранение ссылок Fallback/URLTest, исправления DNS/WARP transport и mark-масок.
+- Журналы, статусы обновлений/Zapret2 и гонки установщика. LuCI резервирует infrastructure tag; release gate различает minimum r10 и поставляемое r11.
+- Локально frontend 175/1682, backend 91/91, race/executable smoke, 10 IPK/APK и SHA256 PASS. OpenWrt/egress/ARM64 runtime не проверялись; это не stable. [Команды](docs/TESTING.md).
+
+## 2026-11-16 — №04Б-ФИНАЛ (не выпущено)
+
+Обычные HTTPS-проверки конкретного IP без nonce с ручными предложениями; строгий nonce auto-apply сохранён. IP-only диагностика без перенаправления, evidence/eligibility в LuCI, защита соседних A/AAAA и от auto-apply при web recheck. Отдельный patch 0007/test r11, без release/установки. [Контракт](docs/AUTO_ROUTING_IMPLEMENTATION_04B.md).
+
+
+## Локально 2026-11-15 — №04Б (не выпущено)
+
+Opt-in HTTPS nonce verifier, domain/IP-scoped runtime redirects Zapret2 → Direct → concrete WARP, bounded observations, TTL/rollback/suppression и LuCI automatic lists. Test core r11 расширяет r10 отдельным patch; без opt-in глобальный минимум r10. [Ограничения и проверки](docs/AUTO_ROUTING_IMPLEMENTATION_04B.md).
+
+
+## Локально, не выпущено — ТЗ №04, частично
+
+- Прогноз маршрута для non-DNS TCP в диагностике LuCI и CLI `check_route`, без DNS-проб, selector и UCI-мутаций.
+- Неизвестные условия не разрешают Direct; Block сохраняет порядок и source/port scope.
+- Автоподбор и автосписки секций пока недоступны: ограничения независимого probe evidence r10 и CDN scope описаны в `docs/AUTO_ROUTING_DIAGNOSTICS_04.md`. Ядро не изменено.
+
+## Локально, не выпущено — ТЗ №02
+
+- Локальные DNS-зоны dnsmasq `local/server`, сохранение чужих mark-битов и избирательные исключения исходящего трафика KABANMAX.
+- Смешанный IP-Bypass DNS сохраняет FakeIP; core ограничивает dial адресами выбранного правила, не переводя остальные в Direct.
+- Scoped fail-closed для remote set без первого корректного содержимого; nft pending и повторное включение guards при замене core.
+- Локальный core/minimum `1.14.4-r10`, прежний upstream + patches 0001–0005. Пакеты не собирались и не публиковались. Проверки и ограничения: `docs/TESTING.md`, `docs/STARTUP_DNS_DEVICES_02.md`.
+
+## ???????? 2026-11-15 ? DNS / UCI / GeoIP (?? ????????)
+
+- Backend defaults config/cache path ?????????? ???????? UCI defaults; runtime, lifecycle, Clash API ? ??????????? ?????????? ???? ????.
+- ???????? resolver ??????? ?? ????????????????? bootstrap ??? DNS detour; ????????? ????????/WARP API ?? ??????? ?? DNS ????? ???? VPN.
+- DNS SRS query-??????? ?????????? ????????; IP Bypass ??? ?????? ?????????? evaluate/respond ?? ??????? FakeIP. nft IPv4/IPv6 ???????? ?????????? ??? ????????? ?????????.
+- ????????? ???????? ?????/??, ?????? AI_HANDOFF. 38 ??????? backend-?????? ? ??? core-?????? race-?????? passed. ???????/????????? ??????? ?? ???????????; ??????????? ??????? ? AI_HANDOFF/TESTING.
+
+## Не выпущено
+
+- WARP: запросы Cloudflare API используют dialer ядра с обходом собственного перехвата; автоматическая регистрация также учитывает выбранную секцию запросов профиля. Добавлены локальные регрессии Save & Apply и повторов API. Полевые проверки холодного старта ещё требуются.
+
+- uTLS: общий каталог и выбор семейства/версии (Chrome 133/155), Randomized, QQ и 360. Дублирующие Chrome-алиасы сохранены для старых настроек, но не предлагаются новым выбором. Проверены действительные ClientHello/handshake/parser и ограничения REALITY; ядро и uTLS не обновлялись.
+
+- Редактор параметров VLESS/REALITY, Trojan, AnyTLS и основных HTTP(S)/SOCKS-полей: импорт, редактирование без пересоздания записи и явный экспорт с эффективным fingerprint. Неизвестные параметры и URI без правок сохраняются; специальные форматы остаются raw. Добавлены русские подписи и регрессии сохранения, ссылок URLTest/Fallback и жизненного цикла старых TCP-сессий при reload.
+
+- Fallback: переименование ручного VPN-подключения обновляет точные списки выбранных/исключённых серверов в уровнях этой секции; удаление очищает ссылки, чтобы новое одноимённое подключение не наследовало старый выбор. Порядок уровней и схема UCI сохранены.
+
 ## 0.1.5 — предварительная версия
 
 - Ядро 1.14.4-r9: отдельный отпечаток `chrome_155` из закреплённого uTLS-lx. Обычный `chrome` остаётся Chrome 133; значение сохраняется в ссылках и подписках. Добавлен выбор в параметрах клиента сервера.
@@ -43,3 +90,5 @@
 - Независимый таймер восстановления основного подключения при работе на резерве.
 - Состояния подключений и история переключений в интерфейсе.
 - Пакеты APK/IPK и русский перевод.
+
+Локальная реорганизация и разработческая документация: [docs/CHANGELOG.md](docs/CHANGELOG.md).

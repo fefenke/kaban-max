@@ -1,0 +1,18 @@
+[
+  { "id": "chrome", "family": "chrome", "label": "Chrome", "version": "133", "reality": "modern", "client": "Chrome" },
+  { "id": "chrome_155", "family": "chrome", "label": "Chrome", "version": "155", "reality": "modern", "client": "Chrome" },
+  { "id": "firefox", "family": "firefox", "label": "Firefox", "version": "148", "reality": "modern", "client": "Firefox" },
+  { "id": "edge", "family": "edge", "label": "Edge", "version": "85", "reality": "legacy", "client": "Edge" },
+  { "id": "safari", "family": "safari", "label": "Safari", "version": "26.3", "reality": "modern", "client": "Safari" },
+  { "id": "ios", "family": "ios", "label": "iOS", "version": "14", "reality": "legacy", "client": "iOS" },
+  { "id": "android", "family": "android", "label": "Android / OkHttp", "version": "11", "reality": "unsupported", "client": "Android" },
+  { "id": "random", "family": "random", "label": "Random", "version": "", "reality": "modern" },
+  { "id": "randomized", "family": "randomized", "label": "Randomized", "version": "", "reality": "modern" },
+  { "id": "qq", "family": "qq", "label": "QQ", "version": "11.1", "reality": "legacy", "client": "QQBrowser" },
+  { "id": "360", "family": "360", "label": "360", "version": "7.5", "reality": "unsupported", "client": "360Browser" },
+  { "id": "chrome_psk", "family": "chrome", "label": "Chrome", "version": "133", "reality": "modern", "aliasOf": "chrome", "client": "Chrome" },
+  { "id": "chrome_psk_shuffle", "family": "chrome", "label": "Chrome", "version": "133", "reality": "modern", "aliasOf": "chrome", "client": "Chrome" },
+  { "id": "chrome_padding_psk_shuffle", "family": "chrome", "label": "Chrome", "version": "133", "reality": "modern", "aliasOf": "chrome", "client": "Chrome" },
+  { "id": "chrome_pq", "family": "chrome", "label": "Chrome", "version": "133", "reality": "modern", "aliasOf": "chrome", "client": "Chrome" },
+  { "id": "chrome_pq_psk", "family": "chrome", "label": "Chrome", "version": "133", "reality": "modern", "aliasOf": "chrome", "client": "Chrome" }
+]

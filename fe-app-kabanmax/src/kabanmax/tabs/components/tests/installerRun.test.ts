@@ -111,6 +111,47 @@ afterEach(() => {
 });
 
 describe('following a run of install.sh', () => {
+  it.each(['cancelled', 'failed'] as const)('can retry after a %s run without package changes', async (outcome) => {
+    const page = setup({ output: 'old output' });
+    page.run.setShown(true);
+    await vi.advanceTimersByTimeAsync(1);
+    if (outcome === 'cancelled') await page.run.stop();
+    Object.assign(page.router, { running: false, exit: 1 });
+    await vi.advanceTimersByTimeAsync(501);
+    expect(page.state()).toMatchObject({ running: false, exit: 1, after: null });
+    Object.assign(page.router, { id: 'r9', running: true, exit: null, stopRequested: false, output: 'retry output' });
+    await page.run.start('update');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(page.api.start).toHaveBeenCalledTimes(1);
+    expect(page.state()).toMatchObject({ id: 'r9', running: true, stopping: false, exit: null });
+    expect(page.written.slice(-2)).toEqual(['<reset>', 'retry output']);
+    expect(page.after).toEqual([]);
+  });
+
+  it('waits for the required reload before allowing another operation', async () => {
+    const page = setup({ changed: true });
+    page.run.setShown(true);
+    await vi.advanceTimersByTimeAsync(1);
+    page.router.running = false;
+    page.router.exit = 0;
+    await vi.advanceTimersByTimeAsync(401);
+    await page.run.start('update');
+    expect(page.api.start).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(AFTER_RUN_MS + 1);
+    expect(page.after).toEqual(['reload']);
+  });
+  it('does not let an older status response replace a newly started operation', async () => {
+    const page = setup({ id: '' });
+    let finish!: (value: KabanMax.InstallerSnapshot) => void;
+    page.api.status.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    page.run.setShown(true);
+    await vi.advanceTimersByTimeAsync(1);
+    await page.run.start('update');
+    finish({ id: '', running: false });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(page.state().id).toBe('r9');
+    expect(page.state().running).toBe(true);
+  });
   it('follows only the phase the router reports and clears it when absent', async () => {
     const page = setup({ phase: 'download' });
     page.run.setShown(true);

@@ -85,6 +85,7 @@ export function createInstallerRun(options: {
   let failingSince: number | null = null;
   // this page asked for a stop the router has not reported yet
   let stopAsked = false;
+  let generation = 0;
 
   const emit = () => options.onChange({ ...state });
   const shouldPoll = () => state.running || (shown && !state.loaded);
@@ -146,16 +147,21 @@ export function createInstallerRun(options: {
   }
 
   async function poll() {
+    const requestedGeneration = generation;
     try {
       let snapshot: KabanMax.InstallerSnapshot | null = null;
       if (hot && state.id) {
         const read = await options.api.read(state.id, offset);
+        if (requestedGeneration !== generation) return;
         hot = !read.gone;
         snapshot = read.snapshot;
       }
-      apply(snapshot ?? (await options.api.status(offset)));
+      snapshot ??= await options.api.status(offset);
+      if (requestedGeneration !== generation) return;
+      apply(snapshot);
       failingSince = null;
     } catch {
+      if (requestedGeneration !== generation) return;
       failingSince ??= Date.now();
     }
     state.lost =
@@ -206,9 +212,10 @@ export function createInstallerRun(options: {
       purge = false,
       release?: string,
     ): Promise<void> {
-      if (state.running || state.starting) {
+      if (state.running || state.starting || state.after) {
         return;
       }
+      generation++;
       state.starting = true;
       emit();
       try {
