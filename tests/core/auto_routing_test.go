@@ -1,6 +1,7 @@
 package autoroute
 
 import (
+	"errors"
 	"context"
 	"crypto/x509"
 	"encoding/json"
@@ -77,7 +78,11 @@ func testManager(t *testing.T, failBody string) (*Manager, Query, *testOutbound,
 	m.Lookup = func(context.Context, string) ([]netip.Addr, uint32, error) {
 		return []netip.Addr{netip.MustParseAddr("203.0.113.7")}, 60, nil
 	}
-	return m, Query{IP: "203.0.113.7", Domain: "example.com", SourceIP: "192.0.2.8", Inbound: "tproxy-in", Port: 443, Source: "zap"}, zap, direct
+	q:=Query{IP: "203.0.113.7", Domain: "example.com", SourceIP: "192.0.2.8", Inbound: "tproxy-in", Port: 443, Source: "zap"}
+	m.LogFailure=func(Event,error)bool{return true}
+	meta:=metadata(q);event:=m.Observe(&meta,q.Source)
+	m.Failed(event,errors.New("synthetic connection timeout"))
+	return m,q,zap,direct
 }
 
 func TestAutoProbeAndLease(t *testing.T) {
@@ -239,7 +244,7 @@ func TestAutoWARPIndependentPermissionAndDNSChange(t *testing.T) {
 	}
 }
 
-func TestAutoNoProgressUsesInboundDirection(t *testing.T) {
+func TestAutoDoesNotMonitorByteCounters(t *testing.T) {
 	m, q, _, _ := testManager(t, "fail:")
 	meta := metadata(q)
 	e := m.Observe(&meta, "zap")
@@ -252,8 +257,8 @@ func TestAutoNoProgressUsesInboundDirection(t *testing.T) {
 	if _, err := watched.Read(b); err != nil {
 		t.Fatal(err)
 	}
-	if e.Upload != 7 || e.Download != 0 {
-		t.Fatalf("inbound counters reversed: upload %d download %d", e.Upload, e.Download)
+	if e.Upload != 0 || e.Download != 0 || watched!=inbound {
+		t.Fatal("error-driven routing installed a byte counter watcher")
 	}
 }
 
@@ -323,6 +328,7 @@ func TestAutoSuppressionUsesStableSectionID(t *testing.T) {
 
 func TestAutoUDPIsObservedWithoutHTTPSProbe(t *testing.T) {
 	m, q, z, d := testManager(t, "fail:")
+	m.events=map[string]*Event{}
 	meta := metadata(q)
 	meta.Network = "udp"
 	meta.Destination = M.ParseSocksaddr("203.0.113.7:443")
@@ -394,6 +400,8 @@ func TestAutoRoutedFailureWithdrawsOnlyOwnLease(t *testing.T) {
 		t.Fatal("alternative was not selected")
 	}
 	replacement := m.leases[d.ID]
+	var loggedOutbound string
+	m.LogFailure=func(event Event,err error)bool{loggedOutbound=event.Source;return true}
 	delete(m.leases, d.ID)
 	replacement.ID = "replacement-lease"
 	m.leases[replacement.ID] = replacement
@@ -401,6 +409,7 @@ func TestAutoRoutedFailureWithdrawsOnlyOwnLease(t *testing.T) {
 	if len(m.leases) != 1 {
 		t.Fatal("late failure revoked a replacement")
 	}
+	if event.Failure!=nil || loggedOutbound!="direct-out" {t.Fatal("alternative error admitted as original",loggedOutbound)}
 	event = m.Observe(&meta, q.Source)
 	if m.SelectForEvent(context.Background(), q.Source, &meta, event) != "direct-out" {
 		t.Fatal("replacement not selected")
@@ -409,6 +418,7 @@ func TestAutoRoutedFailureWithdrawsOnlyOwnLease(t *testing.T) {
 	if len(m.leases) != 0 || len(m.history) == 0 || m.history[len(m.history)-1].Status != "rolled_back" {
 		t.Fatal("failed alternative remained active", m.leases, m.history)
 	}
+	if event.Failure!=nil || loggedOutbound!="direct-out" {t.Fatal("alternative error admitted as original",loggedOutbound)}
 	if m.Select(context.Background(), q.Source, &meta) != q.Source {
 		t.Fatal("rollback did not restore source")
 	}

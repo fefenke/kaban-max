@@ -1,5 +1,9 @@
 # Безопасность разработки и публикации
 
+## 0.1.9 / r13 — разрешение после своей ошибки
+
+Новый пользовательский контракт разрешает opt-in auto-apply обычного HTTPS после настоящей logged failure своей выигравшей Zapret-секции и повторных проверенных ответов альтернативы. Это не strict freshness/DPI attestation. IP-only требует валидного сертификата именно IP и содержимого HTTPS; TCP connect, reverse DNS и чужой flow не дают lease. Сохраняются first-match, точный scope, TTL, certificate checks, RU/infrastructure/VPS ограничения, ACL и API secret. NOP/Error-suppressing logger не создаёт кандидатов; отказ Direct/WARP не становится новым исходным отказом Zapret. Исторические manual-only формулировки ниже относятся к r11/r12. [Подробности](AUTO_ROUTING_019.md).
+
 ## Доработка ordinary HTTPS, 2026-11-16
 
 Обычный HTTPS не равен strict nonce freshness: только ручное предложение после двух исходных transport failures и двух пригодных ответов альтернативы. Неверный TLS, HTTP access/rate-limit/anti-bot и отсутствие identity не дают Apply. IP-only diagnostic — только TCP, после атрибуции/guards, без application success. Нет DNS expansion или lease на mixed address set; RU blackhole/VPS policy не менялись. Новые tests также network-none, без реального внешнего трафика.

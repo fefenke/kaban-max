@@ -36,4 +36,14 @@ jobs:
           cp "$GITHUB_WORKSPACE/tests/core/auto_routing_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/auto_web_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/auto_registry_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_repair_test.go" common/autoroute/
           go test -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./common/autoroute ./route ./experimental/clashapi ./experimental/cachefile
+      - name: Check error-first routing with the actual executable
+        working-directory: /tmp/kaban-core
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables openssl
+          mkdir -p /tmp/auto-fixtures
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=one.example.test -addext 'subjectAltName=DNS:one.example.test,DNS:two.example.test' -keyout /tmp/auto-fixtures/key.pem -out /tmp/auto-fixtures/cert.pem
+          CGO_ENABLED=0 go build -trimpath -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn -o /tmp/auto-core ./cmd/sing-box
+          sudo unshare --net sh -c 'ip link set lo up; exec python3 "$1" /tmp/auto-core /tmp/auto-fixtures system' sh "$GITHUB_WORKSPACE/tests/core/auto_error_binary.py"

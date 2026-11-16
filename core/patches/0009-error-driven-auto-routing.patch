@@ -1,0 +1,571 @@
+diff --git a/common/autoroute/failure.go b/common/autoroute/failure.go
+new file mode 100755
+index 0000000..4a34fa9
+--- /dev/null
++++ b/common/autoroute/failure.go
+@@ -0,0 +1,79 @@
++package autoroute
++
++import (
++	"context"
++	"errors"
++	E "github.com/sagernet/sing/common/exceptions"
++	"io"
++	"net"
++	"strings"
++	"time"
++)
++
++// Failure is created only when the original flow emits an actual error log.
++// A byte counter stall, DNS observation or a guessed source is never evidence.
++type Failure struct {
++	ID       string    `json:"id"`
++	SourceID string    `json:"source_id"`
++	Message  string    `json:"message"`
++	At       time.Time `json:"at"`
++}
++
++func connectionFailure(err error) bool {
++	if errors.Is(err, context.DeadlineExceeded) {
++		return true
++	}
++	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || E.IsClosedOrCanceled(err) {
++		return false
++	}
++	for _, marker := range []string{"NO_ERROR", "CANCEL", "body closed"} {
++		if strings.Contains(err.Error(), marker) {
++			return false
++		}
++	}
++	return true
++}
++
++func (m *Manager) loggedFailure(q Query) *Failure {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	for _, event := range m.events {
++		if event.Network == "tcp" && event.Query == q && event.Failure != nil && time.Since(event.Failure.At) <= time.Hour {
++			copy := *event.Failure
++			return &copy
++		}
++	}
++	return nil
++}
++
++// Dismiss removes the current failure/decision, without a permanent exclusion.
++func (m *Manager) registryDismiss(sourceID, id string) (any, error) {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	var q Query
++	found := false
++	if event, ok := m.events[id]; ok && event.SourceID == sourceID && event.Failure != nil {
++		q = event.Query
++		found = true
++	}
++	if decision, ok := m.decisions[id]; ok && decision.SourceID == sourceID && decision.Failure != nil {
++		q = Query{Source: decision.Source, IP: decision.IP, Domain: decision.Domain, SourceIP: decision.SourceIP, SourcePort: decision.OriginSourcePort, Inbound: decision.Inbound, Port: decision.Port}
++		found = true
++	}
++	if !found || m.sources[q.Source].ID != sourceID {
++		return nil, errors.New("source_or_record_not_found")
++	}
++	scope := m.key(q)
++	m.registryAdvance(scope)
++	for key, event := range m.events {
++		if m.key(event.Query) == scope {
++			delete(m.events, key)
++		}
++	}
++	for key, decision := range m.decisions {
++		if decision.Scope == scope {
++			delete(m.decisions, key)
++		}
++	}
++	return map[string]any{"source_id": sourceID}, nil
++}
+diff --git a/common/autoroute/lease.go b/common/autoroute/lease.go
+index 97cc946..07e7bdd 100755
+--- a/common/autoroute/lease.go
++++ b/common/autoroute/lease.go
+@@ -8,6 +8,8 @@ import (
+ )
+ 
+ type Lease struct {
++	Failure          *Failure     `json:"failure,omitempty"`
++	IPOnly           bool         `json:"ip_only,omitempty"`
+ 	Evidence         string       `json:"evidence,omitempty"`
+ 	DomainKnown      bool         `json:"domain_known"`
+ 	ID               string       `json:"id"`
+@@ -34,12 +36,15 @@ type Lease struct {
+ func (l Lease) matches(source string, m *adapter.InboundContext, now time.Time) bool {
+ 	// Choosing one address from a multi-address name here would also reroute
+ 	// connections which the original dialer would send to a healthy sibling.
+-	if len(m.DestinationAddresses) != 1 {
++	if !l.IPOnly && len(m.DestinationAddresses) != 1 {
+ 		return false
+ 	}
+ 	if !now.Before(l.Deadline) || source != l.Source || m.Network != "tcp" || m.Inbound != l.Inbound || m.Source.Addr.Unmap().String() != l.SourceIP || m.Destination.Port != l.Port {
+ 		return false
+ 	}
++	if l.IPOnly {
++		return l.Domain == "" && m.Domain == "" && m.Destination.IsIP() && m.Destination.Addr.Unmap().String() == l.IP
++	}
+ 	// Never authorize from Domain: it may have come from global reverse mapping.
+ 	if !m.Destination.IsDomain() || strings.TrimSuffix(strings.ToLower(m.Destination.Fqdn), ".") != l.Domain {
+ 		return false
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+index 46fe6d8..9b78110 100755
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -31,23 +31,25 @@ type Query struct {
+ }
+ type Event struct {
+ 	Query
+-	SourceID    string    `json:"source_id"`
+-	RoutingMark uint32    `json:"routing_mark"`
+-	DomainKnown bool      `json:"domain_known"`
+-	ID          string    `json:"id"`
+-	Network     string    `json:"network"`
+-	Status      string    `json:"status"`
+-	Reason      string    `json:"reason"`
+-	Count       int       `json:"count"`
+-	Created     time.Time `json:"created"`
+-	Updated     time.Time `json:"updated"`
+-	Upload      int64     `json:"upload"`
+-	Download    int64     `json:"download"`
+-	progress    time.Time
+-	lastJob     time.Time
+-	active      int
+-	attempted   bool
+-	routedLease string
++	Failure      *Failure  `json:"failure,omitempty"`
++	SourceID     string    `json:"source_id"`
++	RoutingMark  uint32    `json:"routing_mark"`
++	DomainKnown  bool      `json:"domain_known"`
++	ID           string    `json:"id"`
++	Network      string    `json:"network"`
++	Status       string    `json:"status"`
++	Reason       string    `json:"reason"`
++	Count        int       `json:"count"`
++	Created      time.Time `json:"created"`
++	Updated      time.Time `json:"updated"`
++	Upload       int64     `json:"upload"`
++	Download     int64     `json:"download"`
++	progress     time.Time
++	lastJob      time.Time
++	active       int
++	attempted    bool
++	routedLease  string
++	routedTarget string
+ }
+ type Decision struct {
+ 	Lease
+@@ -59,6 +61,7 @@ type Decision struct {
+ 	Scope             string       `json:"scope"`
+ }
+ type Manager struct {
++	LogFailure   func(Event, error) bool
+ 	mu           sync.Mutex
+ 	job          sync.Mutex
+ 	sources      map[string]option.KabanmaxAutoSource
+@@ -202,15 +205,12 @@ func (m *Manager) guard(ctx context.Context, q Query) (option.KabanmaxAutoSource
+ 	if !ok {
+ 		return s, errors.New("disabled_or_unattributed")
+ 	}
+-	if q.Domain == "" && s.Mode != "web" {
++	if q.Domain == "" && (s.Mode != "web" || !s.AllowIPOnly) {
+ 		return s, errors.New("identity_unknown")
+ 	}
+ 	if (s.Domain != "" && q.Domain != s.Domain) || q.Port != s.Port || m.protected(q) {
+ 		return s, errors.New("blocked_by_policy")
+ 	}
+-	if s.Mode == "web" && !m.flowKnown(q) {
+-		return s, errors.New("original_flow_not_attested")
+-	}
+ 	if e := sourceContext(s, q); e != nil {
+ 		return s, e
+ 	}
+@@ -220,6 +220,9 @@ func (m *Manager) guard(ctx context.Context, q Query) (option.KabanmaxAutoSource
+ 	if suppressedEarly {
+ 		return s, errors.New("suppressed")
+ 	}
++	if m.loggedFailure(q) == nil {
++		return s, errors.New("logged_source_failure_required")
++	}
+ 	if !m.isZapret(s) {
+ 		return s, errors.New("source_mark_unattributed")
+ 	}
+@@ -336,25 +339,8 @@ func (m *Manager) Observe(meta *adapter.InboundContext, source string) *Event {
+ 		q.IP = meta.DestinationAddresses[0].String()
+ 	}
+ 	q = normalize(q)
+-	key := m.key(q) + meta.Network
+-	m.mu.Lock()
+-	defer m.mu.Unlock()
+ 	now := time.Now()
+ 	repeats := 1
+-	for _, previous := range m.events {
+-		if m.key(previous.Query)+previous.Network == key && previous.Count >= repeats {
+-			repeats = previous.Count + 1
+-		}
+-	}
+-	if len(m.events) >= 64 {
+-		var oldest string
+-		for k, e := range m.events {
+-			if oldest == "" || e.Updated.Before(m.events[oldest].Updated) {
+-				oldest = k
+-			}
+-		}
+-		delete(m.events, oldest)
+-	}
+ 	e := &Event{Query: q, ID: id(), Network: meta.Network, Status: "observing", Count: repeats, Created: now, Updated: now, progress: now}
+ 	e.DomainKnown = q.Domain != ""
+ 	e.SourceID = s.ID
+@@ -368,7 +354,7 @@ func (m *Manager) Observe(meta *adapter.InboundContext, source string) *Event {
+ 		e.Status = "inconclusive"
+ 		e.Reason = "udp_not_supported"
+ 	}
+-	m.events[e.ID] = e
++	// Ephemeral error context only: no candidate exists before a logged failure.
+ 	return e
+ }
+ func (m *Manager) stage(q Query, status, reason string) {
+@@ -384,38 +370,8 @@ func (m *Manager) stage(q Query, status, reason string) {
+ 	}
+ }
+ 
+-type watchedConn struct {
+-	net.Conn
+-	m *Manager
+-	e *Event
+-}
+-
+-func (c *watchedConn) Read(b []byte) (int, error) {
+-	n, e := c.Conn.Read(b)
+-	c.m.mu.Lock()
+-	if n > 0 {
+-		c.e.Upload += int64(n)
+-	}
+-	c.m.mu.Unlock()
+-	return n, e
+-}
+-func (c *watchedConn) Write(b []byte) (int, error) {
+-	n, e := c.Conn.Write(b)
+-	c.m.mu.Lock()
+-	if n > 0 {
+-		c.e.Download += int64(n)
+-		c.e.attempted = false
+-		c.e.progress = time.Now()
+-	}
+-	c.m.mu.Unlock()
+-	return n, e
+-}
+-func (m *Manager) Track(c net.Conn, e *Event) net.Conn {
+-	if e == nil {
+-		return c
+-	}
+-	return &watchedConn{c, m, e}
+-}
++// Tracking byte counters is deliberately not part of error-driven routing.
++func (m *Manager) Track(c net.Conn, e *Event) net.Conn { return c }
+ 
+ func (m *Manager) Failed(e *Event, err error) {
+ 	if e == nil {
+@@ -432,15 +388,48 @@ func (m *Manager) Failed(e *Event, err error) {
+ 		}
+ 		return
+ 	}
++	if !connectionFailure(err) {
++		return
++	}
++	if e.routedLease != "" {
++		// An alternative's error cannot become an original Zapret failure.
++		if m.LogFailure != nil {
++			actual := *e
++			actual.Source = e.routedTarget
++			m.LogFailure(actual, err)
++		}
++		if lease, ok := m.leases[e.routedLease]; ok {
++			delete(m.leases, lease.ID)
++			lease.Status, lease.Reason = "rolled_back", "alternative_connection_error"
++			m.record(lease)
++		}
++		return
++	}
++	if m.LogFailure == nil || !m.LogFailure(*e, err) {
++		return
++	}
++	if e.Failure != nil {
++		return
++	}
++	for _, old := range m.events {
++		if m.key(old.Query) == m.key(e.Query) && old.Count >= e.Count {
++			e.Count = old.Count + 1
++		}
++	}
++	if len(m.events) >= 64 {
++		var oldest string
++		for key, item := range m.events {
++			if oldest == "" || item.Updated.Before(m.events[oldest].Updated) {
++				oldest = key
++			}
++		}
++		delete(m.events, oldest)
++	}
++	m.events[e.ID] = e
++	e.Failure = &Failure{ID: e.ID, SourceID: e.SourceID, Message: err.Error(), At: time.Now()}
+ 	e.Status = "detected"
+ 	e.attempted = false
+ 	e.Reason = "connection_error"
+-	if lease, ok := m.leases[e.routedLease]; ok {
+-		delete(m.leases, lease.ID)
+-		lease.Status, lease.Reason = "rolled_back", "alternative_connection_error"
+-		m.record(lease)
+-		e.attempted = true
+-	}
+ 	if e.Network != "tcp" {
+ 		e.Status = "inconclusive"
+ 		e.Reason = "udp_not_supported"
+@@ -455,7 +444,7 @@ func (m *Manager) Select(ctx context.Context, original string, meta *adapter.Inb
+ 	return m.SelectForEvent(ctx, original, meta, nil)
+ }
+ func (m *Manager) SelectForEvent(ctx context.Context, original string, meta *adapter.InboundContext, event *Event) string {
+-	if s, ok := m.source(original); !ok || !m.isZapret(s) || meta.Network != "tcp" || !meta.Destination.IsDomain() {
++	if s, ok := m.source(original); !ok || !m.isZapret(s) || meta.Network != "tcp" || (!meta.Destination.IsDomain() && !(meta.Destination.IsIP() && s.AllowIPOnly)) {
+ 		return original
+ 	}
+ 	policy, _ := m.source(original)
+@@ -469,7 +458,7 @@ func (m *Manager) SelectForEvent(ctx context.Context, original string, meta *ada
+ 			delete(m.leases, k)
+ 			continue
+ 		}
+-		if l.Source == original && l.Domain == strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".") && l.SourceIP == meta.Source.Addr.Unmap().String() && l.Inbound == meta.Inbound && l.Port == meta.Destination.Port {
++		if (!l.IPOnly || (meta.Destination.IsIP() && meta.Destination.Addr.Unmap().String() == l.IP)) && l.Source == original && l.Domain == strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".") && l.SourceIP == meta.Source.Addr.Unmap().String() && l.Inbound == meta.Inbound && l.Port == meta.Destination.Port {
+ 			copy := l
+ 			candidate = &copy
+ 			break
+@@ -479,8 +468,12 @@ func (m *Manager) SelectForEvent(ctx context.Context, original string, meta *ada
+ 	if candidate == nil {
+ 		return original
+ 	}
+-	addresses, _, e := m.Lookup(ctx, candidate.Domain)
+-	if e != nil || !dnsEqual(addresses, candidate.DNSSet) {
++	addresses := []netip.Addr{netip.MustParseAddr(candidate.IP)}
++	var e error
++	if !candidate.IPOnly {
++		addresses, _, e = m.Lookup(ctx, candidate.Domain)
++	}
++	if e != nil || (!candidate.IPOnly && !dnsEqual(addresses, candidate.DNSSet)) {
+ 		m.mu.Lock()
+ 		delete(m.leases, candidate.ID)
+ 		m.mu.Unlock()
+@@ -528,6 +521,7 @@ func (m *Manager) SelectForEvent(ctx context.Context, original string, meta *ada
+ 	// this ID, never a replacement created after this connection was routed.
+ 	if event != nil {
+ 		event.routedLease = candidate.ID
++		event.routedTarget = candidate.Target
+ 	}
+ 	m.mu.Unlock()
+ 	return candidate.Target
+@@ -550,9 +544,8 @@ func (m *Manager) State() any {
+ 	}
+ 	for _, e := range m.events {
+ 		copy := *e
+-		if copy.Network == "tcp" && copy.active > 0 && copy.Upload > 0 && now.Sub(copy.progress) > 15*time.Second {
+-			copy.Status = "detected"
+-			copy.Reason = "no_progress"
++		if copy.Failure == nil {
++			continue
+ 		}
+ 		events = append(events, copy)
+ 	}
+@@ -578,7 +571,7 @@ func (m *Manager) State() any {
+ 			disabled = append(disabled, source)
+ 		}
+ 	}
+-	return map[string]any{"registry_version": 2, "version": 1, "leases": leases, "candidates": events, "decisions": decisions, "history": history, "counts": counts, "disabled_sources": disabled, "probe_contract": "exact-prefix+fresh-nonce", "physical_egress_verified": false}
++	return map[string]any{"registry_version": 3, "version": 1, "leases": leases, "candidates": events, "decisions": decisions, "history": history, "counts": counts, "disabled_sources": disabled, "probe_contract": "exact-prefix+fresh-nonce", "physical_egress_verified": false}
+ }
+ func (m *Manager) Revoke(key string, clear bool) ([]string, error) {
+ 	m.mu.Lock()
+@@ -677,7 +670,7 @@ func (m *Manager) Sweep(ctx context.Context) {
+ 	var next *Event
+ 	if previous == nil {
+ 		for _, e := range m.events {
+-			if e.Network == "tcp" && !e.attempted && (e.Status == "detected" || (e.active > 0 && e.Upload > 0 && now.Sub(e.progress) > 15*time.Second)) && now.Sub(e.lastJob) >= 5*time.Minute {
++			if e.Network == "tcp" && e.Failure != nil && !e.attempted && now.Sub(e.lastJob) >= 5*time.Minute {
+ 				copy := *e
+ 				next = &copy
+ 				e.lastJob = now
+@@ -772,6 +765,8 @@ func (m *Manager) API(ctx context.Context, raw []byte) (any, error) {
+ 		}
+ 	}
+ 	switch req.Op {
++	case "registry_dismiss":
++		return m.registryDismiss(req.SourceID, req.ID)
+ 	case "registry_release":
+ 		return m.registryRelease(req.SourceID, req.Scope)
+ 	case "registry_suppress":
+diff --git a/common/autoroute/probe.go b/common/autoroute/probe.go
+index e59ebc1..62b3d1a 100755
+--- a/common/autoroute/probe.go
++++ b/common/autoroute/probe.go
+@@ -266,6 +266,8 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		return map[string]any{"status": "inconclusive", "reason": "dns_unstable_or_negative"}, nil
+ 	}
+ 	d := Decision{Lease: Lease{ID: id(), Owner: "auto-routing", Source: q.Source, SourceID: s.ID, IP: q.IP, Domain: q.Domain, SourceIP: q.SourceIP, Inbound: q.Inbound, Port: q.Port, Created: now, Status: "inconclusive"}, DNS: initial, Scope: key}
++	d.Failure = m.loggedFailure(q)
++	d.IPOnly = q.Domain == "" && s.AllowIPOnly
+ 	d.Generation = generation
+ 	d.DomainKnown = q.Domain != ""
+ 	d.OriginSourcePort = q.SourcePort
+@@ -290,7 +292,7 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		first := m.attempt(ctx, q, s, tag)
+ 		second := m.attempt(ctx, q, s, tag)
+ 		d.Attempts = append(d.Attempts, first, second)
+-		if s.Mode == "web" && q.Domain == "" {
++		if s.Mode == "web" && q.Domain == "" && !s.AllowIPOnly {
+ 			originalFailed = true // diagnostic enumeration only; never an apply verdict
+ 			continue
+ 		}
+@@ -323,7 +325,7 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 			}
+ 			d.Status = "proposed"
+ 			d.ApplyAllowed = true
+-			d.AutoApplyEligible = s.Mode != "web"
++			d.AutoApplyEligible = s.Mode != "web" || s.AutoApply
+ 			d.Evidence = "verified_for_apply"
+ 			d.Reason = "verified_alternative_after_contract_failure"
+ 			if s.Mode == "web" {
+@@ -354,7 +356,7 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		d.Status = "inconclusive"
+ 		d.Reason = "dns_ttl_elapsed"
+ 	}
+-	if q.Domain == "" {
++	if q.Domain == "" && !s.AllowIPOnly {
+ 		d.Status = "identity_unknown"
+ 		d.Evidence = "transport_diagnostic"
+ 		d.Reason = "no_connection_identity"
+@@ -393,7 +395,7 @@ func (m *Manager) Apply(ctx context.Context, decisionID string) (any, error) {
+ 	delete(m.decisions, decisionID)
+ 	validGeneration := d.Generation == m.generation
+ 	m.mu.Unlock()
+-	if !ok || !validGeneration || d.Status != "proposed" || !d.ApplyAllowed || d.Domain == "" || !time.Now().Before(d.Deadline) {
++	if !ok || !validGeneration || d.Status != "proposed" || !d.ApplyAllowed || (d.Domain == "" && !d.IPOnly) || !time.Now().Before(d.Deadline) {
+ 		return nil, errors.New("expired_or_consumed_decision")
+ 	}
+ 	q := Query{IP: d.IP, Domain: d.Domain, SourceIP: d.SourceIP, SourcePort: d.OriginSourcePort, Inbound: d.Inbound, Port: d.Port, Source: d.Source}
+@@ -404,7 +406,10 @@ func (m *Manager) Apply(ctx context.Context, decisionID string) (any, error) {
+ 	if _, e = m.target(s, d.Target); e != nil {
+ 		return nil, e
+ 	}
+-	a, ttl, e := m.Lookup(ctx, q.Domain)
++	a, ttl := []netip.Addr{}, uint32(60)
++	if q.Domain != "" {
++		a, ttl, e = m.Lookup(ctx, q.Domain)
++	}
+ 	if e != nil || ttl == 0 || !dnsEqual(a, d.DNS) {
+ 		return nil, errors.New("dns_changed")
+ 	}
+diff --git a/common/autoroute/web.go b/common/autoroute/web.go
+index f220050..b722882 100755
+--- a/common/autoroute/web.go
++++ b/common/autoroute/web.go
+@@ -20,7 +20,8 @@ import (
+ )
+ 
+ // Ordinary checks attest only a bounded HTTPS response, never DPI or freshness
+-// equivalent to the strict nonce contract. They can propose, never auto-apply.
++// equivalent to the strict nonce contract. An explicit opt-in can apply a short,
++// source-owned lease after a logged failure and repeated verified responses.
+ func (m *Manager) webAttempt(ctx context.Context, q Query, s option.KabanmaxAutoSource, tag string) Attempt {
+ 	a := Attempt{Outbound: tag, DialIP: q.IP, Status: "inconclusive", At: time.Now(), Hostname: q.Domain, Port: q.Port, Path: s.Path, Method: "GET"}
+ 	if _, e := m.guard(ctx, q); e != nil {
+@@ -46,7 +47,7 @@ func (m *Manager) webAttempt(ctx context.Context, q Query, s option.KabanmaxAuto
+ 		}
+ 		return conn, err
+ 	}
+-	if q.Domain == "" {
++	if q.Domain == "" && !s.AllowIPOnly {
+ 		a.Method = "TCP"
+ 		a.Path = ""
+ 		conn, err := dial(ctx, "tcp", "")
+@@ -60,13 +61,18 @@ func (m *Manager) webAttempt(ctx context.Context, q Query, s option.KabanmaxAuto
+ 		}
+ 		return a
+ 	}
+-	target := url.URL{Scheme: "https", Host: net.JoinHostPort(q.Domain, strconv.Itoa(int(q.Port)))}
++	identity := q.Domain
++	if identity == "" {
++		identity = q.IP
++		a.Hostname = identity
++	}
++	target := url.URL{Scheme: "https", Host: net.JoinHostPort(identity, strconv.Itoa(int(q.Port)))}
+ 	path, _ := url.Parse(s.Path)
+ 	target.Path = path.Path
+ 	query := path.Query()
+ 	query.Set("__kabanmax_probe", id())
+ 	target.RawQuery = query.Encode()
+-	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, DisableCompression: true, MaxResponseHeaderBytes: 8192, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: q.Domain, RootCAs: adapter.RootPoolFromContext(m.ctx)}, DialContext: dial}
++	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, DisableCompression: true, MaxResponseHeaderBytes: 8192, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: identity, RootCAs: adapter.RootPoolFromContext(m.ctx)}, DialContext: dial}
+ 	defer transport.CloseIdleConnections()
+ 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+ 	req, err := http.NewRequestWithContext(ctx, "GET", target.String(), nil)
+diff --git a/option/kabanmax_auto.go b/option/kabanmax_auto.go
+index af01701..9bc3d99 100755
+--- a/option/kabanmax_auto.go
++++ b/option/kabanmax_auto.go
+@@ -13,6 +13,7 @@ type KabanmaxAutoSource struct {
+ 	ProbeZapret     bool              `json:"probe_zapret"`
+ 	Direct          bool              `json:"direct"`
+ 	WARP            string            `json:"warp,omitempty"`
++	AllowIPOnly     bool              `json:"allow_ip_only"`
+ 	AutoApply       bool              `json:"auto_apply"`
+ 	Domain          string            `json:"domain"`
+ 	Path            string            `json:"path"`
+diff --git a/route/kabanmax_auto.go b/route/kabanmax_auto.go
+index ca7f7cb..6224663 100755
+--- a/route/kabanmax_auto.go
++++ b/route/kabanmax_auto.go
+@@ -6,6 +6,7 @@ import (
+ 	"errors"
+ 	"github.com/miekg/dns"
+ 	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/common/autoroute"
+ 	"github.com/sagernet/sing-box/option"
+ 	R "github.com/sagernet/sing-box/route/rule"
+ 	"github.com/sagernet/sing/common/buf"
+@@ -22,6 +23,13 @@ func (r *Router) initKabanmaxAuto() {
+ 			return
+ 		}
+ 		m.Outbound = r.outbound.Outbound
++		m.LogFailure = func(event autoroute.Event, err error) bool {
++			if r.autoLogEnabled == nil || !r.autoLogEnabled() {
++				return false
++			}
++			r.logger.ErrorContext(r.ctx, "auto-routing failure id=", event.ID, " source=", event.SourceID, " outbound=", event.Source, " ip=", event.IP, " domain=", event.Domain, ": ", err)
++			return true
++		}
+ 		m.Match = func(ctx context.Context, metadata *adapter.InboundContext) (string, error) {
+ 			selected, selectedIndex, buffers, packets, e := r.matchRule(ctx, metadata, nil, nil)
+ 			buf.ReleaseMulti(buffers)
+diff --git a/route/router.go b/route/router.go
+index 7f3891b..d4e5578 100644
+--- a/route/router.go
++++ b/route/router.go
+@@ -30,6 +30,7 @@ var _ adapter.Router = (*Router)(nil)
+ type Router struct {
+ 	autoRouting       *autoroute.Manager
+ 	autoInit          sync.Once
++	autoLogEnabled    func() bool
+ 	ctx               context.Context
+ 	logger            log.ContextLogger
+ 	inbound           adapter.InboundManager
+@@ -62,6 +63,7 @@ type Router struct {
+ func NewRouter(ctx context.Context, logFactory log.Factory, options option.RouteOptions, dnsOptions option.DNSOptions) *Router {
+ 	return &Router{
+ 		autoRouting:       autoroute.Enabled(ctx, options.KabanmaxAuto),
++		autoLogEnabled:    func() bool { return logFactory != log.NewNOPFactory() && logFactory.Level() >= log.LevelError },
+ 		ctx:               ctx,
+ 		logger:            logFactory.NewLogger("router"),
+ 		inbound:           service.FromContext[adapter.InboundManager](ctx),

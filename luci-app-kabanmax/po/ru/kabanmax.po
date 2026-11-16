@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: KABANMAX\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-16 07:59+0300\n"
-"PO-Revision-Date: 2026-11-16 07:59+0300\n"
+"POT-Creation-Date: 2026-11-16 18:06+0300\n"
+"PO-Revision-Date: 2026-11-16 18:06+0300\n"
 "Last-Translator: K.A.B.A.N.-MAX contributors\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -317,6 +317,9 @@ msgstr "Разрешённые IP-адреса"
 msgid "ALPN"
 msgstr "ALPN"
 
+msgid "Also allow automatic routing for IP-only connections after verified HTTPS content and a valid certificate for that IP. A TCP connection alone is not enough."
+msgstr "Разрешать маршрутизацию IP без домена после проверки HTTPS-ответа и сертификата именно для этого IP. Одного TCP-соединения недостаточно."
+
 msgid "Also deflate"
 msgstr "Также deflate"
 
@@ -500,6 +503,9 @@ msgstr "Проверка после ошибки подключения"
 msgid "Check again"
 msgstr "Проверить снова"
 
+msgid "Check Direct as an alternative for failed connections in this section."
+msgstr "Проверять прямое соединение без Zapret и VPN как альтернативу при ошибках в этой секции."
+
 msgid "Check failures"
 msgstr "Сбои проверок"
 
@@ -517,6 +523,9 @@ msgstr "Параметры проверок"
 
 msgid "Check the installed build before updating"
 msgstr "Перед обновлением проверьте установленную сборку"
+
+msgid "Check the selected WARP profile as an alternative for failed connections in this section."
+msgstr "Проверять выбранный профиль WARP как альтернативу при ошибках в этой секции."
 
 msgid "Check timeout"
 msgstr "Таймаут проверки"
@@ -773,6 +782,9 @@ msgstr "Создаётся в консоли Tailscale: Settings → Keys"
 msgid "Credentials are required"
 msgstr "Укажите учётные данные"
 
+msgid "Current route"
+msgstr "Текущий маршрут"
+
 msgid "Currently unavailable"
 msgstr "Временно недоступно"
 
@@ -823,9 +835,6 @@ msgstr "Домен или IP назначения"
 
 msgid "Details"
 msgstr "Подробности"
-
-msgid "Detected"
-msgstr "Обнаружено"
 
 msgid "Device"
 msgstr "Устройство"
@@ -1009,6 +1018,9 @@ msgstr "Укажите хотя бы один корректный домен и
 
 msgid "Ephemeral node"
 msgstr "Временный узел"
+
+msgid "Error"
+msgstr "Ошибка"
 
 msgid "example.org includes subdomains; full:example.org matches only that domain. Separate entries with a new line, comma or space."
 msgstr "example.org включает поддомены; full:example.org — только точное совпадение. Разделяйте записи новой строкой, запятой или пробелом."
@@ -1658,8 +1670,8 @@ msgstr "Не удалось проверить задержку: Clash API не 
 msgid "Latency test URL"
 msgstr "URL для тестирования задержки"
 
-msgid "Leave empty for ordinary HTTPS manual proposals. Strict nonce contracts are preserved. Timeouts do not prove blocking."
-msgstr "Оставьте пустым для ручных предложений по обычному HTTPS. Строгие nonce-контракты сохраняются. Тайм-аут не доказывает блокировку."
+msgid "Leave empty for standard HTTPS verification. Strict nonce contracts are preserved."
+msgstr "Оставьте пустым для обычной HTTPS-проверки. Явно заданные строгие контракты сохраняются."
 
 msgid "Legacy encryption"
 msgstr "Устаревшее шифрование"
@@ -1880,6 +1892,9 @@ msgstr "Нет сертификата CA (ca)"
 msgid "No closed connections"
 msgstr "Нет закрытых подключений"
 
+msgid "No connection errors"
+msgstr "Ошибок соединений пока нет"
+
 msgid "no connection to the coordination server"
 msgstr "нет связи с сервером координации"
 
@@ -1888,9 +1903,6 @@ msgstr "Нет связи с сервером координации"
 
 msgid "No device of the tailnet is approved as an exit node"
 msgstr "Ни одно устройство сети не одобрено как выходной узел"
-
-msgid "No discovered IPs yet"
-msgstr "Пока нет обнаруженных IP"
 
 msgid "No domain"
 msgstr "Нет домена"
@@ -2015,6 +2027,9 @@ msgstr "не запущен"
 msgid "Not supported by this protocol"
 msgstr "Не поддерживается этим протоколом"
 
+msgid "Not verified"
+msgstr "не подтверждён"
+
 msgid "Nothing after %s"
 msgstr "Пусто после %s"
 
@@ -2122,9 +2137,6 @@ msgstr "Состояние операции"
 
 msgid "Operation timed out"
 msgstr "Время ожидания истекло"
-
-msgid "Ordinary HTTPS supports manual proposals only. Automatic application requires a strict nonce contract; viewing or toggling unsaved settings does not change active routes."
-msgstr "Обычный HTTPS поддерживает только ручные предложения. Автоматическое применение требует строгого nonce-контракта. Несохранённые настройки не меняют действующие маршруты."
 
 msgid "Original connection URI"
 msgstr "Исходная ссылка подключения"
@@ -2360,8 +2372,8 @@ msgstr "Отказываться от обмена ключами TLS 1.2 без
 msgid "Registry action failed"
 msgstr "Действие с реестром не выполнено"
 
-msgid "Registry actions require the r12 core API"
-msgstr "Для действий с реестром требуется ядро r12"
+msgid "Registry actions require the r13 core API"
+msgstr "Для работы с записями требуется ядро r13"
 
 msgid "remote: no server"
 msgstr "remote: не указан сервер"
@@ -2527,9 +2539,6 @@ msgstr "работает"
 
 msgid "running for %s"
 msgstr "работает %s"
-
-msgid "Safe IP-only application is unavailable: a trusted domain and flow identity is required. These IPs remain visible for diagnosis; no global IP bypass is created."
-msgstr "Безопасное применение IP без домена недоступно: нужны доверенные домен и контекст соединения. Эти IP видны в диагностике; глобальный обход по IP не создаётся."
 
 msgid "Same file as the certificate"
 msgstr "Тот же файл, что и сертификат"
@@ -3368,9 +3377,6 @@ msgstr "Параметры в формате --option=value. Очередью, �
 msgid "Use a duration from 1s to 5m"
 msgstr "Укажите длительность от 1s до 5m"
 
-msgid "Use Direct"
-msgstr "Использовать Direct"
-
 msgid "Use pin-sha256 instead of a certificate SHA-256"
 msgstr "Нужен pin-sha256, а не SHA-256 сертификата"
 
@@ -3382,9 +3388,6 @@ msgstr "Для этого формата используйте редактор
 
 msgid "Use the tunnel's DNS for the domains its server declares. Add those domains to the section so that devices reach them through the tunnel"
 msgstr "Использовать DNS туннеля для доменов, которые объявляет его сервер. Добавьте эти домены в секцию, чтобы устройства ходили к ним через туннель"
-
-msgid "Use WARP"
-msgstr "Использовать WARP"
 
 msgid "User name"
 msgstr "Имя пользователя"
@@ -3403,6 +3406,15 @@ msgstr "UUID"
 
 msgid "UUID / username / password"
 msgstr "UUID / имя пользователя / пароль"
+
+msgid "Verification limit reached; try again later."
+msgstr "Лимит проверок исчерпан. Повторите позже."
+
+msgid "Verified"
+msgstr "доступен"
+
+msgid "Verify logged failures in this section and automatically apply a working permitted route. Save & Apply activates changes."
+msgstr "Проверять ошибки соединений из журнала этой секции и автоматически применять работающий разрешённый маршрут. Изменения вступают в силу после сохранения и применения."
 
 msgid "verify-x509-name in the profile"
 msgstr "verify-x509-name в профиле"
@@ -3431,6 +3443,9 @@ msgstr "VPN-сервер"
 msgid "Wait after both checks fail before checking again. Range: 1s to 5m. Check time is additional."
 msgstr "Пауза после неудачи обеих проверок перед повторной попыткой. От 1s до 5m. Время выполнения самих проверок добавляется отдельно."
 
+msgid "Waiting before the next check."
+msgstr "Ожидание повторной проверки."
+
 msgid "Waiting for approval in the console"
 msgstr "Ждёт одобрения в консоли"
 
@@ -3442,6 +3457,9 @@ msgstr "Ждёт входа"
 
 msgid "Warnings"
 msgstr "Предупреждения"
+
+msgid "WARP"
+msgstr "WARP"
 
 msgid "WARP profile"
 msgstr "Профиль WARP"

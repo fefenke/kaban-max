@@ -10,6 +10,7 @@ mkdir -p common/autoroute
 cp /extra-tests/auto_routing_test.go common/autoroute/
 cp /extra-tests/auto_web_test.go common/autoroute/
 cp /extra-tests/auto_registry_test.go common/autoroute/
+cp /extra-tests/auto_repair_test.go common/autoroute/
 taskVersion=$(sed -n 's/^package_version=//p' /core/UPSTREAM | tr -d '\r')
 GOPROXY=off go test -count=1 -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./common/autoroute ./route ./experimental/clashapi ./protocol/group ./experimental/cachefile
 if [ "${AUTO_BUILD:-0}" = 1 ]; then

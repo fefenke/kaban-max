@@ -135,7 +135,8 @@ function sources(config, sections, tag_for_section) {
             mark: require("zapret2.model").mark(section[".name"]),
             probe_zapret: common.bool_option(section, "auto_routing_probe_zapret", true),
             direct: common.bool_option(section, "auto_routing_direct", false), warp,
-            auto_apply: common.bool_option(section, "auto_routing_apply", false), protected, suppressed });
+            auto_apply: common.bool_option(section, "auto_routing_apply", false),
+            allow_ip_only: common.bool_option(section,"auto_routing_apply",false) && common.bool_option(section,"auto_routing_ip_only",false), protected, suppressed });
     }
     return result;
 }

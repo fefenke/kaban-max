@@ -1,13 +1,14 @@
 let common=require("core.common");let model=require("config.auto_routing");let store=require("config.auto_registry");
 let io={state:()=>require("diagnostics.auto_routing").state(),request:(op,payload)=>require("diagnostics.auto_routing").io.request(op,payload)};
-function eligible(row) {return row.status=="proposed" && row.apply_allowed==true && row.domain_known==true && row.domain!="";}
+function eligible(row) {return row.status=="proposed" && row.apply_allowed==true && ((row.domain_known==true && row.domain!="") || row.ip_only==true);}
 function run(payload) {
  let request=common.parse_json(payload);
- if(type(request)!="object" || index(["apply","exclude","remove","recheck","forget"],request.action)<0 || type(request.ids)!="array" || length(request.ids)<1 || length(request.ids)>8)die("Invalid registry batch (maximum 8 IDs)");
+ if(type(request)!="object" || index(["apply","exclude","remove","recheck","forget","dismiss"],request.action)<0 || type(request.ids)!="array" || length(request.ids)<1 || length(request.ids)>8)die("Invalid registry batch (maximum 8 IDs)");
  if(request.action=="recheck" && length(request.ids)!=1)die("Verification accepts one flow per request");
- if((request.action=="remove" && request.status!="excluded") || (request.action=="apply" && request.status!="pending"))die("Action does not match registry tab");
+ if((request.action=="remove" && request.status!="excluded") || (index(["apply","dismiss"],request.action)>=0 && request.status!="pending"))die("Action does not match registry tab");
  let runtime={io};let snapshot=io.state();
- if(snapshot.registry_version!=2)die("Registry actions require the r12 core API");
+ if(snapshot.registry_version!=2 && snapshot.registry_version!=3)die("Registry actions require the r13 core API");
+ if(request.action=="dismiss" && snapshot.registry_version!=3)die("Registry actions require the r13 core API");
  let query={source_section:request.source_section,status:request.status,search:request.search ?? "",sort:request.sort ?? "newest",page:1,page_size:100};
  let excluded=model.suppression().entries;let applied=store.load().entries;
  let page=require("diagnostics.auto_records").select(snapshot,excluded,query,applied);
@@ -47,6 +48,9 @@ function run(payload) {
    else if(request.action=="remove") {
     runtime.io.request("registry_reset",{source_id:request.source_section,scope});
     next_excluded=filter(next_excluded,(entry)=>entry.scope!=scope);
+   }
+   else if(request.action=="dismiss") {
+    runtime.io.request("registry_dismiss",{source_id:request.source_section,id:row.id});
    }
    else if(request.action=="forget") {
     if(row.status=="applied")runtime.io.request("registry_withdraw",{source_id:request.source_section,id:row.id});

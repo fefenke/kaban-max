@@ -26,7 +26,7 @@ describe('source-only automatic routing controls', () => {
     }
     expect(
       grid.children.find((o) => o.option === 'auto_routing_ip_only').readonly,
-    ).toBe(true);
+    ).not.toBe(true);
     expect(
       grid.children.some((o) => o.option === 'auto_routing_direct_section'),
     ).toBe(false);

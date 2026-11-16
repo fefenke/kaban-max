@@ -15,20 +15,29 @@ function select(snapshot, exclusions, query, saved) {
         type(page)!="int" || page<1 || page>10000 || length(search)>253 ||
         index(["newest","oldest","ip"],order)<0) die("Invalid automatic routing page query");
     let tag = filter(snapshot.sources ?? [],(s)=>s.id==source)[0]?.outbound;
-    function owned(row) { return row.source_id == source || (tag != null && row.source == tag); }
+    function owned(row) {
+        // A known foreign section must never be overwritten by an outbound
+        // fallback, much less by the number of opted-in sections.
+        if (row.source_id != null && row.source_id != "")
+            return row.source_id == source && (row.source == null || row.source == "" || row.source == tag);
+        return tag != null && row.source == tag;
+    }
+    function failed_here(row) {
+        return owned(row) && type(row.failure)=="object" && row.failure.source_id==source &&
+            type(row.failure.id)=="string" && row.failure.id!="" &&
+            type(row.failure.message)=="string" && row.failure.message!="";
+    }
     let seen={};
     let denied={};for(let entry in exclusions)denied[entry.scope]=true;
     function scope(row) { return sprintf("%J",[row.ip,row.domain ?? "",row.source_ip ?? "",row.inbound ?? "",row.port ?? 443]); }
     for (let row in snapshot.leases ?? []) if (owned(row)) seen[scope(row)]=true;
     let pending=[];
     for (let row in [...(snapshot.decisions ?? []),...(snapshot.candidates ?? [])]) {
-        if (!owned(row) || row.status=="applied" || row.status=="suppressed") continue;
+        if (!failed_here(row) || row.status=="applied" || row.status=="suppressed") continue;
         let id=scope(row);
         if (seen[id]) continue;
         seen[id]=true;push(pending,row);
     }
-    if (length(snapshot.sources ?? [])==1 && snapshot.sources[0].id==source)
-        for (let row in snapshot.unattributed ?? []) push(pending,row);
     let applied=filter(snapshot.leases ?? [],owned);
     let active={};for(let row in applied)active[scope(row)]=true;
     for(let entry in saved ?? [])if(common.parse_json(entry.scope)[0]==source && !denied[entry.scope] && !active[scope(entry.record)])push(applied,{...entry.record,id:"saved:"+entry.scope,status:"saved",apply_allowed:false});
@@ -52,9 +61,9 @@ function select(snapshot, exclusions, query, saved) {
     page=min(page,max(1,int((total+size-1)/size)));
     return {rows:slice(rows,(page-1)*size,page*size),total,page,page_size:size,
         counts:{pending:length(pending),applied:length(applied),excluded:length(excluded)},
-        snapshot_limited:snapshot.registry_version!=2,version:snapshot.version ?? 0,reason:snapshot.reason ?? "",warning:snapshot.registry_error ?? "",
-        bulk_supported:snapshot.registry_version==2,individual_reset_supported:snapshot.registry_version==2,
-        legacy_overflow:length(rows)>64,selection:map(slice(rows,0,64),(row)=>({id:row.id,eligible:row.status=="proposed" && row.apply_allowed==true && row.domain_known==true}))};
+        snapshot_limited:snapshot.registry_version!=2 && snapshot.registry_version!=3,version:snapshot.version ?? 0,reason:snapshot.reason ?? "",warning:snapshot.registry_error ?? "",
+        bulk_supported:snapshot.registry_version==2 || snapshot.registry_version==3,individual_reset_supported:snapshot.registry_version==2 || snapshot.registry_version==3,
+        legacy_overflow:length(rows)>64,selection:map(slice(rows,0,64),(row)=>({id:row.id,eligible:row.status=="proposed" && row.apply_allowed==true && (row.domain_known==true || row.ip_only==true)}))};
 }
 function page(query) {
     // Reject invalid queries before querying the core. Share a two-second read

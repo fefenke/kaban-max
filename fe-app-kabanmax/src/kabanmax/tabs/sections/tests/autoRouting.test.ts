@@ -97,6 +97,12 @@ describe('automatic routing lists', () => {
         domain: '',
         status: 'identity_unknown',
         network: 'tcp',
+        failure: {
+          id: 'error-c1',
+          source_id: 's1',
+          message: 'synthetic timeout',
+          at: '2026-11-16T00:00:00Z',
+        },
       },
     ],
     unattributed: [
@@ -129,7 +135,6 @@ describe('automatic routing lists', () => {
   it('retains no-domain IPs without calling them applied', () => {
     expect(sourceRows(state, 's1').candidates.map((row) => row.ip)).toEqual([
       '203.0.113.7',
-      '2001:db8::7',
     ]);
     expect(sourceRows(state, 's1').leases.map((row) => row.domain)).toEqual([
       'one.test',

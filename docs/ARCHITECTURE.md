@@ -1,5 +1,7 @@
 # Архитектура
 
+0.1.9/r13: ошибка конкретного соединения → реально записанный log ID → source-owned candidate → повторная first-match/TLS/content проверка → scoped lease по отдельному opt-in. Нет `/connections`/no-progress или угадывания секции. Patch 0009 добавляет Failure provenance/API3 dismiss и IP-only HTTPS identity; отказ альтернативы отзывает только свою lease, не становится исходной ошибкой. Backend фильтрует по подтверждённой failure, UI сохраняет DOM одинаковых snapshots. [Контракт и проверки](AUTO_ROUTING_019.md).
+
 0.1.7/r12: `config.auto_registry` → saved intents/slot inventory в opt-in JSON → core patch 0008. Никакой прямой загрузки intents в active leases. Write-only `auto_action(op=records)` → scoped batch adapter → exact core operations; read-only `auto_records` → source-filtered pages/selection. Existing first-match/DNS/FakeIP/nft/PBR и transport не переписывались. [Контракт](AUTO_REGISTRY_017.md).
 
 UI v2 добавляет `cbi/formUx.ts` (делегированная справка и scoped layout) и read-only RPC `auto_records` → `diagnostics/auto_records.uc` (серверный paged view существующего snapshot, не новый verifier). Старый write-only `auto_action` остаётся единственным путём мутаций. Core, DNS/nft/PBR и transport не менялись. [Границы реализации](audits/UI_FIXES_V2.md).
