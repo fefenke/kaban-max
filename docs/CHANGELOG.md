@@ -52,7 +52,7 @@ Ordinary HTTPS mode без nonce, explicit evidence/Apply eligibility, context-b
 
 Изменения продукта: [корневой CHANGELOG](../CHANGELOG.md). Git остаётся источником детальной истории.
 
-## Подготовка 0.2.0 — исправления после 0.1.9
+## Опубликовано 0.2.0 prerelease / r14 — исправления после 0.1.9
 
 - Actual IP из ошибки dial, domain/IP либо IP-only scope, Direct перед выходом выбранной секции; поддержка configured WARP fallback.
 - Dismiss pending без IP, явные маршруты/причины, выбор секции, вложенная галка, отступы и стилизованное подтверждение.

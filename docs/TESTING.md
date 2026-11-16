@@ -1,8 +1,26 @@
 # Проверки
 
+## Публикация 0.2.0 / r14 подтверждена
+
+[Prerelease](https://github.com/fefenke/kaban-max/releases/tag/0.2.0), source/tag `42937680d66c03788975f7362a2e41fd4e1a6741`. Все шесть CI успешны: build43949269956, core43949270446 (Go1.26.10), frontend43949270341, backend43949270179, shell43949270602, docs43949270503. Новый Direct hook сохраняет исходный parallel/family/interface dispatch; private dial attribution и strategy spy проходят вместе с остальными Go race/integration tests.
+
+Точные CI assets скачаны и повторно проверены локально: 10 APK/IPK source/payload parity, RU po2lmo, ARM64 Go1.26.10/trimpath/version/licence, 14 публичных загрузок и их API/local/download SHA256/размеры, 13 SHA256SUMS, manifests и tag ref PASS. Первый местный inspector сравнивал CRLF checkout с каноническим LF и ошибочно остановился на неизменённом connections.uc; исправлена нормализация проверяющего скрипта, полный прогон повторён успешно. Пакетные bytes не менялись.
+
+Из корня, `$ipRoot=(Get-Location).Path`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .local/audit/release-0.2.0/build-ci.ps1 -Action download
+docker run --rm --network none --mount "type=bind,source=$ipRoot,target=/work,readonly" --mount "type=bind,source=$ipRoot/.local/audit/release-0.2.0,target=/release-check" -w /work kabanmax-release:2.1.0 python3 /release-check/inspect_packages.py /release-check/release
+docker run --rm --network none --mount "type=bind,source=$ipRoot,target=/work,readonly" -w /work forkop-zapret2-test-tools:local bash .local/audit/release-0.2.0/installer-upgrade.sh
+powershell -NoProfile -ExecutionPolicy Bypass -File .local/audit/release-0.2.0/github-release.ps1 -Action publish
+powershell -NoProfile -ExecutionPolicy Bypass -File .local/audit/release-0.2.0/verify-public.ps1
+```
+
+Mock upgrade 0.1.9/r13→0.2.0/r14 прошёл для base/tiny. Ignored evidence: `.local/audit/release-0.2.0/`, включая package-inspection.json, artifact-verification.json и public-verification.json. Последующий docs-only commit не меняет выпущенные assets. Роутеры/VPS не использовались; аппаратная приёмка остаётся UNVERIFIED.
+
 ## Локально после 0.1.9: actual IP, секция и clear журнала
 
-[Причины, поведение и границы](AUTO_ROUTING_IP_FIX.md). Публикации/установки нет. Свежие frontend **176 файлов / 1690 тестов PASS**, TypeScript/build и lint PASS. Backend **92/92 файлов PASS**. Browser **320/375/768/1280 + dark 375 PASS** с Bootstrap; новый HTML dialog, отмена без mutation, scoped bulk, вложенный флаг без стрелки и отделённые advanced settings.
+[Причины, поведение и границы](AUTO_ROUTING_IP_FIX.md). Этот локальный прогон выполнен до публикации; последующий выпуск описан выше. Свежие frontend **176 файлов / 1690 тестов PASS**, TypeScript/build и lint PASS. Backend **92/92 файлов PASS**. Browser **320/375/768/1280 + dark 375 PASS** с Bootstrap; новый HTML dialog, отмена без mutation, scoped bulk, вложенный флаг без стрелки и отделённые advanced settings.
 
 Из `fe-app-kabanmax`:
 
@@ -23,7 +41,7 @@ node .local/audit/auto-routing-ip-fix/check-browser.mjs
 git diff --check
 ```
 
-Чистый pinned upstream + **0001–0010**: пять Go race suites PASS, Go **1.25.10** из имеющегося образа, production tags. Это не результат ещё не запущенного CI с закреплённым Go 1.26.10.
+Чистый pinned upstream + **0001–0010**: пять Go race suites PASS, Go **1.25.10** из имеющегося образа, production tags. Это локальный прогон до CI; последующий закреплённый Go 1.26.10 CI прошёл, см. публикацию выше.
 
 ```powershell
 docker run --rm --network none --mount "type=bind,source=$ipRoot/core,target=/core,readonly" --mount "type=bind,source=$ipRoot/.local/core-src,target=/source,readonly" --mount "type=bind,source=$ipRoot/tests/core,target=/extra-tests,readonly" --mount type=volume,source=kabanmax-chrome155-go-mod,target=/root/go/pkg/mod --mount type=volume,source=kabanmax-chrome155-go-build,target=/root/.cache/go-build -e GOPROXY=off kabanmax-release:2.1.0 sh /extra-tests/run_auto_routing.sh
