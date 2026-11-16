@@ -21,6 +21,7 @@ export interface AutoEntry {
   port?: number;
   network?: string;
   target?: string;
+  target_name?: string;
   target_section?: string;
   status: string;
   reason?: string;
@@ -38,6 +39,7 @@ export interface AutoState {
   decisions: AutoEntry[];
   history: AutoEntry[];
   warp_profiles?: string[];
+  warp_sections?: { id: string; name: string; outbound: string }[];
   suppressed_count?: number;
   suppressed_counts?: Record<string, number>;
   disabled_sources?: string[];
@@ -81,6 +83,33 @@ export function statusText(status: string): string {
     blocked_by_policy: _('Forbidden by policy'),
   };
   return labels[status] || _('See diagnostic details');
+}
+
+export function routeText(row: AutoEntry): string {
+  const target = row.target || row.source;
+  if (target === 'direct-out') return 'Direct';
+  return (row.target && row.target_name) || target || '—';
+}
+
+export function recordStateText(row: AutoEntry): string {
+  if (row.reason?.startsWith('checking:')) {
+    const target = row.reason.slice('checking:'.length);
+    return `${_('Checking')}: ${target === 'direct-out' ? 'Direct' : target}`;
+  }
+  const reasons: Record<string, string> = {
+    actual_destination_ip_unknown: _(
+      'Connection error has no concrete destination IP',
+    ),
+    no_working_alternative: _('No working alternative found'),
+    original_https_inconclusive: _('Original route check failed; see results'),
+    original_failure_unproven: _('Original route failure was not confirmed'),
+    dns_changed: _('DNS changed; verification must be repeated'),
+    dns_unstable_or_negative: _('Domain and IP could not be confirmed'),
+    hourly_budget: _('Verification limit reached; try again later.'),
+    cooldown: _('Waiting before the next check.'),
+  };
+  if (row.status === 'saved') return _('Saved; fresh verification required');
+  return reasons[row.reason || ''] || statusText(row.status);
 }
 
 export async function autoState(): Promise<AutoState> {
@@ -169,19 +198,22 @@ export function attachAutoRouting(section: CBISection) {
       );
     if (key === 'auto_routing_use_warp')
       option.description = _(
-        'Check the selected WARP profile as an alternative for failed connections in this section.',
+        'Use the selected section as configured, without matching its destination lists.',
       );
     if (key === 'auto_routing_use_warp')
       option.load = (id) =>
         uci.get(KABANMAX_UCI_PACKAGE, id, key) ??
-        (uci.get(KABANMAX_UCI_PACKAGE, id, 'auto_routing_warp') ? '1' : '0');
+        (uci.get(KABANMAX_UCI_PACKAGE, id, 'auto_routing_warp_section') ||
+        uci.get(KABANMAX_UCI_PACKAGE, id, 'auto_routing_warp')
+          ? '1'
+          : '0');
     if (key === 'auto_routing_apply')
       option.description = _(
         'Verify logged failures in this section and automatically apply a working permitted route. Save & Apply activates changes.',
       );
     if (key === 'auto_routing_ip_only') {
       option.description = _(
-        'Also allow automatic routing for IP-only connections after verified HTTPS content and a valid certificate for that IP. A TCP connection alone is not enough.',
+        'Automatically apply verified IP-only proposals too. Manual IP-only proposals do not require this preference.',
       );
     }
   }
@@ -212,26 +244,46 @@ export function attachAutoRouting(section: CBISection) {
   const warp = section.taboption(
     'auto_routing',
     form.ListValue,
-    'auto_routing_warp',
-    _('WARP profile'),
+    'auto_routing_warp_section',
+    _('Alternative section'),
   );
   warp.modalonly = true;
   warp.depends({ action: 'zapret2', auto_routing_use_warp: '1' });
   warp.retain = true;
-  warp.value('', _('Select a WARP profile'));
+  warp.value('', _('Select a section'));
   warp.load = async function (id) {
     const snapshot = await autoState().catch(() => emptyState);
-    const selected = String(
+    const legacy = String(
       uci.get(KABANMAX_UCI_PACKAGE, id, 'auto_routing_warp') || '',
     );
+    const selected = String(
+      uci.get(KABANMAX_UCI_PACKAGE, id, 'auto_routing_warp_section') ||
+        snapshot.warp_sections?.find(
+          (item) =>
+            legacy.startsWith(`${item.outbound}/`) || legacy === item.outbound,
+        )?.id ||
+        '',
+    );
     this.keylist = [''];
-    this.vallist = [_('Select a WARP profile')];
-    for (const profile of new Set([
-      ...(snapshot.warp_profiles || []),
-      ...(selected ? [selected] : []),
-    ]))
-      this.value(profile, profile);
+    this.vallist = [_('Select a section')];
+    for (const item of snapshot.warp_sections || [])
+      this.value(item.id, item.name);
+    if (selected && !this.keylist.includes(selected))
+      this.value(selected, selected);
     return selected;
+  };
+  warp.write = (id, value) => {
+    uci.set(
+      KABANMAX_UCI_PACKAGE,
+      id,
+      'auto_routing_warp_section',
+      String(value ?? ''),
+    );
+    uci.unset(KABANMAX_UCI_PACKAGE, id, 'auto_routing_warp');
+  };
+  warp.remove = (id) => {
+    uci.unset(KABANMAX_UCI_PACKAGE, id, 'auto_routing_warp_section');
+    uci.unset(KABANMAX_UCI_PACKAGE, id, 'auto_routing_warp');
   };
   const list = section.taboption(
     'auto_routing',

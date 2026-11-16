@@ -1,5 +1,7 @@
 # Навигатор разработчика
 
+Локально после 0.1.9/r13: [actual IP, configured секция, dismiss/UI и clear журнала](AUTO_ROUTING_IP_FIX.md). Не опубликовано; статус проверок в TESTING.
+
 0.1.9/r13 в подготовке: [ошибка в журнале → своя Zapret-секция → проверка альтернативы](AUTO_ROUTING_019.md). Удалены no-progress/подмешивание чужих наблюдений; новая lease требует реальной ошибки, а UI возвращает нативную геометрию и обычные страницы. Статус публикации — PROJECT_STATE.
 
 0.1.7/r12: [bounded registry, persistence, exact scope и bulk](AUTO_REGISTRY_017.md); [свежие gates](TESTING.md). Предыдущие UI v2/r11 записи ниже исторические.

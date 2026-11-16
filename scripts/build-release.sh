@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="${1:-0.1.9}"
+version="${1:-0.2.0}"
 core_version="$(sed -n 's/^package_version=//p' "$repo/core/UPSTREAM")"
 core_commit="$(sed -n 's/^commit=//p' "$repo/core/UPSTREAM")"
 output="${2:-$repo/dist/release}"

@@ -82,4 +82,15 @@ t.test("the serialized archive limit includes JSON overhead and deduplication me
     t.contains(log.text(101), "record 79:");
 });
 
+t.test("unchanged system dump after clear skips fingerprinting and still expires retained entries",()=>{
+ let calls=0;
+ let log=journal.create({max_age:10,fingerprint:(line)=>{calls++;return line;}});
+ log.ingest(["a","b"],100);t.ok(calls>0);let before=calls;
+ log.clear(101);log.ingest(["a","b"],102);
+ t.eq(calls,before);t.eq(log.text(102),"");
+ log.ingest(["a","b","new"],103);
+ before=calls;log.ingest(["a","b","new"],113);
+ t.eq(calls,before);t.eq(log.text(113),"");
+});
+
 t.done();

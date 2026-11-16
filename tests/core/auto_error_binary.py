@@ -39,6 +39,8 @@ class DNS(socketserver.BaseRequestHandler):
         kind=struct.unpack('!H',packet[pos:pos+2])[0]
         question=packet[12:pos+4]
         answer=b'\xc0\x0c'+struct.pack('!HHIH',1,1,30,4)+socket.inet_aton(IP) if kind==1 else b''
+        if kind==28:
+            answer=b'\xc0\x0c'+struct.pack('!HHIH',28,1,30,16)+socket.inet_pton(socket.AF_INET6,'2001:db8::7')
         response=packet[:2]+struct.pack('!HHHHH',0x8180,1,bool(answer),0,0)+question+answer
         self.request.sendall(struct.pack('!H',len(response))+response)
 
@@ -133,6 +135,7 @@ try:
         state=wait_state(api_port,lambda s:len(s['candidates'])==1)
         row=state['candidates'][0]
         assert row['source_id']=='meta' and row['domain']=='one.example.test' and row['failure']['id']==row['id']
+        assert row['ip']==IP,'failed mixed A/AAAA connection lost its actual IP'
         log.flush();log.seek(0);text=log.read().decode();assert row['id'] in text and 'outbound=zap' in text,'candidate has no matching error log'
         api(api_port,'registry_dismiss',source_id='meta',id=row['id'])
         assert not api(api_port)['candidates'] and not api(api_port)['leases'],'dismiss retained records or created a route'
@@ -154,7 +157,7 @@ try:
         assert b'Verified synthetic' in fetch(socks,'one.example.test',port),'automatic lease did not route application data'
         fail_request(socks,'two.example.test',port)
         assert all(row['domain']!='two.example.test' for row in api(api_port)['candidates'])
-    print('PASS executable: logged error -> verification -> automatic Direct -> received content; WARP remains owned',flush=True)
+    print('PASS executable: mixed A/AAAA logged error -> actual IP -> verification -> automatic Direct -> received content; WARP remains owned',flush=True)
 finally:
     server.shutdown();server.server_close();dns.shutdown();dns.server_close()
     subprocess.run(NFT+['delete','table','ip','kabanmax_auto_error_test'],check=False)

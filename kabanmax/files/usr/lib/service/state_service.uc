@@ -38,8 +38,12 @@ const DOWN_GRACE_MS = 15000;
 const LOG_PATTERN = constants.KABANMAX_LOG_PATTERN;
 // Deep enough that a poll cannot miss lines between two reads on a busy router.
 const LOG_TAIL_LINES = 200;
+// Bound interpreted fingerprint work per collection on low-power routers.
+// The journal accumulates these batches independently of ring rotation.
+const LOG_JOURNAL_TAIL_LINES = 1000;
 const LOG_BUFFER_LINES = 400;
 const LOG_POLL_MS = 1500;
+const LOG_REPLY_BYTES = 262144;
 // Log polling stops when nobody has asked for a while.
 const LOG_INTEREST_MS = 60000;
 
@@ -89,6 +93,7 @@ let settle_until_ms = 0;
 let down_since_ms = 0;
 let journal = null;
 let last_journal_poll_ms = null;
+let journal_transfer = null;
 
 function retained_log() {
     if (journal == null)
@@ -116,7 +121,7 @@ function collect_logs(force) {
     let log = retained_log();
     let before = log.revision();
     // File-backed capture avoids truncation when a child exits during a pipe read.
-    let read = exec.capture_parallel([ [ "logread", "-e", LOG_PATTERN ] ])[0];
+    let read = exec.capture_parallel([ [ "logread", "-l", LOG_JOURNAL_TAIL_LINES, "-e", LOG_PATTERN ] ])[0];
     if (read.status == 0)
         log.ingest(filter(split(read.stdout, "\n"), (line) => line != ""), journal_now());
     else
@@ -462,15 +467,29 @@ function object_methods() {
         // Expiry and clear advance its revision even when no new line arrives.
         log_text: {
             call: function(request) {
-                collect_logs(false);
+                let offset = int(request.args.offset ?? 0);
+                if(offset>0) {
+                    if(journal_transfer==null || int(request.args.cursor ?? -1)!=journal_transfer.cursor || common.monotonic_ms()-journal_transfer.at>30000)
+                        return {cursor:retained_log().revision(),reset:true};
+                } else collect_logs(false);
                 let log = retained_log();
-                let text = log.text(journal_now());
-                let cursor = log.revision();
-                if (request.args.cursor != null && int(request.args.cursor) == cursor)
+                let text = offset>0 ? journal_transfer.text : log.text(journal_now());
+                let cursor = offset>0 ? journal_transfer.cursor : log.revision();
+                if(offset<0 || offset>length(text))return {cursor,reset:true};
+                if(offset>0 && int(request.args.cursor ?? -1)!=cursor)return {cursor,reset:true};
+                if (offset==0 && request.args.cursor != null && int(request.args.cursor)>0 && int(request.args.cursor) == cursor)
                     return { cursor, unchanged: true };
-                return { cursor, text };
+                let end=min(length(text),offset+LOG_REPLY_BYTES);
+                // Do not split a UTF-8 codepoint across JSON replies.
+                while(end>offset && end<length(text) && (ord(text,end) & 192)==128)end--;
+                let reply={cursor,text:substr(text,offset,end-offset)};
+                if(end<length(text)) {
+                    reply.next=end;
+                    if(offset==0)journal_transfer={cursor,text,at:common.monotonic_ms()};
+                }
+                return reply;
             },
-            args: { cursor: 0, ubus_rpc_session: "" }
+            args: { cursor: 0, offset: 0, ubus_rpc_session: "" }
         },
         // Write permission is intentionally separate from reading logs.
         clear_logs: {
@@ -479,8 +498,10 @@ function object_methods() {
                     return { success: false };
                 let before = retained_log().snapshot();
                 retained_log().clear(journal_now());
-                if (save_journal())
+                if (save_journal()) {
+                    journal_transfer=null;
                     return { success: true };
+                }
                 journal = log_journal.create(null, before);
                 return { success: false };
             },

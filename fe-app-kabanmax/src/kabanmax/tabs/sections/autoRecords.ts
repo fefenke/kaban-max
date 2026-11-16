@@ -1,6 +1,11 @@
 import { E } from '../../../helpers/element';
 import { callUbus } from '../../../helpers/callUbus';
-import { canApply, statusText, type AutoEntry } from './autoRouting';
+import {
+  canApply,
+  routeText,
+  recordStateText,
+  type AutoEntry,
+} from './autoRouting';
 
 export interface RecordQuery {
   source_section: string;
@@ -34,6 +39,53 @@ interface RecordPage {
   legacy_overflow?: boolean;
   bulk_supported?: boolean;
   selection?: { id: string; eligible: boolean }[];
+}
+
+export function registryNotice(message = ''): string {
+  return message.includes('automatic_routing_unavailable') ? '' : message;
+}
+
+export function confirmRecordAction(
+  label: string,
+  count: number,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = E('dialog', { class: 'km-record-confirm' }, [
+      E('h3', {}, label),
+      E('p', {}, `${_('Selected records')}: ${count}`),
+    ]) as HTMLDialogElement;
+    const finish = (accepted: boolean) => {
+      dialog.close();
+      dialog.remove();
+      previous?.focus();
+      resolve(accepted);
+    };
+    dialog.append(
+      E('div', { class: 'km-record-confirm__actions' }, [
+        E(
+          'button',
+          { type: 'button', class: 'cbi-button', click: () => finish(false) },
+          _('Cancel'),
+        ),
+        E(
+          'button',
+          {
+            type: 'button',
+            class: 'cbi-button cbi-button-action',
+            click: () => finish(true),
+          },
+          label,
+        ),
+      ]),
+    );
+    dialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      finish(false);
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
 }
 export async function autoRecords(query: RecordQuery): Promise<RecordPage> {
   const reply = await callUbus<RecordPage>({
@@ -122,6 +174,8 @@ export function renderAutoRecords(sectionId: string) {
   };
   const mutate = async (action: RecordAction, ids: string[]) => {
     if (busy || !ids.length) return;
+    const frozenQuery = { ...query };
+    busy = true;
     const label = {
       apply: _('Apply'),
       exclude: _('Exclude'),
@@ -132,16 +186,15 @@ export function renderAutoRecords(sectionId: string) {
     }[action];
     if (
       action !== 'recheck' &&
-      !window.confirm(
-        `${label}: ${ids.length}. ${_('Only eligible records in this source section will be changed. Continue?')}`,
-      )
-    )
+      !(await confirmRecordAction(label, ids.length))
+    ) {
+      busy = false;
       return;
-    busy = true;
+    }
     root.setAttribute('aria-busy', 'true');
     outcome.textContent = _('Processing…');
     try {
-      const result = await registryAction({ ...query }, action, ids);
+      const result = await registryAction(frozenQuery, action, ids);
       outcome.textContent = `${_('Completed')}: ${result.done}; ${_('Skipped')}: ${result.skipped}; ${_('Failed')}: ${result.failed}`;
       const reasons = [
         ...new Set(
@@ -178,7 +231,7 @@ export function renderAutoRecords(sectionId: string) {
       query.page = data.page;
       const signature = JSON.stringify({ query, data });
       if (signature === rendered) {
-        message.textContent = data.warning || '';
+        message.textContent = registryNotice(data.warning);
         return;
       }
       rendered = signature;
@@ -272,21 +325,9 @@ export function renderAutoRecords(sectionId: string) {
                   E('strong', {}, row.ip),
                   E('div', {}, row.domain || _('Domain unknown')),
                 ]),
-                E(
-                  'td',
-                  {},
-                  row.target
-                    ? `${row.target === 'direct-out' ? 'Direct' : row.target}`
-                    : '—',
-                ),
+                E('td', {}, routeText(row)),
                 E('td', {}, [
-                  row.status === 'saved'
-                    ? _('Saved; fresh verification required')
-                    : row.reason === 'hourly_budget'
-                      ? _('Verification limit reached; try again later.')
-                      : row.reason === 'cooldown'
-                        ? _('Waiting before the next check.')
-                        : statusText(row.status),
+                  recordStateText(row),
                   ...(row.expires
                     ? [E('div', {}, new Date(row.expires).toLocaleString())]
                     : []),
@@ -430,18 +471,21 @@ export function renderAutoRecords(sectionId: string) {
         );
       }
       message.textContent =
-        data.warning ||
+        registryNotice(data.warning) ||
         (data.legacy_overflow
           ? _(
               'Legacy exclusions exceed 64 records. Remove entries explicitly or narrow the filter; no exclusions were discarded.',
             )
           : '') ||
-        (supported
-          ? ''
-          : data.reason || _('Registry actions require the r13 core API'));
+        '';
     } catch (error) {
       message.textContent =
-        error instanceof Error ? error.message : String(error);
+        error instanceof Error &&
+        error.message.includes('automatic_routing_unavailable')
+          ? ''
+          : error instanceof Error
+            ? error.message
+            : String(error);
     } finally {
       busy = false;
       root.removeAttribute('aria-busy');

@@ -1,5 +1,11 @@
 # Текущее состояние
 
+## Подготовка 0.2.0 / r14 — IP/секции, UI и журнал
+
+Локально исправлены потеря actual IP при отказе A/AAAA, выбор configured выхода секции, IP-only manual proposals, зависшее dismiss без IP, вложенный флаг/отступы и подтверждение операций. Новый patch 0010 и minimum при включённой автоматике — **r14**. Журнал получил быстрый unchanged путь после clear и порционное чтение одной revision. Frontend **176/1690**, backend **92/92**, пять Go race suites, mixed DNS executable и browser matrix PASS. [Контракт, причины и границы](AUTO_ROUTING_IP_FIX.md); свежие команды — TESTING. Опубликованным остаётся комплект 0.1.9/r13; ничего не устанавливалось и не публиковалось.
+
+Пользователь разрешил публикацию и задал версию **0.2.0**. Независимое ревью до выпуска выявило общую атрибуцию DNS-попыток и потерю network strategy в generic wrapper. Исправлено: private attempt metadata фиксируется по итоговому conn/error, hooks находятся в Direct и сохраняют исходный parallel/interface dispatch. Новые sibling/strategy regressions проходят; чистый replay, pinned Go CI и пакеты — release gates.
+
 ## Опубликовано 0.1.9 / r13 — error-first, 2026-11-16
 
 После претензий к 0.1.8 пользователь уточнил: адрес должен принадлежать этой Zapret-секции и иметь настоящую ошибку в журнале; no-progress и чужой WARP недопустимы. Реализован отдельный patch 0009: error-first queue, корреляция с log ID, web auto-apply по явному флагу, IP-only с IP-сертификатом, dismiss без исключения. Исправлены клики/порядок флагов, нативное правое выравнивание, номера страниц, JSON и мигание. [Контракт, свежие проверки и границы](AUTO_ROUTING_019.md).

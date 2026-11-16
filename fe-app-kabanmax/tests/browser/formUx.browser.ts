@@ -204,10 +204,22 @@ async function test() {
   );
   check(records.querySelectorAll('tr').length <= 26, 'DOM bound');
   const confirm = window.confirm;
-  window.confirm = () => true;
+  window.confirm = () => {
+    throw new Error('Browser confirm must not be used');
+  };
+  const confirmDialog = (accept = true) => {
+    const dialog = document.querySelector<HTMLDialogElement>(
+      'dialog.km-record-confirm',
+    );
+    check(dialog?.open, 'styled confirmation dialog is open');
+    dialog!
+      .querySelectorAll<HTMLButtonElement>('button')
+      [accept ? 1 : 0].click();
+  };
   Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
     .find((node) => node.textContent === 'Exclude all')!
     .click();
+  confirmDialog();
   await new Promise((resolve) => setTimeout(resolve, 0));
   window.confirm = confirm;
   check(
@@ -219,7 +231,6 @@ async function test() {
   search.value = '203.0.113.';
   search.dispatchEvent(new Event('input', { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 350));
-  window.confirm = () => false;
   const selectTab = async (prefix: string) => {
     Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
       .find((node) => node.textContent?.startsWith(prefix))!
@@ -236,13 +247,14 @@ async function test() {
   );
   const beforeCancel = operations.length;
   removeApplied!.click();
+  confirmDialog(false);
   await new Promise((resolve) => setTimeout(resolve, 0));
   check(
     operations.length === beforeCancel,
     'cancel bulk deletion performs no mutation',
   );
-  window.confirm = () => true;
   removeApplied!.click();
+  confirmDialog();
   await new Promise((resolve) => setTimeout(resolve, 0));
   const deletedApplied = operations.slice(beforeCancel);
   check(
@@ -261,6 +273,7 @@ async function test() {
   Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
     .find((node) => node.textContent === 'Remove all')!
     .click();
+  confirmDialog();
   await new Promise((resolve) => setTimeout(resolve, 0));
   const deletedExcluded = operations.slice(beforeExcluded);
   check(
@@ -284,11 +297,11 @@ async function test() {
     'no constant technical notice',
   );
   await selectTab('Awaiting');
-  window.confirm = () => true;
   const beforeDismiss = operations.length;
   Array.from(records.querySelectorAll<HTMLButtonElement>('tr[data-id] button'))
     .find((node) => node.textContent === 'Remove')!
     .click();
+  confirmDialog();
   await new Promise((resolve) => setTimeout(resolve, 0));
   check(
     operations.length === beforeDismiss + 1 &&
@@ -368,6 +381,21 @@ async function test() {
     '[data-name="auto_routing_ip_only"] input',
   )!;
   check(ipOnly.disabled, 'IP-only requires auto-apply preference');
+  const childRow = ipOnly.closest<HTMLElement>('.cbi-value')!;
+  check(
+    getComputedStyle(childRow).display === 'flex',
+    'nested checkbox uses one flowing row',
+  );
+  check(
+    getComputedStyle(childRow.querySelector('.cbi-value-title')!, '::before')
+      .content === 'none',
+    'nested checkbox has no arrow',
+  );
+  const advanced = auto.querySelector<HTMLElement>('.km-auto-advanced')!;
+  check(
+    parseFloat(getComputedStyle(advanced).marginBottom) >= 16,
+    'advanced settings separated from records',
+  );
   apply.click();
   check(!ipOnly.disabled, 'IP-only becomes editable under auto-apply');
   ipOnly.click();

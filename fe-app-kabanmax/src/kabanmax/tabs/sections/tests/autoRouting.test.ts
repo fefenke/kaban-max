@@ -3,16 +3,71 @@ const calls = vi.hoisted(() => ({ ubus: vi.fn() }));
 vi.mock('../../../../helpers/callUbus', () => ({ callUbus: calls.ubus }));
 import {
   autoAction,
+  routeText,
+  recordStateText,
   canApply,
   sourceRows,
   targetRows,
   type AutoState,
 } from '../autoRouting';
-import { autoRecords, registryAction } from '../autoRecords';
+import { autoRecords, registryAction, registryNotice } from '../autoRecords';
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('automatic routing lists', () => {
+  it('omits the unavailable automation banner while preserving other failures', () => {
+    expect(
+      registryNotice(
+        'Auto-routing API unavailable or rejected request: automatic_routing_unavailable',
+      ),
+    ).toBe('');
+    expect(registryNotice('Storage write failed')).toBe('Storage write failed');
+  });
+  it('shows the concrete proposed section and actionable check reasons', () => {
+    vi.stubGlobal('_', (text: string) => text);
+    expect(
+      routeText({
+        ip: '203.0.113.7',
+        status: 'proposed',
+        target: 'direct-out',
+        target_name: 'direct-out',
+      }),
+    ).toBe('Direct');
+    expect(
+      routeText({
+        ip: '203.0.113.7',
+        status: 'proposed',
+        target: 'direct-out',
+      }),
+    ).toBe('Direct');
+    expect(
+      routeText({ ip: '203.0.113.7', status: 'proposed', target: 'WARP' }),
+    ).toBe('WARP');
+    expect(routeText({ ip: '', status: 'inconclusive', source: 'META' })).toBe(
+      'META',
+    );
+    expect(
+      recordStateText({
+        ip: '',
+        status: 'inconclusive',
+        reason: 'actual_destination_ip_unknown',
+      }),
+    ).toBe('Connection error has no concrete destination IP');
+    expect(
+      recordStateText({
+        ip: '203.0.113.7',
+        status: 'checking',
+        reason: 'checking:direct-out',
+      }),
+    ).toBe('Checking: Direct');
+    expect(
+      recordStateText({
+        ip: '203.0.113.7',
+        status: 'inconclusive',
+        reason: 'no_working_alternative',
+      }),
+    ).toBe('No working alternative found');
+  });
   it('splits a confirmed selection into bounded non-retrying batches with partial outcomes', async () => {
     calls.ubus
       .mockResolvedValueOnce({

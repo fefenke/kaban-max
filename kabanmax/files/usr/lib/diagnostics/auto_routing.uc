@@ -28,6 +28,7 @@ function state() {
     let config = common.read_json_file(require("singbox.constants").config_path(settings));
     answer.sources = map(config?.route?.kabanmax_auto ?? [], (s) => ({ id: s.id, outbound: s.outbound, domain: s.domain, auto_apply: s.auto_apply, warp: s.warp }));
     answer.warp_profiles = map(filter(config?.endpoints ?? [], (e) => e.type == "warp" && (e.detour == null || e.detour == "direct-out")), (e) => e.tag);
+    answer.warp_sections=model.warp_sections(config ?? {},uci.section_objects("kabanmax","section"),(id)=>require("singbox.constants").outbound_tag(require("config.connections").section_display_name(id)));
     answer.suppressed_counts = {};
     try {
         let entries = model.suppression().entries;
