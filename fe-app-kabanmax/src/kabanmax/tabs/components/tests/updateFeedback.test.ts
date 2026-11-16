@@ -79,6 +79,8 @@ it('shows successful checks above the application button without a toast, includ
     ) => ({
       tag,
       ...attrs,
+      // LuCI uses setAttribute(): hidden="false" still hides an HTML element.
+      hidden: attrs.hidden != null,
       className: attrs.class || '',
       children,
       replaceChildren: vi.fn(),

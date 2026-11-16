@@ -1,5 +1,7 @@
 # Навигатор разработчика
 
+0.1.7/r12: [bounded registry, persistence, exact scope и bulk](AUTO_REGISTRY_017.md); [свежие gates](TESTING.md). Предыдущие UI v2/r11 записи ниже исторические.
+
 №04Б-ФИНАЛ 2026-11-16: ordinary HTTPS без nonce, только manual proposals; актуальные критерии в [контракте](AUTO_ROUTING_IMPLEMENTATION_04B.md), свежие результаты в [TESTING](TESTING.md).
 
 

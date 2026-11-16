@@ -1,5 +1,13 @@
 # Принятые решения
 
+## r12: отдельные bounded intents вместо безусловного восстановления leases
+
+Новый запрос снял требование 5000 и разрешил минимальное расширение core. Выбраны 64 записи, atomic files и bounded write budget; core получает только intent/slot inventory и заново доказывает strict application contract. Ordinary остаётся manual-only. Exact-scope API позволяет убрать отдельное исключение без сброса соседей. [Контракт, trade-offs и условия пересмотра](AUTO_REGISTRY_017.md).
+
+## UI v2: CBI-адаптер и честная граница core
+
+Подсказки и layout адаптируют отрендеренные KABANMAX frames; UCI write/load/depends/retain и обработчики остаются LuCI. `auto_records` пагинирует только доступный core snapshot и persistent suppression, с page_size 25/50/100, source filtering и двухсекундным общим read cache. Не эмулировать полный реестр или filtered bulk по обрезанному State; не править persistent suppression отдельно от runtime. Пересмотр — после нового scoped/versioned core API. [Доказательства](audits/UI_FIXES_V2.md).
+
 ## 2026-11-16 — ordinary HTTPS не даёт автоматического разрешения
 
 Patch 0007 добавляет web к сохранённому strict. Два транспортных сбоя и два ограниченных TLS/HTTP content успеха альтернативы полезны для ручного предложения, но не доказывают DPI/свежесть/полное приложение. Поэтому web никогда не auto-apply, даже при второй галочке и recheck. Источник имени — только исходный flow/FakeIP, IP — actual dial или единственная original metadata, не DNS batch. Воспроизведённый mixed DNS scope дефект закрыт требованием единственного DestinationAddress до применения lease. Условия пересмотра — только отдельный проверенный application contract/per-address route design; [тесты и границы](AUTO_ROUTING_IMPLEMENTATION_04B.md).

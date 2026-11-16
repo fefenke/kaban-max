@@ -1,5 +1,15 @@
 # Ловушки разработки
 
+## Реестр r12
+
+Не восстанавливать lease непосредственно из JSON: это только intent с исходным Expires; нужен новый flow и strict evidence. Сначала сохранить deny перед revoke, а новый grant при ошибке durable write отозвать. Reset одного исключения не возвращает старый proposal. Зарезервированные persistent scopes учитываются даже у неактивных записей, иначе 64 старых intents и 64 новых leases обходят общий лимит. При увеличении generation точечным действием не обесценивать уже проверенные решения чужого устройства; Apply всё равно проверяет policy/DNS/TTL. [Тесты](TESTING.md).
+
+## UI v2
+
+Распознавать Flag по `data-widget="CBI.FlagValue"`, а не по любому вложенному checkbox: MultiValue/dropdown также могут содержать checkbox. LuCI label click toggles control; кнопке help нужен stopPropagation до этого обработчика. Не скрывать help однополевой модалки вместе с её title. Snapshot cache нужно инвалидировать в `state_service` после завершения worker: CLI-процесс имеет другой module cache. При смене фильтра во время RPC старый ответ не должен обновлять таблицу. [Проверки и границы](audits/UI_FIXES_V2.md).
+
+LuCI E/dom.attr записывает boolean false через setAttribute: `hidden="false"` скрывает, `disabled="false"` блокирует. Для таких состояний присваивать DOM properties либо вообще не создавать атрибут при false. Mock `...attrs` не моделирует эту семантику; regression должен различать attribute presence и property value. Воспроизведено для release feedback и кнопок autoRouting после 0.1.6.
+
 QA 0.1.6: minimum core и поставляемый core могут различаться (r10/r11); release checker обязан сравнивать версии, не строки на равенство. Managed infrastructure tag нужно резервировать одновременно в backend/LuCI/page fixture. APK payload содержит штатные `lib/apk/packages` metadata, которых нет в IPK; сравнивать остальной payload побайтно. OpenWrt logread нельзя подменять BusyBox для доказательства TZ. [Доказательства](TESTING.md).
 
 ## №04Б-ФИНАЛ: два новых regression-вывода

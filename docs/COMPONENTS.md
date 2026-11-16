@@ -1,5 +1,9 @@
 # Компоненты и точки изменений
 
+0.1.7/r12: `core/patches/0008-auto-routing-registry.patch`; `config/auto_registry.uc` (atomic intents/budget); `diagnostics/auto_registry.uc` (ACL-guarded batch orchestration через auto_action); `diagnostics/auto_records.uc` (bounded view); state service capture раз в минуту. `tests/core/auto_registry_test.go`, `tests/diagnostics/auto_registry.test.uc`, `tests/installer-upgrade-017.sh` и headless fixture проверяют новые границы. [Контракт](AUTO_REGISTRY_017.md).
+
+UI v2: `cbi/formUx.ts` — help/layout; `components/updateStatus.ts` — boolean-safe status; `diagnostic/renderRouteForecast.ts` — скрытый forecast и существующий LAN cache; `sections/connectionEditor.ts`/`fingerprintOptions.ts` — компактный editor; `sections/autoRecords.ts` → RPC `auto_records` → `diagnostics/auto_records.uc` — source-only страницы. `auto_routing_use_warp` отключает использование, сохраняя выбранный профиль; legacy configs без флага сохраняют прежнюю семантику. [Отчёт](audits/UI_FIXES_V2.md).
+
 Приёмка 0.1.6: `src/constants.ts` резервирует `infrastructure-direct-out` в LuCI; page fixture удерживает frontend/backend вместе. `scripts/check-release.sh` проверяет core >= minimum, regression — `tests/release-manifest-smoke.sh`. [Свежая QA](TESTING.md).
 
 ## №04Б-ФИНАЛ

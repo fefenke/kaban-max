@@ -15,6 +15,7 @@ type Node = {
   textContent: string;
   disabled: boolean;
   setAttribute: (key: string, value: string) => void;
+  addEventListener: (type: string, listener: unknown) => void;
 };
 
 describe('route forecast UI', () => {
@@ -30,6 +31,9 @@ describe('route forecast UI', () => {
           value: String(attrs.value ?? ''),
           textContent: '',
           disabled: false,
+          addEventListener(type, listener) {
+            this.attrs[type] = listener;
+          },
           setAttribute(key, value) {
             this.attrs[key] = value;
           },
@@ -44,7 +48,7 @@ describe('route forecast UI', () => {
       expect(mocks.request).not.toHaveBeenCalled();
       const inputs = nodes.filter((node) => node.type === 'input');
       inputs[0].value = ' example.test ';
-      inputs[1].value = '@system';
+      nodes.find((node) => node.type === 'select')!.value = '@system';
       const button = nodes.find((node) => node.type === 'button')!;
       const output = nodes.find((node) => node.type === 'pre')!;
       let finish!: (value: unknown) => void;

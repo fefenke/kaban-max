@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: KABANMAX\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-16 02:12+0300\n"
-"PO-Revision-Date: 2026-11-16 02:12+0300\n"
+"POT-Creation-Date: 2026-11-16 07:59+0300\n"
+"PO-Revision-Date: 2026-11-16 07:59+0300\n"
 "Last-Translator: K.A.B.A.N.-MAX contributors\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -158,17 +158,11 @@ msgstr "Сертификат клиента без ключа: выберите 
 msgid "A client key without its certificate"
 msgstr "Ключ клиента без сертификата"
 
-msgid "A connection problem was observed; application verification is required"
-msgstr "Обнаружена проблема соединения; нужна проверка приложения"
-
 msgid "A custom sing-box outbound object"
 msgstr "Пользовательский объект sing-box outbound"
 
 msgid "A different HTTPS target, checked only when the primary check fails"
 msgstr "Другой HTTPS-адрес, проверяется только при сбое основного запроса"
-
-msgid "A different rule wins; no automatic change"
-msgstr "Сработало другое правило; автоматических изменений нет"
 
 msgid "A JSON object merged into every server. Parameters a server does not support are skipped, matching parameters are overwritten"
 msgstr "JSON-объект, добавляемый к каждому серверу. Неподдерживаемые параметры пропускаются, совпадающие перезаписываются"
@@ -227,9 +221,6 @@ msgstr "Действие"
 msgid "Active"
 msgstr "Активные"
 
-msgid "Active redirects"
-msgstr "Активные перенаправления"
-
 msgid "Add"
 msgstr "Добавить"
 
@@ -269,11 +260,11 @@ msgstr "Добавить URLTest"
 msgid "Added after every server name"
 msgstr "Добавляется после имени каждого сервера"
 
-msgid "Added automatically"
-msgstr "Добавлено автоматически"
-
 msgid "Added in front of every server name"
 msgstr "Добавляется перед именем каждого сервера"
+
+msgid "Additional tools"
+msgstr "Дополнительные инструменты"
 
 msgid "Address %s is not allowed"
 msgstr "Адрес %s недопустим"
@@ -317,11 +308,8 @@ msgstr "Весь трафик устройства принудительно п
 msgid "All traffic through the server"
 msgstr "Весь трафик через сервер"
 
-msgid "Allow Direct probes"
-msgstr "Разрешить проверки Direct"
-
-msgid "Allow Zapret2 probes"
-msgstr "Разрешить проверки Zapret2"
+msgid "Allow redirecting IPs without a domain"
+msgstr "Разрешать перенаправление IP без домена"
 
 msgid "Allowed IPs"
 msgstr "Разрешённые IP-адреса"
@@ -331,9 +319,6 @@ msgstr "ALPN"
 
 msgid "Also deflate"
 msgstr "Также deflate"
-
-msgid "Alternative HTTPS response verified; manual confirmation only"
-msgstr "HTTPS-ответ альтернативы проверен; только ручное подтверждение"
 
 msgid "An even number of hex digits, up to 16"
 msgstr "Чётное число hex-цифр, не больше 16"
@@ -359,17 +344,20 @@ msgstr "Для AnyTLS требуется TLS"
 msgid "Applied"
 msgstr "Применено"
 
+msgid "Applied records"
+msgstr "Применены"
+
 msgid "Applies WARP+ to the profile account"
 msgstr "Применяет WARP+ к аккаунту профиля"
 
 msgid "Apply"
 msgstr "Применить"
 
-msgid "Apply unavailable: identity, permission or validity period is not confirmed"
-msgstr "Применение недоступно: не подтверждены принадлежность, разрешение или срок действия"
+msgid "Apply all"
+msgstr "Применить все"
 
-msgid "Apply verified temporary routes automatically"
-msgstr "Автоматически применять проверенные временные маршруты"
+msgid "Apply automatically"
+msgstr "Автоматически применять"
 
 msgid "applying..."
 msgstr "применяет настройки..."
@@ -404,9 +392,6 @@ msgstr "Ключ авторизации"
 msgid "Auto refresh"
 msgstr "Автообновление"
 
-msgid "Automatic IP records"
-msgstr "Автоматические записи IP"
-
 msgid "Automatic routing"
 msgstr "Автоматическая маршрутизация"
 
@@ -421,6 +406,9 @@ msgstr "Доступные действия"
 
 msgid "Available: %s"
 msgstr "Доступны: %s"
+
+msgid "Awaiting"
+msgstr "Ожидают"
 
 msgid "Back"
 msgstr "Назад"
@@ -464,6 +452,9 @@ msgstr "По умолчанию из набора правил применяю�
 msgid "By default the router's routes choose it"
 msgstr "По умолчанию его выбирают маршруты роутера"
 
+msgid "By IP"
+msgstr "По IP"
+
 msgid "CA certificate"
 msgstr "Сертификат центра сертификации"
 
@@ -472,9 +463,6 @@ msgstr "Путь к файлу кэша"
 
 msgid "Cancel"
 msgstr "Отмена"
-
-msgid "Candidates"
-msgstr "Кандидаты"
 
 msgid "Cannot be this section"
 msgstr "Нельзя выбрать эту же секцию"
@@ -524,9 +512,6 @@ msgstr "Интервал проверки"
 msgid "Check IP"
 msgstr "Проверить IP"
 
-msgid "Check results"
-msgstr "Результаты проверок"
-
 msgid "Check settings"
 msgstr "Параметры проверок"
 
@@ -547,6 +532,9 @@ msgstr "Проверяется"
 
 msgid "Checking, please wait"
 msgstr "Проверяем, пожалуйста, подождите"
+
+msgid "Checking…"
+msgstr "Проверяем…"
 
 msgid "Checks"
 msgstr "Проверки"
@@ -574,9 +562,6 @@ msgstr "Запрос к Clash API был отправлен, но ответ п�
 
 msgid "Classical key exchange only"
 msgstr "Только классический обмен ключами"
-
-msgid "Clear automatic list"
-msgstr "Очистить автоматический список"
 
 msgid "Clear logs"
 msgstr "Очистить журнал"
@@ -634,6 +619,9 @@ msgstr "Имя CN (name)"
 
 msgid "comp-lzo: unsupported mode %s"
 msgstr "comp-lzo: режим %s не поддерживается"
+
+msgid "Completed"
+msgstr "Выполнено"
 
 msgid "Components"
 msgstr "Компоненты"
@@ -779,9 +767,6 @@ msgstr "Процессор"
 msgid "Create and fetch Cloudflare WARP profiles through the selected section. The tunnels' own traffic does not go through it"
 msgstr "Создавать и получать профили Cloudflare WARP через выбранную секцию. Трафик самих туннелей через неё не идёт"
 
-msgid "Created"
-msgstr "Создано"
-
 msgid "Created in the Tailscale console under Settings → Keys"
 msgstr "Создаётся в консоли Tailscale: Settings → Keys"
 
@@ -833,14 +818,8 @@ msgstr "Задержка в миллисекундах перед перезап
 msgid "Delete"
 msgstr "Удалить"
 
-msgid "Deleting a route withdraws it and stores persistent suppression. Reset suppression to allow automatic selection again."
-msgstr "Удаление отменяет маршрут и сохраняет исключение. Сбросьте исключения, чтобы снова разрешить автоматический подбор."
-
-msgid "Destination"
-msgstr "Назначение"
-
-msgid "Destination identity is not established"
-msgstr "Принадлежность назначения не установлена"
+msgid "Destination domain or IP"
+msgstr "Домен или IP назначения"
 
 msgid "Details"
 msgstr "Подробности"
@@ -869,11 +848,11 @@ msgstr "Устройства"
 msgid "Diagnostic report"
 msgstr "Отчёт диагностики"
 
+msgid "Diagnostics"
+msgstr "Диагностика"
+
 msgid "Direct"
 msgstr "Напрямую"
-
-msgid "Direct without a section"
-msgstr "Direct без секции"
 
 msgid "Disable autostart"
 msgstr "Отключить автостарт"
@@ -889,9 +868,6 @@ msgstr "Выключено"
 
 msgid "Disables QUIC for compatibility and to fix video streaming"
 msgstr "Отключает QUIC для совместимости и исправления видеостриминга"
-
-msgid "DNS evidence is unavailable, changed or expired"
-msgstr "Данные DNS недоступны, изменились или устарели"
 
 msgid "DNS outside the rules"
 msgstr "DNS вне правил"
@@ -923,9 +899,6 @@ msgstr "dnsmasq не отвечает"
 msgid "Do not check"
 msgstr "Не проверять"
 
-msgid "Do not use WARP"
-msgstr "Не использовать WARP"
-
 msgid "Do not verify the server certificate"
 msgstr "Не проверять сертификат сервера"
 
@@ -938,11 +911,11 @@ msgstr "не слушает %s"
 msgid "does not use the router's DNS"
 msgstr "не использует DNS роутера"
 
-msgid "Domain"
-msgstr "Домен"
-
 msgid "Domain Resolver"
 msgstr "Резолвер доменов"
+
+msgid "Domain unknown"
+msgstr "Домен неизвестен"
 
 msgid "Domains"
 msgstr "Домены"
@@ -998,9 +971,6 @@ msgstr "Сбрасывать все активные соединения при
 msgid "Duplicate value"
 msgstr "Значение повторяется"
 
-msgid "Earlier rules require unavailable connection metadata"
-msgstr "Для предыдущих правил не хватает данных соединения"
-
 msgid "Edit"
 msgstr "Редактировать"
 
@@ -1018,9 +988,6 @@ msgstr "Включить"
 
 msgid "Enable automatic routing"
 msgstr "Включить автоматическую маршрутизацию"
-
-msgid "Enable automatic routing in a Zapret2 section and apply with the test core."
-msgstr "Включите автомаршрутизацию в секции Zapret2 и примените настройки с тестовым ядром."
 
 msgid "Enable autostart"
 msgstr "Включить автостарт"
@@ -1043,11 +1010,14 @@ msgstr "Укажите хотя бы один корректный домен и
 msgid "Ephemeral node"
 msgstr "Временный узел"
 
-msgid "Evidence"
-msgstr "Доказательства"
-
 msgid "example.org includes subdomains; full:example.org matches only that domain. Separate entries with a new line, comma or space."
 msgstr "example.org включает поддомены; full:example.org — только точное совпадение. Разделяйте записи новой строкой, запятой или пробелом."
+
+msgid "Exclude"
+msgstr "Исключить"
+
+msgid "Exclude all"
+msgstr "Исключить все"
 
 msgid "Exclude by pattern"
 msgstr "Исключить по шаблону"
@@ -1061,8 +1031,8 @@ msgstr "Исключить серверы"
 msgid "Exclude types"
 msgstr "Исключить типы"
 
-msgid "Excluded by the user"
-msgstr "Исключено пользователем"
+msgid "Excluded"
+msgstr "Исключены"
 
 msgid "excluded from routing"
 msgstr "исключён из маршрутизации"
@@ -1088,6 +1058,9 @@ msgstr "Развернуть секцию"
 msgid "Expected a JSON object"
 msgstr "Ожидается объект JSON"
 
+msgid "Expected section"
+msgstr "Предполагаемая секция"
+
 msgid "Expected status"
 msgstr "Ожидаемый статус"
 
@@ -1106,11 +1079,11 @@ msgstr "Истекает %s"
 msgid "Export config"
 msgstr "Экспорт конфига"
 
-msgid "Export connection"
-msgstr "Экспорт подключения"
-
 msgid "failed"
 msgstr "ошибка"
+
+msgid "Failed"
+msgstr "Не удалось"
 
 msgid "Failed to clear logs"
 msgstr "Не удалось очистить журнал"
@@ -1199,9 +1172,6 @@ msgstr "Заполните учётные данные клиента, чтоб�
 msgid "Finding the exit…"
 msgstr "Определяем выход…"
 
-msgid "Fingerprint in URI"
-msgstr "Отпечаток в ссылке"
-
 msgid "Fingerprint version"
 msgstr "Версия отпечатка"
 
@@ -1274,6 +1244,9 @@ msgstr "Формат: pin-sha256:… или SHA-1"
 msgid "Forward secrecy only"
 msgstr "Только с прямой секретностью"
 
+msgid "Found IPs"
+msgstr "Найденные IP"
+
 msgid "Fragment size"
 msgstr "Размер фрагмента"
 
@@ -1334,14 +1307,14 @@ msgstr "Заголовки"
 msgid "Health checks failed, but a new connection received data. Server selection was kept."
 msgstr "Контрольные запросы не прошли, но новое подключение получило данные. Сервер не переключён."
 
+msgid "Help"
+msgstr "Справка"
+
 msgid "Hide details"
 msgstr "Скрыть подробности"
 
 msgid "Hide values"
 msgstr "Скрывать значения"
-
-msgid "History"
-msgstr "История"
 
 msgid "Host"
 msgstr "Хост"
@@ -1432,9 +1405,6 @@ msgstr "Включить серверы"
 
 msgid "Includes connection setup and the TLS handshake"
 msgstr "Учитывает установку соединения и TLS-рукопожатие"
-
-msgid "Infrastructure protection forbids this check"
-msgstr "Защита инфраструктуры запрещает эту проверку"
 
 msgid "Inherit from connection URI"
 msgstr "Из настроек ссылки подключения"
@@ -1688,11 +1658,14 @@ msgstr "Не удалось проверить задержку: Clash API не 
 msgid "Latency test URL"
 msgstr "URL для тестирования задержки"
 
-msgid "Leave empty for ordinary HTTPS checks on port 443 using the trusted flow hostname and GET /. These checks only propose scoped routes for manual confirmation, even when automatic application is enabled. Optional JSON mode web configures path, port, status and content prefix. Existing nonce contracts use mode strict and can qualify for automatic application. Timeout is not proof of DPI; UDP is not verified. Save & Apply may interrupt TCP connections."
-msgstr "Оставьте пустым для обычных HTTPS-проверок порта 443 с достоверным именем из потока и GET /. Эти проверки только предлагают узкие маршруты для ручного подтверждения, даже если включено автоприменение. Необязательный JSON с mode web задаёт путь, порт, статус и префикс содержимого. Существующие nonce-контракты используют mode strict и могут допускать автоприменение. Тайм-аут не доказывает DPI; UDP не проверяется. Применение настроек может прервать TCP-соединения."
+msgid "Leave empty for ordinary HTTPS manual proposals. Strict nonce contracts are preserved. Timeouts do not prove blocking."
+msgstr "Оставьте пустым для ручных предложений по обычному HTTPS. Строгие nonce-контракты сохраняются. Тайм-аут не доказывает блокировку."
 
 msgid "Legacy encryption"
 msgstr "Устаревшее шифрование"
+
+msgid "Legacy exclusions exceed 64 records. Remove entries explicitly or narrow the filter; no exclusions were discarded."
+msgstr "В старом реестре более 64 исключений. Удалите записи явно или уточните фильтр; исключения не удалялись автоматически."
 
 msgid "Level"
 msgstr "Уровень"
@@ -1856,6 +1829,9 @@ msgstr "Нужен ключ base64 длиной %d байт"
 msgid "Needs an IPv4 subnet"
 msgstr "Нужна подсеть IPv4"
 
+msgid "Needs verification"
+msgstr "Нужна проверка"
+
 msgid "Network"
 msgstr "Сеть"
 
@@ -1870,6 +1846,9 @@ msgstr "Настройки сетевого интерфейса"
 
 msgid "Network interface: %s"
 msgstr "Сетевой интерфейс: %s"
+
+msgid "Newest first"
+msgstr "Сначала новые"
 
 msgid "No"
 msgstr "Нет"
@@ -1910,6 +1889,9 @@ msgstr "Нет связи с сервером координации"
 msgid "No device of the tailnet is approved as an exit node"
 msgstr "Ни одно устройство сети не одобрено как выходной узел"
 
+msgid "No discovered IPs yet"
+msgstr "Пока нет обнаруженных IP"
+
 msgid "No domain"
 msgstr "Нет домена"
 
@@ -1925,14 +1907,17 @@ msgstr "Без IPv6 в туннеле"
 msgid "No KabanMax release wrote configuration version %s"
 msgstr "Конфигурации версии %s нет ни в одном выпуске KabanMax"
 
+msgid "No LAN devices available; you can select the router."
+msgstr "Устройства LAN недоступны; можно выбрать роутер."
+
 msgid "No logs available"
 msgstr "Логи отсутствуют"
 
 msgid "No logs match the current filters"
 msgstr "Нет логов, соответствующих текущим фильтрам"
 
-msgid "No matching original flow attests this IP and identity"
-msgstr "Нет исходного потока, подтверждающего этот IP и принадлежность"
+msgid "No matching IPs"
+msgstr "Нет IP по заданному фильтру"
 
 msgid "No network"
 msgstr "Нет сети"
@@ -2003,9 +1988,6 @@ msgstr "не проверено: Clash API не ответил"
 msgid "Not checked: the Clash API did not answer"
 msgstr "Не проверено: Clash API не ответил"
 
-msgid "Not established"
-msgstr "Не установлено"
-
 msgid "not in the running configuration"
 msgstr "нет в рабочей конфигурации"
 
@@ -2060,6 +2042,9 @@ msgstr "Не в сети"
 msgid "OIDC access token"
 msgstr "Токен доступа OIDC"
 
+msgid "Oldest first"
+msgstr "Сначала старые"
+
 msgid "One rule per line: pattern => replacement, applied in order. The pattern is a regular expression, $1 in the replacement keeps a captured group and ${1} keeps it in front of a letter. Example: ^HK-(.*)$ => Hong Kong $1"
 msgstr "По одному правилу в строке: шаблон => замена, применяются по порядку. Шаблон — регулярное выражение, $1 в замене сохраняет найденную группу, а ${1} сохраняет её перед буквой. Пример: ^HK-(.*)$ => Гонконг $1"
 
@@ -2086,6 +2071,9 @@ msgstr "Только a-z, 0-9 и дефис, до 63 символов"
 
 msgid "Only anyconnect://create and anyconnect://connect links carry a server"
 msgstr "Сервер есть только в ссылках anyconnect://create и anyconnect://connect"
+
+msgid "Only eligible records in this source section will be changed. Continue?"
+msgstr "Будут изменены только подходящие записи этой исходной секции. Продолжить?"
 
 msgid "Only for a key protected by a passphrase"
 msgstr "Только для ключа, защищённого паролем"
@@ -2135,14 +2123,11 @@ msgstr "Состояние операции"
 msgid "Operation timed out"
 msgstr "Время ожидания истекло"
 
+msgid "Ordinary HTTPS supports manual proposals only. Automatic application requires a strict nonce contract; viewing or toggling unsaved settings does not change active routes."
+msgstr "Обычный HTTPS поддерживает только ручные предложения. Автоматическое применение требует строгого nonce-контракта. Несохранённые настройки не меняют действующие маршруты."
+
 msgid "Original connection URI"
 msgstr "Исходная ссылка подключения"
-
-msgid "Original HTTPS checks are inconclusive; no route change is authorized"
-msgstr "Проверки исходного HTTPS не дали определённого результата; изменение маршрута не разрешено"
-
-msgid "Original HTTPS resource responds; no change"
-msgstr "Исходный HTTPS-ресурс отвечает; изменений нет"
 
 msgid "Original URI"
 msgstr "Исходная ссылка"
@@ -2276,17 +2261,14 @@ msgstr "Приватный ключ"
 msgid "Probably a subscription URL: paste it into Subscription"
 msgstr "Возможно, это URL подписки: вставьте его в поле «Подписка»"
 
-msgid "Processed IPs (recent results)"
-msgstr "Проверенные IP (последние результаты)"
+msgid "Processing…"
+msgstr "Обработка…"
 
 msgid "Profile"
 msgstr "Профиль"
 
 msgid "Profile ID"
 msgstr "Идентификатор профиля"
-
-msgid "Proposals"
-msgstr "Предложения"
 
 msgid "Proposed"
 msgstr "Предложено"
@@ -2321,8 +2303,8 @@ msgstr "Случайный порядок серверов"
 msgid "Reach the coordination server through a section instead of the WAN"
 msgstr "Подключаться к серверу координации через секцию, а не напрямую"
 
-msgid "Read-only forecast for non-DNS TCP from the generated configuration. DNS, live core state and nft/PBR are not verified. Rule indexes start at zero."
-msgstr "Прогноз по сформированной конфигурации для TCP, кроме DNS. DNS, текущее состояние ядра и nft/PBR не проверяются. Индексы правил начинаются с нуля."
+msgid "Read-only forecast. Does not run network probes or change routes. DNS and live nft/PBR state are not verified."
+msgstr "Прогноз только для чтения: без сетевых проб и изменения маршрутов. DNS и действующее состояние nft/PBR не проверяются."
 
 msgid "Ready-made lists of domains and subnets from %s"
 msgstr "Готовые списки доменов и подсетей из %s"
@@ -2372,14 +2354,14 @@ msgstr "Успехов для возврата"
 msgid "Refill"
 msgstr "Сброс"
 
-msgid "Refresh"
-msgstr "Обновить"
-
-msgid "Refresh to view backend candidates and temporary routes."
-msgstr "Обновите список кандидатов и временных маршрутов."
-
 msgid "Refuse a TLS 1.2 key exchange without forward secrecy"
 msgstr "Отказываться от обмена ключами TLS 1.2 без прямой секретности"
+
+msgid "Registry action failed"
+msgstr "Действие с реестром не выполнено"
+
+msgid "Registry actions require the r12 core API"
+msgstr "Для действий с реестром требуется ядро r12"
 
 msgid "remote: no server"
 msgstr "remote: не указан сервер"
@@ -2387,11 +2369,20 @@ msgstr "remote: не указан сервер"
 msgid "Remove"
 msgstr "Удалить"
 
+msgid "Remove all"
+msgstr "Удалить все"
+
+msgid "Remove exclusions"
+msgstr "Удалить исключения"
+
 msgid "Remove KabanMax"
 msgstr "Удалить KabanMax"
 
 msgid "Remove KabanMax?"
 msgstr "Удалить KabanMax?"
+
+msgid "Remove saved approvals"
+msgstr "Удалить сохранённые разрешения"
 
 msgid "Remove servers from the selection above"
 msgstr "Убрать серверы из выборки выше"
@@ -2420,9 +2411,6 @@ msgstr "Повторная проверка"
 msgid "Repeated failure confirmation"
 msgstr "Повторное подтверждение сбоя"
 
-msgid "Repeated transport failure; blocking is not proven"
-msgstr "Повторный транспортный сбой; блокировка не доказана"
-
 msgid "Replaced"
 msgstr "Заменено"
 
@@ -2449,9 +2437,6 @@ msgstr "Reserved не поддерживается: добавьте тунне�
 
 msgid "Reserved name"
 msgstr "Зарезервированное имя"
-
-msgid "Reset suppression"
-msgstr "Сбросить исключения"
 
 msgid "Resolve domains before routing"
 msgstr "Резолв доменов перед маршрутизацией"
@@ -2543,17 +2528,26 @@ msgstr "работает"
 msgid "running for %s"
 msgstr "работает %s"
 
+msgid "Safe IP-only application is unavailable: a trusted domain and flow identity is required. These IPs remain visible for diagnosis; no global IP bypass is created."
+msgstr "Безопасное применение IP без домена недоступно: нужны доверенные домен и контекст соединения. Эти IP видны в диагностике; глобальный обход по IP не создаётся."
+
 msgid "Same file as the certificate"
 msgstr "Тот же файл, что и сертификат"
 
 msgid "Save"
 msgstr "Сохранить"
 
+msgid "Saved; fresh verification required"
+msgstr "Сохранено; нужна новая проверка"
+
 msgid "Scheduled check"
 msgstr "Плановая проверка"
 
 msgid "Search"
 msgstr "Поиск"
+
+msgid "Search IP or domain"
+msgstr "Поиск по IP или домену"
 
 msgid "Seconds, or a range such as 25-35"
 msgstr "Секунды или диапазон, например 25-35"
@@ -2579,11 +2573,20 @@ msgstr "См. подробности диагностики"
 msgid "Select a .ovpn, .conf, .xml or .nmconnection file"
 msgstr "Выберите файл .ovpn, .conf, .xml или .nmconnection"
 
+msgid "Select a device"
+msgstr "Выберите устройство"
+
 msgid "Select a server or set a pattern"
 msgstr "Выберите сервер или задайте шаблон"
 
+msgid "Select a WARP profile"
+msgstr "Выберите профиль WARP"
+
 msgid "Select an interface"
 msgstr "Выберите интерфейс"
+
+msgid "Select at most 64 records"
+msgstr "Выберите не более 64 записей"
 
 msgid "Select the network interface to which the traffic will originate"
 msgstr "Выберите сетевой интерфейс, на который будет поступать трафик"
@@ -2726,11 +2729,17 @@ msgstr "Показать QR-код"
 msgid "Show details"
 msgstr "Показать подробности"
 
-msgid "Show Direct routes in Bypass section"
-msgstr "Показывать маршруты Direct в секции Bypass"
+msgid "Show editable protocol parameters. Viewing does not change the original connection URI."
+msgstr "Показать редактируемые параметры протокола. Просмотр не изменяет исходную ссылку подключения."
 
 msgid "Show metadata"
 msgstr "Отображать метаданные"
+
+msgid "Show parameters"
+msgstr "Показать параметры"
+
+msgid "Show route"
+msgstr "Показать маршрут"
 
 msgid "Show the metadata block on the dashboard"
 msgstr "Отображать блок метаданных в дашборде"
@@ -2768,6 +2777,9 @@ msgstr "sing-box-kabanmax %s устарел: нужен %s или новее"
 msgid "sing-box-kabanmax is not installed"
 msgstr "sing-box-kabanmax не установлен"
 
+msgid "Skipped"
+msgstr "Пропущено"
+
 msgid "Skipped: KabanMax is not running"
 msgstr "Пропущено: KabanMax не запущен"
 
@@ -2776,6 +2788,9 @@ msgstr "SNI"
 
 msgid "SOCKS5"
 msgstr "SOCKS5"
+
+msgid "Sort"
+msgstr "Сортировка"
 
 msgid "Sort by latency"
 msgstr "Сортировать по задержке"
@@ -2804,9 +2819,6 @@ msgstr "SSO и SAML через панель sing-box: туннель будет 
 msgid "Stable fallback"
 msgstr "Устойчивый fallback"
 
-msgid "Standard (Chrome 133)"
-msgstr "Стандартная (Chrome 133)"
-
 msgid "Standby"
 msgstr "Резерв ожидает"
 
@@ -2828,6 +2840,9 @@ msgstr "запускается..."
 msgid "Starting..."
 msgstr "Запуск..."
 
+msgid "State"
+msgstr "Состояние"
+
 msgid "Stateless (lz4, lzs)"
 msgstr "Без состояния (lz4, lzs)"
 
@@ -2846,14 +2861,14 @@ msgstr "Остановить"
 msgid "Stop automatic routing now"
 msgstr "Остановить автомаршрутизацию сейчас"
 
+msgid "Stop until the next Save & Apply? To disable permanently, turn off automatic routing and Save & Apply."
+msgstr "Остановить до следующего сохранения и применения? Для постоянного отключения снимите главную галочку и сохраните настройки."
+
 msgid "stopped"
 msgstr "остановлен"
 
 msgid "Stopped"
 msgstr "Остановлен"
-
-msgid "Stopped until the next configuration apply. Disable the section option and Save & Apply to persist this choice."
-msgstr "Остановлено до следующего применения конфигурации. Для сохранения отключите опцию секции и нажмите «Сохранить и применить»."
 
 msgid "stopping..."
 msgstr "останавливается..."
@@ -2863,9 +2878,6 @@ msgstr "Остановка..."
 
 msgid "Straight from the router, without a proxy or tunnel"
 msgstr "Прямо с роутера, без прокси и туннелей"
-
-msgid "Strict application contract verified; eligible for automatic application"
-msgstr "Строгий контракт приложения подтверждён; допустимо автоприменение"
 
 msgid "Subnets"
 msgstr "Подсети"
@@ -2900,9 +2912,6 @@ msgstr "Поддержка"
 msgid "Supported URIs: %s"
 msgstr "Поддерживаются URI: %s"
 
-msgid "Suppressed"
-msgstr "Исключённые"
-
 msgid "Suspected failure"
 msgstr "Подозрение на сбой"
 
@@ -2914,6 +2923,9 @@ msgstr "Порог переключения в мс, при которой пе�
 
 msgid "System"
 msgstr "Система"
+
+msgid "System (router)"
+msgstr "Система (роутер)"
 
 msgid "System information"
 msgstr "Системная информация"
@@ -2930,12 +2942,6 @@ msgstr "TAP (уровень 2) не поддерживается, только T
 msgid "TCP and UDP"
 msgstr "TCP и UDP"
 
-msgid "TCP diagnostic only; application identity unknown"
-msgstr "Только диагностика TCP; принадлежность приложению неизвестна"
-
-msgid "Temporary routes are scoped inside the original Zapret2 section. No manual entries are changed."
-msgstr "Временные маршруты ограничены исходной секцией Zapret2. Ручные записи сохраняются."
-
 msgid "Test all sections"
 msgstr "Тестировать все секции"
 
@@ -2948,20 +2954,11 @@ msgstr "Символ / недопустим"
 msgid "The <%s> block is not closed"
 msgstr "Блок <%s> не закрыт"
 
-msgid "The actual dialled IP is unknown; other DNS addresses will not be checked"
-msgstr "Фактический IP соединения неизвестен; другие адреса DNS проверяться не будут"
-
 msgid "The address links and profiles point at"
 msgstr "Адрес, на который указывают ссылки и профили"
 
-msgid "The alternative passed the configured application contract"
-msgstr "Альтернативный маршрут прошёл заданную проверку приложения"
-
 msgid "The AnyConnect version reported to the server"
 msgstr "Версия AnyConnect, которую видит сервер"
-
-msgid "The application failure contract was not confirmed"
-msgstr "Контракт отказа приложения не подтверждён"
 
 msgid "The Array Networks protocol is not supported by sing-box"
 msgstr "Протокол Array Networks в sing-box не поддерживается"
@@ -3074,9 +3071,6 @@ msgstr "Роутер сам становится прокси-сервером �
 msgid "The router itself: its services and programs"
 msgstr "Сам роутер: его службы и программы"
 
-msgid "The same IP and hostname responded through the alternative; this does not prove DPI"
-msgstr "Тот же IP с тем же именем отвечает через альтернативу; это не доказывает DPI"
-
 msgid "The second address of ifconfig in the profile"
 msgstr "Второй адрес ifconfig в профиле"
 
@@ -3085,9 +3079,6 @@ msgstr "Второй адрес ifconfig-ipv6 в профиле"
 
 msgid "The section's other conditions apply only to these devices"
 msgstr "Остальные условия секции действуют только для этих устройств"
-
-msgid "The separate TLS fingerprint below overrides this value. Copy link exports the effective fingerprint."
-msgstr "Отдельный отпечаток TLS ниже имеет приоритет над этим значением. При копировании ссылки экспортируется действующий отпечаток."
 
 msgid "The server is disabled."
 msgstr "Сервер выключен."
@@ -3113,9 +3104,6 @@ msgstr "Серверы, которые войдут в группу"
 msgid "The signature algorithms and key sizes accepted (tls-cert-profile in the profile)"
 msgstr "Допустимые алгоритмы подписи и размеры ключей (tls-cert-profile в профиле)"
 
-msgid "The source is not an attested Zapret2 route"
-msgstr "Исходный маршрут Zapret2 не подтверждён"
-
 msgid "The subnets that go through this peer"
 msgstr "Подсети, которые пойдут через этого пира"
 
@@ -3130,9 +3118,6 @@ msgstr "Это устройство"
 
 msgid "This fingerprint does not support REALITY."
 msgstr "Этот отпечаток не поддерживает REALITY."
-
-msgid "This forecast does not run probes or change routes. Configure opt-in automatic routing in the Zapret2 section; it requires the r11 core extension."
-msgstr "Прогноз не запускает проверки и не меняет маршруты. Автомаршрутизация включается отдельно в секции Zapret2 и требует расширения ядра r11."
 
 msgid "This format cannot export a TLS fingerprint override. Use the original URI and its separate settings."
 msgstr "Этот формат не позволяет экспортировать отдельный отпечаток TLS. Используйте исходную ссылку и отдельные настройки."
@@ -3257,14 +3242,14 @@ msgstr "Туннель: %s"
 msgid "Type"
 msgstr "Тип"
 
-msgid "UDP is observed but is not checked by this HTTPS mechanism"
-msgstr "UDP учитывается, но не проверяется этим механизмом HTTPS"
+msgid "Unable to determine the route"
+msgstr "Не удалось определить маршрут"
 
 msgid "Unable to export this connection"
 msgstr "Не удалось экспортировать подключение"
 
-msgid "Unattributed"
-msgstr "Без установленного источника"
+msgid "Unable to load LAN devices"
+msgstr "Не удалось загрузить устройства LAN"
 
 msgid "unknown"
 msgstr "неизвестно"
@@ -3319,6 +3304,9 @@ msgstr "Неподдерживаемый режим flow VLESS"
 
 msgid "Up to %d characters"
 msgstr "Не длиннее %d символов"
+
+msgid "Up to 64 records per list. Saved approvals are inactive until fresh verification; bulk actions use the entire current filter."
+msgstr "До 64 записей в каждом списке. Сохранённые разрешения неактивны до новой проверки. Массовые действия охватывают весь текущий фильтр."
 
 msgid "Update"
 msgstr "Обновить"
@@ -3386,6 +3374,9 @@ msgstr "Параметры в формате --option=value. Очередью, �
 msgid "Use a duration from 1s to 5m"
 msgstr "Укажите длительность от 1s до 5m"
 
+msgid "Use Direct"
+msgstr "Использовать Direct"
+
 msgid "Use pin-sha256 instead of a certificate SHA-256"
 msgstr "Нужен pin-sha256, а не SHA-256 сертификата"
 
@@ -3397,6 +3388,9 @@ msgstr "Для этого формата используйте редактор
 
 msgid "Use the tunnel's DNS for the domains its server declares. Add those domains to the section so that devices reach them through the tunnel"
 msgstr "Использовать DNS туннеля для доменов, которые объявляет его сервер. Добавьте эти домены в секцию, чтобы устройства ходили к ним через туннель"
+
+msgid "Use WARP"
+msgstr "Использовать WARP"
 
 msgid "User name"
 msgstr "Имя пользователя"
@@ -3457,9 +3451,6 @@ msgstr "Предупреждения"
 
 msgid "WARP profile"
 msgstr "Профиль WARP"
-
-msgid "WARP profile for automatic routing"
-msgstr "Профиль WARP для автомаршрутизации"
 
 msgid "WARP server address"
 msgstr "Адрес сервера WARP"

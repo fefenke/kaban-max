@@ -1,0 +1,504 @@
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+index d840fdc..46fe6d8 100755
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -66,6 +66,8 @@ type Manager struct {
+ 	suppressed   map[string]bool
+ 	events       map[string]*Event
+ 	decisions    map[string]Decision
++	reserved     map[string]bool
++	saved        map[string]Lease
+ 	leases       map[string]Lease
+ 	history      []Lease
+ 	started      sync.Once
+@@ -86,9 +88,17 @@ type Manager struct {
+ func New(ctx context.Context, sources []option.KabanmaxAutoSource) *Manager {
+ 	ctx, cancel := context.WithCancel(ctx)
+ 	m := &Manager{ctx: ctx, sources: map[string]option.KabanmaxAutoSource{}, disabled: map[string]bool{}, suppressed: map[string]bool{}, events: map[string]*Event{}, decisions: map[string]Decision{}, leases: map[string]Lease{}, cooldown: map[string]time.Time{}}
++	m.reserved = map[string]bool{}
++	m.saved = map[string]Lease{}
+ 	m.cancel = cancel
+ 	for _, s := range sources {
+ 		m.sources[s.Outbound] = s
++		m.loadSaved(s)
++		for _, key := range s.RegistryScopes {
++			if _, err := m.registryQuery(s.ID, key); err == nil {
++				m.reserved[key] = true
++			}
++		}
+ 		for _, k := range s.Suppressed {
+ 			m.suppressed[k] = true
+ 		}
+@@ -336,7 +346,7 @@ func (m *Manager) Observe(meta *adapter.InboundContext, source string) *Event {
+ 			repeats = previous.Count + 1
+ 		}
+ 	}
+-	if len(m.events) >= 128 {
++	if len(m.events) >= 64 {
+ 		var oldest string
+ 		for k, e := range m.events {
+ 			if oldest == "" || e.Updated.Before(m.events[oldest].Updated) {
+@@ -555,8 +565,8 @@ func (m *Manager) State() any {
+ 	if len(events) > 64 {
+ 		events = events[:64]
+ 	}
+-	if len(decisions) > 20 {
+-		decisions = decisions[:20]
++	if len(decisions) > 64 {
++		decisions = decisions[:64]
+ 	}
+ 	history := append([]Lease{}, m.history...)
+ 	if len(history) > 30 {
+@@ -568,11 +578,14 @@ func (m *Manager) State() any {
+ 			disabled = append(disabled, source)
+ 		}
+ 	}
+-	return map[string]any{"version": 1, "leases": leases, "candidates": events, "decisions": decisions, "history": history, "counts": counts, "disabled_sources": disabled, "probe_contract": "exact-prefix+fresh-nonce", "physical_egress_verified": false}
++	return map[string]any{"registry_version": 2, "version": 1, "leases": leases, "candidates": events, "decisions": decisions, "history": history, "counts": counts, "disabled_sources": disabled, "probe_contract": "exact-prefix+fresh-nonce", "physical_egress_verified": false}
+ }
+ func (m *Manager) Revoke(key string, clear bool) ([]string, error) {
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
++	if !clear && !m.registryRevokeBudget(key) {
++		return nil, errors.New("suppression_budget")
++	}
+ 	keys := []string{}
+ 	m.generation++
+ 	if m.activeCancel != nil {
+@@ -733,9 +746,11 @@ func (m *Manager) Close() error {
+ }
+ func (m *Manager) API(ctx context.Context, raw []byte) (any, error) {
+ 	var req struct {
+-		Op    string `json:"op"`
+-		Query Query  `json:"query"`
+-		ID    string `json:"id"`
++		SourceID string `json:"source_id"`
++		Scope    string `json:"scope"`
++		Op       string `json:"op"`
++		Query    Query  `json:"query"`
++		ID       string `json:"id"`
+ 	}
+ 	if len(raw) > 8192 {
+ 		return nil, errors.New("request_too_large")
+@@ -757,6 +772,16 @@ func (m *Manager) API(ctx context.Context, raw []byte) (any, error) {
+ 		}
+ 	}
+ 	switch req.Op {
++	case "registry_release":
++		return m.registryRelease(req.SourceID, req.Scope)
++	case "registry_suppress":
++		return m.registrySuppress(req.SourceID, req.Scope)
++	case "registry_exclude":
++		return m.registryExclude(req.SourceID, req.ID)
++	case "registry_reset":
++		return m.registryReset(req.SourceID, req.Scope)
++	case "registry_withdraw":
++		return m.registryWithdraw(req.SourceID, req.ID)
+ 	case "state":
+ 		return m.State(), nil
+ 	case "probe":
+diff --git a/common/autoroute/probe.go b/common/autoroute/probe.go
+index 2c5a2f0..e59ebc1 100755
+--- a/common/autoroute/probe.go
++++ b/common/autoroute/probe.go
+@@ -363,6 +363,7 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		d.ApplyAllowed = false
+ 		d.AutoApplyEligible = false
+ 	}
++	restore := !s.AutoApply && m.restoreDecision(&d)
+ 	m.stage(q, d.Status, d.Reason)
+ 	m.mu.Lock()
+ 	if m.generation != generation || m.closed || m.disabled[q.Source] || m.suppressed[key] {
+@@ -370,18 +371,18 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		m.stage(q, "inconclusive", "cancelled_generation")
+ 		return map[string]any{"status": "inconclusive", "reason": "cancelled_generation"}, nil
+ 	}
+-	if len(m.decisions) >= 100 {
++	if len(m.decisions) >= 64 {
+ 		for k, v := range m.decisions {
+ 			if !time.Now().Before(v.Deadline) {
+ 				delete(m.decisions, k)
+ 			}
+ 		}
+ 	}
+-	if len(m.decisions) < 100 {
++	if len(m.decisions) < 64 {
+ 		m.decisions[d.ID] = d
+ 	}
+ 	m.mu.Unlock()
+-	if d.Status == "proposed" && d.AutoApplyEligible && s.AutoApply {
++	if d.Status == "proposed" && d.AutoApplyEligible && (s.AutoApply || restore) {
+ 		return m.Apply(ctx, d.ID)
+ 	}
+ 	return d, nil
+@@ -417,7 +418,10 @@ func (m *Manager) Apply(ctx context.Context, decisionID string) (any, error) {
+ 	if m.closed || m.generation != d.Generation || m.disabled[d.Source] || m.suppressed[d.Scope] {
+ 		return nil, errors.New("cancelled_or_suppressed")
+ 	}
+-	if len(m.leases) >= 100 {
++	if !m.reserved[d.Scope] && len(m.reserved) >= 64 {
++		return nil, errors.New("persistent_registry_budget")
++	}
++	if len(m.leases) >= 64 {
+ 		return nil, errors.New("lease_budget")
+ 	}
+ 	for key, old := range m.leases {
+@@ -428,6 +432,7 @@ func (m *Manager) Apply(ctx context.Context, decisionID string) (any, error) {
+ 			delete(m.leases, key)
+ 		}
+ 	}
++	m.reserved[d.Scope] = true
+ 	m.leases[d.ID] = d.Lease
+ 	m.record(d.Lease)
+ 	for _, event := range m.events {
+diff --git a/common/autoroute/registry.go b/common/autoroute/registry.go
+new file mode 100755
+index 0000000..27f0525
+--- /dev/null
++++ b/common/autoroute/registry.go
+@@ -0,0 +1,154 @@
++package autoroute
++
++import (
++	"encoding/json"
++	"errors"
++	"github.com/sagernet/sing-box/option"
++	"net/netip"
++	"time"
++)
++
++func (m *Manager) loadSaved(s option.KabanmaxAutoSource) {
++	now := time.Now()
++	for _, raw := range s.Saved {
++		var l Lease
++		if json.Unmarshal(raw, &l) != nil || l.Owner != "auto-routing" || l.SourceID != s.ID || l.Source != s.Outbound || !l.DomainKnown || l.Domain == "" || l.Created.After(now) || !now.Before(l.Expires) || l.Expires.After(l.Created.Add(15*time.Minute)) {
++			continue
++		}
++		q := Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}
++		if !registryScope(q) || len(m.saved) >= 64 {
++			continue
++		}
++		m.saved[m.key(q)] = l // Intent only: never insert into leases here.
++	}
++}
++
++func registryScope(q Query) bool {
++	_, ipErr := netip.ParseAddr(q.IP)
++	_, sourceErr := netip.ParseAddr(q.SourceIP)
++	return ipErr == nil && sourceErr == nil && q.Port > 0 && (q.Inbound == "tproxy-in" || q.Inbound == "tproxy6-in" || q.Inbound == "system-in" || q.Inbound == "system6-in")
++}
++
++// A restored approval needs a newly attested flow AND fresh strict application
++// evidence. Web/IP-only decisions never inherit automatic permission from disk.
++func (m *Manager) restoreDecision(d *Decision) bool {
++	if !d.AutoApplyEligible || !d.ApplyAllowed || !d.DomainKnown || d.Status != "proposed" {
++		return false
++	}
++	q := Query{Source: d.Source, IP: d.IP, Domain: d.Domain, SourceIP: d.SourceIP, SourcePort: d.OriginSourcePort, Inbound: d.Inbound, Port: d.Port}
++	m.mu.Lock()
++	saved, ok := m.saved[m.key(q)]
++	m.mu.Unlock()
++	if !ok || saved.Target != d.Target || !time.Now().Before(saved.Expires) || !m.flowKnown(q) {
++		return false
++	}
++	if saved.Expires.Before(d.Deadline) {
++		d.Deadline = saved.Expires
++		d.Expires = saved.Expires
++	}
++	return true
++}
++
++// Exclusion is not an application decision. An attributed IP-only event may be
++// excluded, but its source/device/inbound/port scope must still be exact.
++func (m *Manager) registryExclude(sourceID, id string) (any, error) {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	var q Query
++	found := false
++	for _, e := range m.events {
++		if e.ID == id {
++			q = e.Query
++			found = e.SourceID == sourceID
++			break
++		}
++	}
++	if d, ok := m.decisions[id]; ok {
++		q = Query{Source: d.Source, IP: d.IP, Domain: d.Domain, SourceIP: d.SourceIP, Inbound: d.Inbound, Port: d.Port}
++		found = d.SourceID == sourceID
++	}
++	if l, ok := m.leases[id]; ok {
++		q = Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}
++		found = l.SourceID == sourceID
++	}
++	if !found || m.sources[q.Source].ID != sourceID || !registryScope(q) {
++		return nil, errors.New("source_or_record_not_found")
++	}
++	key := m.key(q)
++	if !m.suppressed[key] && len(m.suppressed) >= 64 {
++		return nil, errors.New("suppression_budget")
++	}
++	m.registryAdvance(key)
++	m.suppressed[key] = true
++	for keyID, l := range m.leases {
++		if m.key(Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}) == key {
++			l.Status = "removed"
++			m.record(l)
++			delete(m.leases, keyID)
++		}
++	}
++	for keyID, d := range m.decisions {
++		if d.Scope == key {
++			delete(m.decisions, keyID)
++		}
++	}
++	delete(m.saved, key)
++	for _, e := range m.events {
++		if m.key(e.Query) == key {
++			e.Status = "suppressed"
++			e.attempted = true
++		}
++	}
++	return map[string]any{"source_id": sourceID, "suppressed": []string{key}}, nil
++}
++
++func (m *Manager) registryReset(sourceID, key string) (any, error) {
++	if _, err := m.registryQuery(sourceID, key); err != nil {
++		return nil, err
++	}
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	found := false
++	for _, s := range m.sources {
++		if s.ID == sourceID {
++			found = true
++		}
++	}
++	if !found {
++		return nil, errors.New("source_not_found")
++	}
++	m.registryAdvance(key)
++	delete(m.suppressed, key)
++	delete(m.saved, key)
++	for id, d := range m.decisions {
++		if d.Scope == key {
++			delete(m.decisions, id)
++		}
++	}
++	for _, e := range m.events {
++		if m.key(e.Query) == key {
++			e.attempted = false
++			e.Status = "observing"
++			e.lastJob = time.Time{}
++		}
++	}
++	return map[string]any{"source_id": sourceID, "reset_scope": key}, nil
++}
++
++func (m *Manager) registryWithdraw(sourceID, id string) (any, error) {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	l, ok := m.leases[id]
++	if !ok {
++		return nil, errors.New("lease_not_found")
++	}
++	if l.SourceID != sourceID {
++		return nil, errors.New("source_not_found")
++	}
++	m.registryAdvance(m.key(Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}))
++	delete(m.leases, id)
++	l.Status = "removed"
++	m.record(l)
++	delete(m.saved, m.key(Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}))
++	return map[string]any{"source_id": sourceID}, nil
++}
+diff --git a/common/autoroute/scope.go b/common/autoroute/scope.go
+new file mode 100755
+index 0000000..b3fc0ae
+--- /dev/null
++++ b/common/autoroute/scope.go
+@@ -0,0 +1,129 @@
++package autoroute
++
++import (
++	"encoding/json"
++	"errors"
++)
++
++// Retire in-flight work without invalidating already verified decisions for a
++// different exact scope. Apply still rechecks DNS, policy and expiry itself.
++func (m *Manager) registryAdvance(key string) {
++	previous := m.generation
++	m.generation++
++	for id, d := range m.decisions {
++		if d.Scope != key && d.Generation == previous {
++			d.Generation = m.generation
++			m.decisions[id] = d
++		}
++	}
++	if m.activeQuery != nil && m.key(*m.activeQuery) == key {
++		if m.activeCancel != nil {
++			m.activeCancel()
++		}
++		if m.batchCancel != nil {
++			m.batchCancel()
++		}
++	}
++}
++
++func (m *Manager) registryQuery(sourceID, key string) (Query, error) {
++	var parts []json.RawMessage
++	var owner string
++	var q Query
++	if len(key) > 1024 || json.Unmarshal([]byte(key), &parts) != nil || len(parts) != 6 || json.Unmarshal(parts[0], &owner) != nil || owner != sourceID {
++		return q, errors.New("invalid_scope")
++	}
++	if json.Unmarshal(parts[1], &q.IP) != nil || json.Unmarshal(parts[2], &q.Domain) != nil || json.Unmarshal(parts[3], &q.SourceIP) != nil || json.Unmarshal(parts[4], &q.Inbound) != nil || json.Unmarshal(parts[5], &q.Port) != nil || !registryScope(q) {
++		return q, errors.New("invalid_scope")
++	}
++	for tag, s := range m.sources {
++		if s.ID == sourceID {
++			q.Source = tag
++			break
++		}
++	}
++	if q.Source == "" || m.key(q) != key {
++		return q, errors.New("source_or_scope_not_found")
++	}
++	return q, nil
++}
++
++func (m *Manager) registrySuppress(sourceID, key string) (any, error) {
++	q, err := m.registryQuery(sourceID, key)
++	if err != nil {
++		return nil, err
++	}
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	if !m.suppressed[key] && len(m.suppressed) >= 64 {
++		return nil, errors.New("suppression_budget")
++	}
++	m.registryAdvance(key)
++	m.suppressed[key] = true
++	delete(m.saved, key)
++	for id, l := range m.leases {
++		if m.key(Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}) == key {
++			delete(m.leases, id)
++			l.Status = "removed"
++			m.record(l)
++		}
++	}
++	for id, d := range m.decisions {
++		if d.Scope == key {
++			delete(m.decisions, id)
++		}
++	}
++	for _, e := range m.events {
++		if m.key(e.Query) == key {
++			e.Status = "suppressed"
++			e.attempted = true
++		}
++	}
++	_ = q
++	return map[string]any{"source_id": sourceID, "suppressed": []string{key}}, nil
++}
++
++func (m *Manager) registryRevokeBudget(key string) bool {
++	keys := map[string]bool{}
++	for k := range m.suppressed {
++		keys[k] = true
++	}
++	add := func(l Lease) {
++		keys[m.key(Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port})] = true
++	}
++	for id, l := range m.leases {
++		if id == key || l.Source == key {
++			add(l)
++		}
++	}
++	for id, d := range m.decisions {
++		if id == key || d.Source == key {
++			keys[d.Scope] = true
++		}
++	}
++	for _, l := range m.history {
++		if l.ID == key || l.Source == key {
++			add(l)
++		}
++	}
++	if m.activeQuery != nil && m.activeQuery.Source == key && registryScope(*m.activeQuery) {
++		keys[m.key(*m.activeQuery)] = true
++	}
++	return len(keys) <= 64
++}
++
++func (m *Manager) registryRelease(sourceID, key string) (any, error) {
++	if _, err := m.registryQuery(sourceID, key); err != nil {
++		return nil, err
++	}
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	for _, l := range m.leases {
++		if m.key(Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}) == key {
++			return nil, errors.New("active_scope_cannot_release_slot")
++		}
++	}
++	delete(m.reserved, key)
++	delete(m.saved, key)
++	return map[string]any{"source_id": sourceID}, nil
++}
+diff --git a/option/kabanmax_auto.go b/option/kabanmax_auto.go
+index 90c84aa..af01701 100755
+--- a/option/kabanmax_auto.go
++++ b/option/kabanmax_auto.go
+@@ -1,26 +1,30 @@
+ package option
+ 
++import "encoding/json"
++
+ // Explicitly opted-in control resource; no wildcard status or arbitrary proxy.
+ type KabanmaxAutoSource struct {
+-	Mode            string   `json:"mode,omitempty"`
+-	ID              string   `json:"id"`
+-	Outbound        string   `json:"outbound"`
+-	Mark            uint32   `json:"mark"`
+-	ProbeZapret     bool     `json:"probe_zapret"`
+-	Direct          bool     `json:"direct"`
+-	WARP            string   `json:"warp,omitempty"`
+-	AutoApply       bool     `json:"auto_apply"`
+-	Domain          string   `json:"domain"`
+-	Path            string   `json:"path"`
+-	Port            uint16   `json:"port"`
+-	Status          int      `json:"status"`
+-	Prefix          string   `json:"prefix"`
+-	FailureStatus   int      `json:"failure_status,omitempty"`
+-	FailurePrefix   string   `json:"failure_prefix,omitempty"`
+-	Suppressed      []string `json:"suppressed,omitempty"`
+-	Protected       []string `json:"protected,omitempty"`
+-	DirectSection   string   `json:"direct_section,omitempty"`
+-	WARPSection     string   `json:"warp_section,omitempty"`
+-	ExcludedSources []string `json:"excluded_sources,omitempty"`
+-	ExcludedSystem  bool     `json:"excluded_system,omitempty"`
++	RegistryScopes  []string          `json:"registry_scopes,omitempty"`
++	Saved           []json.RawMessage `json:"saved,omitempty"`
++	Mode            string            `json:"mode,omitempty"`
++	ID              string            `json:"id"`
++	Outbound        string            `json:"outbound"`
++	Mark            uint32            `json:"mark"`
++	ProbeZapret     bool              `json:"probe_zapret"`
++	Direct          bool              `json:"direct"`
++	WARP            string            `json:"warp,omitempty"`
++	AutoApply       bool              `json:"auto_apply"`
++	Domain          string            `json:"domain"`
++	Path            string            `json:"path"`
++	Port            uint16            `json:"port"`
++	Status          int               `json:"status"`
++	Prefix          string            `json:"prefix"`
++	FailureStatus   int               `json:"failure_status,omitempty"`
++	FailurePrefix   string            `json:"failure_prefix,omitempty"`
++	Suppressed      []string          `json:"suppressed,omitempty"`
++	Protected       []string          `json:"protected,omitempty"`
++	DirectSection   string            `json:"direct_section,omitempty"`
++	WARPSection     string            `json:"warp_section,omitempty"`
++	ExcludedSources []string          `json:"excluded_sources,omitempty"`
++	ExcludedSystem  bool              `json:"excluded_system,omitempty"`
+ }

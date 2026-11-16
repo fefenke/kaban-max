@@ -112,6 +112,8 @@ function isContained(x, y) {
 
 class FakeNode {
   select() {}
+  addEventListener() {}
+  removeEventListener() {}
   constructor(tag, attrs) {
     this.tag = tag;
     this.attrs = attrs || {};

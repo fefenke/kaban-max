@@ -34,12 +34,7 @@ export function addFingerprintOptions(
   o.value('', _('Inherit from connection URI'));
   for (const profile of selectableFingerprints) {
     if (profile.id === 'chrome_155') continue;
-    o.value(
-      profile.id,
-      profile.family === 'chrome'
-        ? 'Chrome'
-        : `${profile.label}${profile.version ? ` ${profile.version}` : ''}`,
-    );
+    o.value(profile.id, profile.label);
   }
   o.default = '';
   o.rmempty = true;
@@ -87,8 +82,8 @@ export function addFingerprintOptions(
     '_tls_variant',
     _('Fingerprint version'),
   );
-  variant.value('chrome', _('Standard (Chrome 133)'));
-  variant.value('chrome_155', 'Chrome 155');
+  variant.value('chrome', '133');
+  variant.value('chrome_155', '155');
   variant.default = 'chrome';
   variant.rmempty = false;
   variant.retain = true;
@@ -97,4 +92,18 @@ export function addFingerprintOptions(
     ['chrome', 'chrome_155'].includes(`${value}`)
       ? true
       : _('Unsupported fingerprint version');
+  for (const profile of selectableFingerprints) {
+    if (profile.family === 'chrome' || !profile.version) continue;
+    const version = section.option(
+      form.ListValue,
+      `_tls_version_${profile.id}`,
+      _('Fingerprint version'),
+    );
+    version.value(profile.version, profile.version);
+    version.default = profile.version;
+    version.readonly = true;
+    version.depends('tls_fingerprint', profile.id);
+    version.write = () => undefined;
+    version.remove = () => undefined;
+  }
 }

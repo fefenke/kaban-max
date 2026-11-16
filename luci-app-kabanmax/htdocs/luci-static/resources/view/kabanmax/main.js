@@ -402,6 +402,20 @@ function render() {
   return pageRoot;
 }
 
+// src/kabanmax/tabs/components/updateStatus.ts
+function renderUpdateStatus(busy, error, release) {
+  const node = textE(
+    "p",
+    {
+      role: "status",
+      class: `fkp_components-page__update-status${busy ? "" : error ? " fkp_components-page__update-status--error" : release ? " fkp_components-page__update-status--success" : ""}`
+    },
+    busy ? _("The boar looks for fresh acorns...") : error || (release?.update_available ? `${_("Update available")}: ${release.latest || release.release || ""}` : release ? _("No updates available") : "")
+  );
+  node.hidden = !busy && !error && !release;
+  return node;
+}
+
 // src/kabanmax/tabs/components/acornPhysics.ts
 var GROUND = 102;
 function newRunner() {
@@ -4948,6 +4962,7 @@ function initController() {
       disabled: blocked,
       onClick
     });
+    const updateStatus = renderUpdateStatus(releaseBusy, releaseError, release);
     part(root, "components-actions").replaceChildren(
       textE("div", { class: "fkp_components-page__heading" }, [
         textE("b", {}, "KabanMax"),
@@ -4957,15 +4972,7 @@ function initController() {
         textE("span", {}, "sing-box-kabanmax "),
         textE("span", { id: "components-core-version" })
       ]),
-      textE(
-        "p",
-        {
-          role: "status",
-          class: `fkp_components-page__update-status${releaseBusy ? "" : releaseError ? " fkp_components-page__update-status--error" : release ? " fkp_components-page__update-status--success" : ""}`,
-          hidden: !releaseBusy && !releaseError && !release
-        },
-        releaseBusy ? _("The boar looks for fresh acorns...") : releaseError || (release?.update_available ? `${_("Update available")}: ${release.latest || release.release || ""}` : release ? _("No updates available") : "")
-      ),
+      updateStatus,
       button(
         "update",
         renderDownloadIcon24,
@@ -13620,6 +13627,279 @@ var DashboardTab = {
   styles: styles4
 };
 
+// src/validators/validateIp.ts
+function isIPv4(ip) {
+  const ipRegex = /^(?:(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$/;
+  return ipRegex.test(ip);
+}
+function isIPv6(ip) {
+  if (!ip.includes(":") || ip.includes("%")) {
+    return false;
+  }
+  try {
+    new URL(`http://[${ip}]/`);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+function validateIP(ip) {
+  return isIPv4(ip) || isIPv6(ip) ? true : message.invalidIp();
+}
+
+// src/kabanmax/cbi/listValues.ts
+function normalizeDynamicListItems(value) {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => `${item || ""}`.trim()).filter((item) => item.length);
+  }
+  const normalized = `${value}`.trim();
+  return normalized.length ? [normalized] : [];
+}
+function normalizeOptionValues(value) {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).map((item) => `${item}`.trim()).filter(Boolean);
+  }
+  return `${value}`.split(/\s+/).map((item) => item.trim()).filter(Boolean);
+}
+function uniqueDynamicListItems(value) {
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  normalizeDynamicListItems(value).forEach((item) => {
+    if (!seen.has(item)) {
+      seen.add(item);
+      result.push(item);
+    }
+  });
+  return result;
+}
+
+// src/kabanmax/cbi/localDevices.ts
+var callHostHints = rpc.declare({
+  object: "luci-rpc",
+  method: "getHostHints",
+  expect: { "": {} }
+});
+var callDHCPLeases = rpc.declare({
+  object: "luci-rpc",
+  method: "getDHCPLeases",
+  expect: { "": {} }
+});
+var callNetworkInterfaceDump2 = rpc.declare({
+  object: "network.interface",
+  method: "dump",
+  expect: { interface: [] }
+});
+var SYSTEM_DEVICE_VALUE = "@system";
+var NO_LOCAL_DEVICES = { choices: {}, order: [], names: {} };
+var localDevicesCache = null;
+var localDevicesPromise = null;
+function normalizeLocalDeviceName(name) {
+  return `${name || ""}`.trim().replace(/\.lan$/i, "");
+}
+function normalizeLocalDeviceIp(ip) {
+  const normalizedIp = `${ip || ""}`.trim();
+  return validateIP(normalizedIp) === true ? normalizedIp : "";
+}
+function addLocalDeviceName(names, ip, name) {
+  const normalizedName = normalizeLocalDeviceName(name);
+  if (ip && normalizedName) {
+    names[ip] = normalizedName;
+  }
+}
+function addOfferedAddress(offered, ip, mac) {
+  if (ip) {
+    offered[ip] = offered[ip] || (normalizeOptionValues(mac)[0] || "").toUpperCase();
+  }
+}
+function addRouterIp(routerIps, ip) {
+  const normalizedIp = `${ip || ""}`.trim();
+  if (!normalizedIp || validateIP(normalizedIp) !== true) {
+    return;
+  }
+  routerIps[normalizedIp] = true;
+}
+function buildRouterIpMap(networkInterfaces) {
+  const routerIps = {};
+  if (!Array.isArray(networkInterfaces)) {
+    return routerIps;
+  }
+  networkInterfaces.forEach((networkInterface) => {
+    const ipAddresses = [];
+    const ipv4Addresses = networkInterface && typeof networkInterface === "object" && Array.isArray(networkInterface["ipv4-address"]) ? networkInterface["ipv4-address"] : [];
+    const ipv6Addresses = networkInterface && typeof networkInterface === "object" && Array.isArray(networkInterface["ipv6-address"]) ? networkInterface["ipv6-address"] : [];
+    ipAddresses.push(...ipv4Addresses, ...ipv6Addresses);
+    ipAddresses.forEach((address) => {
+      addRouterIp(
+        routerIps,
+        address && typeof address === "object" ? address.address : address
+      );
+    });
+  });
+  return routerIps;
+}
+function buildLocalDevices(hostHints, dhcpLeases, networkInterfaces, staticHosts) {
+  const names = {};
+  const offered = {};
+  const routerIps = buildRouterIpMap(networkInterfaces);
+  if (hostHints && typeof hostHints === "object") {
+    Object.values(hostHints).forEach((hint) => {
+      if (!hint || typeof hint !== "object") {
+        return;
+      }
+      normalizeOptionValues(hint.ipaddrs).forEach((address) => {
+        const ip = normalizeLocalDeviceIp(address);
+        addLocalDeviceName(names, ip, hint.name);
+        if (names[ip]) {
+          addOfferedAddress(offered, ip, "");
+        }
+      });
+      normalizeOptionValues(hint.ip6addrs).forEach((address) => {
+        addLocalDeviceName(names, normalizeLocalDeviceIp(address), hint.name);
+      });
+    });
+  }
+  if (dhcpLeases && typeof dhcpLeases === "object" && Array.isArray(dhcpLeases.dhcp_leases)) {
+    dhcpLeases.dhcp_leases.forEach((lease) => {
+      if (!lease || typeof lease !== "object") {
+        return;
+      }
+      const entry = lease;
+      const ip = normalizeLocalDeviceIp(entry.ipaddr);
+      addLocalDeviceName(names, ip, entry.hostname);
+      addOfferedAddress(offered, ip, entry.macaddr);
+    });
+  }
+  if (Array.isArray(staticHosts)) {
+    staticHosts.forEach((host) => {
+      if (!host || typeof host !== "object") {
+        return;
+      }
+      normalizeOptionValues(host.ip).forEach((address) => {
+        const ip = normalizeLocalDeviceIp(address);
+        addLocalDeviceName(names, ip, host.name);
+        addOfferedAddress(offered, ip, host.mac);
+      });
+    });
+  }
+  Object.keys(routerIps).forEach((ip) => {
+    delete names[ip];
+    delete offered[ip];
+  });
+  const addresses = Object.keys(offered);
+  const named = addresses.filter((ip) => names[ip]).sort((a, b) => names[a].localeCompare(names[b]) || a.localeCompare(b));
+  const nameless = addresses.filter((ip) => !names[ip]).sort((a, b) => a.localeCompare(b, void 0, { numeric: true }));
+  const choices = {
+    [SYSTEM_DEVICE_VALUE]: _("System")
+  };
+  const nameCounts = {};
+  [choices[SYSTEM_DEVICE_VALUE], ...named.map((ip) => names[ip])].forEach(
+    (name) => {
+      const key = name.toLowerCase();
+      nameCounts[key] = (nameCounts[key] || 0) + 1;
+    }
+  );
+  named.forEach((ip) => {
+    choices[ip] = nameCounts[names[ip].toLowerCase()] > 1 ? "%s (%s)".format(names[ip], ip) : names[ip];
+  });
+  nameless.forEach((ip) => {
+    choices[ip] = offered[ip] ? "%s (%s)".format(ip, offered[ip]) : ip;
+  });
+  return {
+    choices,
+    order: [SYSTEM_DEVICE_VALUE, ...named, ...nameless],
+    names
+  };
+}
+function loadLocalDevices() {
+  if (localDevicesCache) {
+    return Promise.resolve(localDevicesCache);
+  }
+  if (localDevicesPromise) {
+    return localDevicesPromise;
+  }
+  localDevicesPromise = Promise.all([
+    callHostHints().catch(() => ({})),
+    callDHCPLeases().catch(() => ({})),
+    callNetworkInterfaceDump2().catch(() => []),
+    uci.load("dhcp").then(() => uci.sections("dhcp", "host")).catch(() => [])
+  ]).then(([hostHints, dhcpLeases, networkInterfaces, staticHosts]) => {
+    localDevicesCache = buildLocalDevices(
+      hostHints,
+      dhcpLeases,
+      networkInterfaces,
+      staticHosts
+    );
+    return localDevicesCache;
+  }).finally(() => {
+    localDevicesPromise = null;
+  });
+  return localDevicesPromise;
+}
+function namesALocalDevice(values) {
+  return normalizeOptionValues(values).some(
+    (value) => value === SYSTEM_DEVICE_VALUE || validateIP(value) === true
+  );
+}
+function createLocalDeviceDynamicListWidget(option2, section_id, cfgvalue) {
+  const values = normalizeOptionValues(
+    cfgvalue != null ? cfgvalue : option2.default
+  );
+  const shouldResolveExistingLabels = namesALocalDevice(values);
+  return (shouldResolveExistingLabels ? loadLocalDevices() : Promise.resolve(NO_LOCAL_DEVICES)).then((initialDevices) => {
+    const devices = localDevicesCache || initialDevices;
+    const widget = new ui.DynamicList(values, devices.choices, {
+      id: option2.cbid(section_id),
+      sort: devices.order,
+      optional: option2.optional || option2.rmempty,
+      datatype: option2.datatype,
+      placeholder: option2.placeholder,
+      validate: option2.validate.bind(option2, section_id),
+      disabled: option2.readonly != null ? option2.readonly : option2.map.readonly
+    });
+    const node = widget.render();
+    const onWidgetReady = option2.onDeviceWidgetReady;
+    const onListChange = option2.onDeviceListChange;
+    if (typeof onWidgetReady === "function") {
+      onWidgetReady(section_id, widget);
+    }
+    if (typeof onListChange === "function") {
+      node.addEventListener("cbi-dynlist-change", () => {
+        onListChange(section_id, widget.getValue());
+      });
+    }
+    let choicesLoaded = Boolean(localDevicesCache);
+    let choicesLoading = false;
+    const loadChoices = () => {
+      if (choicesLoaded || choicesLoading) {
+        return;
+      }
+      choicesLoading = true;
+      loadLocalDevices().then((loadedDevices) => {
+        widget.clearChoices();
+        widget.addChoices(loadedDevices.order, loadedDevices.choices);
+        choicesLoaded = true;
+      }).finally(() => {
+        choicesLoading = false;
+      });
+    };
+    const maybeLoadChoices = (ev) => {
+      const target2 = ev.target;
+      if (target2 && typeof target2.closest === "function" && target2.closest(".cbi-dropdown")) {
+        loadChoices();
+      }
+    };
+    node.addEventListener("mousedown", maybeLoadChoices, true);
+    node.addEventListener("focusin", maybeLoadChoices, true);
+    return node;
+  });
+}
+
 // src/kabanmax/tabs/diagnostic/routeForecast.ts
 async function requestRouteForecast(destination, source, port2) {
   const response = await executeShellCommand({
@@ -13651,16 +13931,13 @@ function formatRouteForecast(result) {
 function renderRouteForecast() {
   const destination = textE("input", {
     type: "text",
-    placeholder: "example.test / IPv4 / IPv6",
-    "aria-label": _("Destination"),
-    maxLength: 253
+    maxLength: 253,
+    "aria-label": _("Destination domain or IP")
   });
-  const source = textE("input", {
-    type: "text",
-    placeholder: "LAN IP / @system",
-    "aria-label": _("Source"),
-    maxLength: 45
-  });
+  const source = textE("select", { "aria-label": _("Device") }, [
+    textE("option", { value: "" }, _("Select a device")),
+    textE("option", { value: SYSTEM_DEVICE_VALUE }, _("System (router)"))
+  ]);
   const port2 = textE("input", {
     type: "number",
     value: "443",
@@ -13668,8 +13945,11 @@ function renderRouteForecast() {
     max: "65535",
     "aria-label": _("Port")
   });
-  const output = textE("pre", {}, "");
+  const output = textE("p", {}, "");
   output.setAttribute("aria-live", "polite");
+  const technical = textE("pre", {}, "");
+  const details = textE("details", {}, [textE("summary", {}, _("Details")), technical]);
+  details.hidden = true;
   const button = textE(
     "button",
     {
@@ -13677,15 +13957,23 @@ function renderRouteForecast() {
       class: "cbi-button",
       click: async () => {
         if (button.disabled) return;
+        if (!source.value) {
+          output.textContent = _("Select a device");
+          return;
+        }
         button.disabled = true;
-        output.textContent = "\u2026";
+        output.textContent = _("Checking\u2026");
+        details.hidden = true;
         try {
           const result = await requestRouteForecast(
             destination.value.trim(),
-            source.value.trim(),
+            source.value,
             port2.value
           );
-          output.textContent = formatRouteForecast(result);
+          const predicted = result.predicted;
+          output.textContent = predicted.outbound ? `${_("Expected section")}: ${predicted.outbound} / ${_("Route")}: ${predicted.action || predicted.status}` : _("Unable to determine the route");
+          technical.textContent = formatRouteForecast(result);
+          details.hidden = false;
         } catch (error) {
           output.textContent = error instanceof Error ? error.message : String(error);
         } finally {
@@ -13693,30 +13981,48 @@ function renderRouteForecast() {
         }
       }
     },
-    _("Route forecast")
+    _("Show route")
   );
-  return textE("div", { class: "cbi-section" }, [
-    textE("h3", {}, _("Route forecast")),
-    textE(
-      "p",
-      {},
-      _(
-        "Read-only forecast for non-DNS TCP from the generated configuration. DNS, live core state and nft/PBR are not verified. Rule indexes start at zero."
-      )
-    ),
-    destination,
-    source,
-    port2,
-    button,
-    textE(
-      "p",
-      {},
-      _(
-        "This forecast does not run probes or change routes. Configure opt-in automatic routing in the Zapret2 section; it requires the r11 core extension."
-      )
-    ),
-    output
+  let loaded = false;
+  const tools = textE("details", {}, [
+    textE("summary", {}, _("Additional tools")),
+    textE("div", { class: "km-forecast cbi-value" }, [
+      textE("h3", { class: "cbi-value-title" }, _("Route forecast")),
+      textE("div", { class: "cbi-value-field" }, [
+        textE(
+          "div",
+          { class: "cbi-value-description" },
+          _(
+            "Read-only forecast. Does not run network probes or change routes. DNS and live nft/PBR state are not verified."
+          )
+        ),
+        textE("label", {}, [_("Destination domain or IP"), destination]),
+        textE("label", {}, [_("Device"), source]),
+        textE("label", {}, [_("Port"), port2]),
+        button,
+        output,
+        details
+      ])
+    ])
   ]);
+  tools.addEventListener("toggle", async () => {
+    if (!tools.open || loaded) return;
+    loaded = true;
+    try {
+      const devices = await loadLocalDevices();
+      for (const ip of devices.order)
+        if (ip !== SYSTEM_DEVICE_VALUE)
+          source.append(textE("option", { value: ip }, devices.choices[ip] || ip));
+      if (!devices.order.length)
+        output.textContent = _(
+          "No LAN devices available; you can select the router."
+        );
+    } catch {
+      loaded = false;
+      output.textContent = _("Unable to load LAN devices");
+    }
+  });
+  return tools;
 }
 
 // src/kabanmax/tabs/diagnostic/renderDiagnostic.ts
@@ -15481,279 +15787,6 @@ function shouldCopyFullMonitoringValue(element3, selectedText, fullText) {
     element3.clientWidth / Math.max(element3.scrollWidth, 1) * compactFull.length
   );
   return compactSelected.length >= Math.max(4, visibleChars - 2);
-}
-
-// src/validators/validateIp.ts
-function isIPv4(ip) {
-  const ipRegex = /^(?:(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$/;
-  return ipRegex.test(ip);
-}
-function isIPv6(ip) {
-  if (!ip.includes(":") || ip.includes("%")) {
-    return false;
-  }
-  try {
-    new URL(`http://[${ip}]/`);
-    return true;
-  } catch (_e) {
-    return false;
-  }
-}
-function validateIP(ip) {
-  return isIPv4(ip) || isIPv6(ip) ? true : message.invalidIp();
-}
-
-// src/kabanmax/cbi/listValues.ts
-function normalizeDynamicListItems(value) {
-  if (!value) {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => `${item || ""}`.trim()).filter((item) => item.length);
-  }
-  const normalized = `${value}`.trim();
-  return normalized.length ? [normalized] : [];
-}
-function normalizeOptionValues(value) {
-  if (!value) {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return value.filter(Boolean).map((item) => `${item}`.trim()).filter(Boolean);
-  }
-  return `${value}`.split(/\s+/).map((item) => item.trim()).filter(Boolean);
-}
-function uniqueDynamicListItems(value) {
-  const seen = /* @__PURE__ */ new Set();
-  const result = [];
-  normalizeDynamicListItems(value).forEach((item) => {
-    if (!seen.has(item)) {
-      seen.add(item);
-      result.push(item);
-    }
-  });
-  return result;
-}
-
-// src/kabanmax/cbi/localDevices.ts
-var callHostHints = rpc.declare({
-  object: "luci-rpc",
-  method: "getHostHints",
-  expect: { "": {} }
-});
-var callDHCPLeases = rpc.declare({
-  object: "luci-rpc",
-  method: "getDHCPLeases",
-  expect: { "": {} }
-});
-var callNetworkInterfaceDump2 = rpc.declare({
-  object: "network.interface",
-  method: "dump",
-  expect: { interface: [] }
-});
-var SYSTEM_DEVICE_VALUE = "@system";
-var NO_LOCAL_DEVICES = { choices: {}, order: [], names: {} };
-var localDevicesCache = null;
-var localDevicesPromise = null;
-function normalizeLocalDeviceName(name) {
-  return `${name || ""}`.trim().replace(/\.lan$/i, "");
-}
-function normalizeLocalDeviceIp(ip) {
-  const normalizedIp = `${ip || ""}`.trim();
-  return validateIP(normalizedIp) === true ? normalizedIp : "";
-}
-function addLocalDeviceName(names, ip, name) {
-  const normalizedName = normalizeLocalDeviceName(name);
-  if (ip && normalizedName) {
-    names[ip] = normalizedName;
-  }
-}
-function addOfferedAddress(offered, ip, mac) {
-  if (ip) {
-    offered[ip] = offered[ip] || (normalizeOptionValues(mac)[0] || "").toUpperCase();
-  }
-}
-function addRouterIp(routerIps, ip) {
-  const normalizedIp = `${ip || ""}`.trim();
-  if (!normalizedIp || validateIP(normalizedIp) !== true) {
-    return;
-  }
-  routerIps[normalizedIp] = true;
-}
-function buildRouterIpMap(networkInterfaces) {
-  const routerIps = {};
-  if (!Array.isArray(networkInterfaces)) {
-    return routerIps;
-  }
-  networkInterfaces.forEach((networkInterface) => {
-    const ipAddresses = [];
-    const ipv4Addresses = networkInterface && typeof networkInterface === "object" && Array.isArray(networkInterface["ipv4-address"]) ? networkInterface["ipv4-address"] : [];
-    const ipv6Addresses = networkInterface && typeof networkInterface === "object" && Array.isArray(networkInterface["ipv6-address"]) ? networkInterface["ipv6-address"] : [];
-    ipAddresses.push(...ipv4Addresses, ...ipv6Addresses);
-    ipAddresses.forEach((address) => {
-      addRouterIp(
-        routerIps,
-        address && typeof address === "object" ? address.address : address
-      );
-    });
-  });
-  return routerIps;
-}
-function buildLocalDevices(hostHints, dhcpLeases, networkInterfaces, staticHosts) {
-  const names = {};
-  const offered = {};
-  const routerIps = buildRouterIpMap(networkInterfaces);
-  if (hostHints && typeof hostHints === "object") {
-    Object.values(hostHints).forEach((hint) => {
-      if (!hint || typeof hint !== "object") {
-        return;
-      }
-      normalizeOptionValues(hint.ipaddrs).forEach((address) => {
-        const ip = normalizeLocalDeviceIp(address);
-        addLocalDeviceName(names, ip, hint.name);
-        if (names[ip]) {
-          addOfferedAddress(offered, ip, "");
-        }
-      });
-      normalizeOptionValues(hint.ip6addrs).forEach((address) => {
-        addLocalDeviceName(names, normalizeLocalDeviceIp(address), hint.name);
-      });
-    });
-  }
-  if (dhcpLeases && typeof dhcpLeases === "object" && Array.isArray(dhcpLeases.dhcp_leases)) {
-    dhcpLeases.dhcp_leases.forEach((lease) => {
-      if (!lease || typeof lease !== "object") {
-        return;
-      }
-      const entry = lease;
-      const ip = normalizeLocalDeviceIp(entry.ipaddr);
-      addLocalDeviceName(names, ip, entry.hostname);
-      addOfferedAddress(offered, ip, entry.macaddr);
-    });
-  }
-  if (Array.isArray(staticHosts)) {
-    staticHosts.forEach((host) => {
-      if (!host || typeof host !== "object") {
-        return;
-      }
-      normalizeOptionValues(host.ip).forEach((address) => {
-        const ip = normalizeLocalDeviceIp(address);
-        addLocalDeviceName(names, ip, host.name);
-        addOfferedAddress(offered, ip, host.mac);
-      });
-    });
-  }
-  Object.keys(routerIps).forEach((ip) => {
-    delete names[ip];
-    delete offered[ip];
-  });
-  const addresses = Object.keys(offered);
-  const named = addresses.filter((ip) => names[ip]).sort((a, b) => names[a].localeCompare(names[b]) || a.localeCompare(b));
-  const nameless = addresses.filter((ip) => !names[ip]).sort((a, b) => a.localeCompare(b, void 0, { numeric: true }));
-  const choices = {
-    [SYSTEM_DEVICE_VALUE]: _("System")
-  };
-  const nameCounts = {};
-  [choices[SYSTEM_DEVICE_VALUE], ...named.map((ip) => names[ip])].forEach(
-    (name) => {
-      const key = name.toLowerCase();
-      nameCounts[key] = (nameCounts[key] || 0) + 1;
-    }
-  );
-  named.forEach((ip) => {
-    choices[ip] = nameCounts[names[ip].toLowerCase()] > 1 ? "%s (%s)".format(names[ip], ip) : names[ip];
-  });
-  nameless.forEach((ip) => {
-    choices[ip] = offered[ip] ? "%s (%s)".format(ip, offered[ip]) : ip;
-  });
-  return {
-    choices,
-    order: [SYSTEM_DEVICE_VALUE, ...named, ...nameless],
-    names
-  };
-}
-function loadLocalDevices() {
-  if (localDevicesCache) {
-    return Promise.resolve(localDevicesCache);
-  }
-  if (localDevicesPromise) {
-    return localDevicesPromise;
-  }
-  localDevicesPromise = Promise.all([
-    callHostHints().catch(() => ({})),
-    callDHCPLeases().catch(() => ({})),
-    callNetworkInterfaceDump2().catch(() => []),
-    uci.load("dhcp").then(() => uci.sections("dhcp", "host")).catch(() => [])
-  ]).then(([hostHints, dhcpLeases, networkInterfaces, staticHosts]) => {
-    localDevicesCache = buildLocalDevices(
-      hostHints,
-      dhcpLeases,
-      networkInterfaces,
-      staticHosts
-    );
-    return localDevicesCache;
-  }).finally(() => {
-    localDevicesPromise = null;
-  });
-  return localDevicesPromise;
-}
-function namesALocalDevice(values) {
-  return normalizeOptionValues(values).some(
-    (value) => value === SYSTEM_DEVICE_VALUE || validateIP(value) === true
-  );
-}
-function createLocalDeviceDynamicListWidget(option2, section_id, cfgvalue) {
-  const values = normalizeOptionValues(
-    cfgvalue != null ? cfgvalue : option2.default
-  );
-  const shouldResolveExistingLabels = namesALocalDevice(values);
-  return (shouldResolveExistingLabels ? loadLocalDevices() : Promise.resolve(NO_LOCAL_DEVICES)).then((initialDevices) => {
-    const devices = localDevicesCache || initialDevices;
-    const widget = new ui.DynamicList(values, devices.choices, {
-      id: option2.cbid(section_id),
-      sort: devices.order,
-      optional: option2.optional || option2.rmempty,
-      datatype: option2.datatype,
-      placeholder: option2.placeholder,
-      validate: option2.validate.bind(option2, section_id),
-      disabled: option2.readonly != null ? option2.readonly : option2.map.readonly
-    });
-    const node = widget.render();
-    const onWidgetReady = option2.onDeviceWidgetReady;
-    const onListChange = option2.onDeviceListChange;
-    if (typeof onWidgetReady === "function") {
-      onWidgetReady(section_id, widget);
-    }
-    if (typeof onListChange === "function") {
-      node.addEventListener("cbi-dynlist-change", () => {
-        onListChange(section_id, widget.getValue());
-      });
-    }
-    let choicesLoaded = Boolean(localDevicesCache);
-    let choicesLoading = false;
-    const loadChoices = () => {
-      if (choicesLoaded || choicesLoading) {
-        return;
-      }
-      choicesLoading = true;
-      loadLocalDevices().then((loadedDevices) => {
-        widget.clearChoices();
-        widget.addChoices(loadedDevices.order, loadedDevices.choices);
-        choicesLoaded = true;
-      }).finally(() => {
-        choicesLoading = false;
-      });
-    };
-    const maybeLoadChoices = (ev) => {
-      const target2 = ev.target;
-      if (target2 && typeof target2.closest === "function" && target2.closest(".cbi-dropdown")) {
-        loadChoices();
-      }
-    };
-    node.addEventListener("mousedown", maybeLoadChoices, true);
-    node.addEventListener("focusin", maybeLoadChoices, true);
-    return node;
-  });
 }
 
 // src/kabanmax/tabs/monitoring/source.ts
@@ -18010,8 +18043,245 @@ var LogsTab = {
   styles: styles7
 };
 
+// src/kabanmax/cbi/formUx.ts
+var formUxStyles = `
+.kabanmax-ui .cbi-value:not(.hidden) { display:grid; grid-template-columns:minmax(10em, 2fr) minmax(0,3fr); align-items:center; gap:.5em 1em; }
+.kabanmax-ui .cbi-value > .cbi-value-title { float:none; width:auto; margin:0; padding:0; text-align:left; line-height:1.5; }
+.kabanmax-ui .cbi-value > .cbi-value-field { width:auto; min-width:0; margin:0; padding:0; }
+.kabanmax-ui textarea { min-height:9em; resize:vertical; max-width:100%; box-sizing:border-box; white-space:pre-wrap; overflow-wrap:anywhere; overflow-x:hidden; }
+.kabanmax-ui .km-empty-auto-tab { display:none; }
+.kabanmax-ui .km-flag:not(.hidden) { grid-template-columns:minmax(0,1fr) auto; }
+.kabanmax-ui .km-flag > .cbi-value-field { display:flex; align-items:center; justify-content:center; }
+.kabanmax-ui .km-flag input[type=checkbox] { margin:0; vertical-align:middle; }
+.kabanmax-ui .km-nested { margin-left:1.5em; }
+.kabanmax-ui .km-nested-deep { margin-left:3em; }
+.kabanmax-ui.fkp-single-field-modal .cbi-value > .cbi-value-title { display:block; }
+.kabanmax-ui .cbi-value[data-name="_uri_editor"]:not(.hidden),.kabanmax-ui .cbi-value[data-name="_uri_import"]:not(.hidden) { display:none; }
+.km-help { display:inline-flex; align-items:center; justify-content:center; width:1.5em; height:1.5em; padding:0; margin:0 0 0 .4em; border:1px solid currentColor; border-radius:50%; color:inherit; background:transparent; font:inherit; font-size:.85em; vertical-align:middle; cursor:pointer; }
+.km-help:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
+.km-help-card { position:fixed; z-index:10001; box-sizing:border-box; width:max-content; max-width:min(26em,calc(100vw - 16px)); max-height:min(22em,calc(100vh - 16px)); overflow:auto; padding:1em; border:1px solid currentColor; border-radius:.5em; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 3px 18px #0004; }
+@media(prefers-color-scheme:dark) { .km-help-card { background:var(--background-color-high,#242424); color:var(--text-color-high,#eee); } }
+@media(max-width:480px) { .kabanmax-ui .cbi-value:not(.hidden):not(.km-flag) { grid-template-columns:minmax(0,1fr); } }
+.km-forecast label { display:grid; gap:.35em; margin:.75em 0; }
+.km-forecast input,.km-forecast select { width:100%; box-sizing:border-box; }
+.km-records { overflow-x:auto; }
+.km-records table { width:100%; }
+.km-records td,.km-records th { padding:.5em; text-align:left; vertical-align:top; }
+.km-records__tools { display:flex; gap:.5em; flex-wrap:wrap; align-items:center; margin:.75em 0; }
+.kabanmax-ui .cbi-value[data-name="_automatic_routes"]:not(.hidden),.kabanmax-ui .km-forecast:not(.hidden) { grid-template-columns:minmax(0,1fr); }
+`;
+var nextId = 0;
+function installFormUx(root) {
+  root.classList.add("kabanmax-ui");
+  let active = null;
+  let card = null;
+  let mounted = root.isConnected;
+  let dispose = () => {
+  };
+  const descriptions = /* @__PURE__ */ new WeakMap();
+  const originallyDisabled = /* @__PURE__ */ new WeakMap();
+  const close = (focus = false) => {
+    const previous = active;
+    previous?.setAttribute("aria-expanded", "false");
+    card?.remove();
+    card = null;
+    active = null;
+    if (focus && previous?.isConnected) previous.focus();
+  };
+  const attachHelp = (title, help) => {
+    let button = title.querySelector(".km-help");
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "km-help";
+      button.textContent = "?";
+      button.setAttribute(
+        "aria-label",
+        `${_("Help")}: ${title.textContent?.trim() || ""}`
+      );
+      button.setAttribute("aria-expanded", "false");
+      button.setAttribute("aria-controls", `km-help-${++nextId}`);
+      title.append(button);
+    }
+    const contents = descriptions.get(button) || [];
+    for (const node of help) {
+      if (node.textContent?.trim())
+        contents.push(...Array.from(node.childNodes));
+      const oldIcon = node.closest(".cbi-tooltip-container");
+      if (oldIcon && oldIcon !== title) oldIcon.remove();
+      else node.remove();
+    }
+    descriptions.set(button, contents);
+  };
+  const adapt2 = (scope) => {
+    scope.classList.add("kabanmax-ui");
+    for (const textarea of scope.querySelectorAll(
+      "textarea"
+    )) {
+      if (textarea.rows < 6) textarea.rows = 6;
+      textarea.wrap = "soft";
+    }
+    for (const row2 of scope.querySelectorAll(".cbi-value")) {
+      if (row2.dataset.widget === "CBI.FlagValue") row2.classList.add("km-flag");
+      const name = row2.dataset.name || "";
+      if (name.startsWith("auto_routing_") && name !== "auto_routing_enabled")
+        row2.classList.add(
+          name === "auto_routing_ip_only" ? "km-nested-deep" : "km-nested"
+        );
+      const title = row2.querySelector(":scope > .cbi-value-title");
+      if (!title) continue;
+      const help = Array.from(
+        row2.querySelectorAll(
+          ".cbi-value-description, .cbi-tooltip"
+        )
+      ).filter((node) => node.closest(".cbi-value") === row2);
+      if (!help.length) continue;
+      attachHelp(title, help);
+    }
+    for (const description of scope.querySelectorAll(
+      ".cbi-section-descr, .cbi-map-descr"
+    )) {
+      const title = description.parentElement?.querySelector(
+        ":scope > h2, :scope > h3, :scope > h4"
+      );
+      if (title) attachHelp(title, [description]);
+    }
+    for (const pane of scope.querySelectorAll(
+      '[data-tab="auto_routing"][data-tab-title]'
+    )) {
+      const menu = pane.parentElement?.previousElementSibling;
+      const tab = menu?.querySelector('[data-tab="auto_routing"]');
+      if (tab) {
+        const empty = !pane.querySelector(".cbi-value:not(.hidden)");
+        tab.hidden = empty;
+        tab.classList.toggle("km-empty-auto-tab", empty);
+        if (empty && pane.dataset.tabActive === "true")
+          menu?.querySelector("li:not([hidden]) a")?.click();
+      }
+    }
+    for (const row2 of scope.querySelectorAll(
+      '.cbi-value[data-name="auto_routing_enabled"]'
+    )) {
+      const tab = row2.parentElement;
+      if (!tab) continue;
+      const enabled = !!row2.querySelector(
+        "input[type=checkbox]"
+      )?.checked;
+      const contract = tab.querySelector(
+        '[data-name="auto_routing_contract"] textarea'
+      );
+      let strict = false;
+      try {
+        const value = JSON.parse(contract?.value || "{}");
+        strict = !!value.domain && !!value.prefix && (value.mode || "strict") === "strict";
+      } catch {
+      }
+      for (const child of tab.querySelectorAll(
+        '.cbi-value[data-name^="auto_routing_"]'
+      )) {
+        const name = child.dataset.name;
+        if (name === "auto_routing_enabled") continue;
+        for (const control of child.querySelectorAll("input,select,textarea")) {
+          if (!originallyDisabled.has(control))
+            originallyDisabled.set(control, control.disabled);
+          control.disabled = !!originallyDisabled.get(control) || !enabled || name === "auto_routing_ip_only" || name === "auto_routing_apply" && !strict;
+        }
+      }
+      const advanced = tab.querySelector(
+        '[data-name="auto_routing_contract"]'
+      );
+      if (advanced && advanced.parentElement === tab) {
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = _("Advanced settings");
+        details.append(summary);
+        advanced.before(details);
+        details.append(advanced);
+      }
+    }
+  };
+  const refresh = () => {
+    if (mounted && !root.isConnected) {
+      dispose();
+      return;
+    }
+    if (root.isConnected) mounted = true;
+    adapt2(root);
+    if (root.isConnected)
+      for (const map of document.querySelectorAll(
+        "#modal_overlay .cbi-map"
+      ))
+        adapt2(map);
+    if (active && (!active.isConnected || active.closest(".hidden"))) close();
+  };
+  const position = () => {
+    if (!active || !card) return;
+    const rect = active.getBoundingClientRect();
+    const box = card.getBoundingClientRect();
+    card.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - box.width - 8))}px`;
+    card.style.top = `${Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - box.height - 8))}px`;
+  };
+  const click = (event) => {
+    const target2 = event.target;
+    const button = target2.closest(".km-help");
+    if (button && descriptions.has(button)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (active === button) return close();
+      close();
+      active = button;
+      card = document.createElement("div");
+      card.className = "km-help-card";
+      card.id = button.getAttribute("aria-controls");
+      card.setAttribute("role", "region");
+      card.setAttribute("aria-label", button.getAttribute("aria-label"));
+      for (const node of descriptions.get(button))
+        card.append(node.cloneNode(true));
+      document.body.append(card);
+      button.setAttribute("aria-expanded", "true");
+      position();
+    } else if (!card?.contains(target2)) close();
+  };
+  const key = (event) => {
+    if (event.key === "Escape" && active) {
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+    }
+  };
+  const scroll = (event) => {
+    if (!card?.contains(event.target)) close();
+  };
+  const change = () => refresh();
+  refresh();
+  const observer = new MutationObserver(refresh);
+  observer.observe(document.body, { childList: true, subtree: true });
+  document.addEventListener("click", click, true);
+  document.addEventListener("keydown", key, true);
+  document.addEventListener("change", change, true);
+  document.addEventListener("input", change, true);
+  document.addEventListener("widget-change", change, true);
+  document.addEventListener("dependency-update", change, true);
+  window.addEventListener("resize", position);
+  window.addEventListener("scroll", scroll, true);
+  dispose = () => {
+    close();
+    observer.disconnect();
+    document.removeEventListener("click", click, true);
+    document.removeEventListener("keydown", key, true);
+    document.removeEventListener("change", change, true);
+    document.removeEventListener("input", change, true);
+    document.removeEventListener("widget-change", change, true);
+    document.removeEventListener("dependency-update", change, true);
+    window.removeEventListener("resize", position);
+    window.removeEventListener("scroll", scroll, true);
+  };
+  return dispose;
+}
+
 // src/styles.ts
 var GlobalStyles = `
+${formUxStyles}
 ${DashboardTab.styles}
 ${DiagnosticTab.styles}
 ${MonitoringTab.styles}
@@ -18341,6 +18611,375 @@ function validateUniqueDynamicListItemName(widget, itemNode, value) {
   ) ? message.nameTaken() : true;
 }
 
+// src/kabanmax/tabs/sections/autoRecords.ts
+async function autoRecords(query) {
+  const reply = await callUbus({
+    object: "kabanmax",
+    method: "auto_records",
+    params: { ...query },
+    timeoutMs: 15e3
+  });
+  if (!reply.success) throw new Error(reply.message);
+  return reply.data;
+}
+async function registryAction(query, action, ids) {
+  const selected = [...new Set(ids)];
+  if (selected.length > 64) throw new Error(_("Select at most 64 records"));
+  const result = { done: 0, skipped: 0, failed: 0, results: [] };
+  for (let offset = 0; offset < selected.length; offset += 8) {
+    const chunk = selected.slice(offset, offset + 8);
+    try {
+      const reply = await callUbus({
+        object: "kabanmax",
+        method: "auto_action",
+        params: {
+          op: "records",
+          id: JSON.stringify({ ...query, action, ids: chunk })
+        },
+        timeoutMs: 185e3,
+        retryUnavailable: false
+      });
+      if (!reply.success) throw new Error(reply.message);
+      if (!reply.data.success)
+        throw new Error(reply.data.message || _("Registry action failed"));
+      result.done += reply.data.done;
+      result.skipped += reply.data.skipped;
+      result.failed += reply.data.failed;
+      result.results.push(...reply.data.results);
+    } catch (error) {
+      result.failed += chunk.length;
+      result.results.push(
+        ...chunk.map((id) => ({
+          id,
+          status: "failed",
+          reason: error instanceof Error ? error.message : String(error)
+        }))
+      );
+    }
+  }
+  return result;
+}
+function renderAutoRecords(sectionId) {
+  const root = textE("div", { class: "km-records" }, []);
+  const message2 = textE("p", {}, _("Loading\u2026"));
+  message2.setAttribute("aria-live", "polite");
+  const outcome2 = textE("p", {}, "");
+  outcome2.setAttribute("aria-live", "polite");
+  const tabs = textE("div", { class: "km-records__tools", role: "group" }, []);
+  const actions = textE("div", { class: "km-records__tools" }, []);
+  const body = textE("div", {}, []);
+  const pages = textE("div", { class: "km-records__tools" }, []);
+  const query = {
+    source_section: sectionId,
+    status: "pending",
+    search: "",
+    sort: "newest",
+    page: 1,
+    page_size: 25
+  };
+  let busy = false;
+  let debounce;
+  let selection = [];
+  const button = (text8, click, disabled = false) => {
+    const node = textE(
+      "button",
+      { type: "button", class: "cbi-button", click },
+      text8
+    );
+    node.disabled = disabled;
+    return node;
+  };
+  const mutate = async (action, ids) => {
+    if (busy || !ids.length) return;
+    const label = {
+      apply: _("Apply"),
+      exclude: _("Exclude"),
+      remove: _("Remove exclusions"),
+      forget: _("Remove saved approvals"),
+      recheck: _("Check")
+    }[action];
+    if (action !== "recheck" && !window.confirm(
+      `${label}: ${ids.length}. ${_("Only eligible records in this source section will be changed. Continue?")}`
+    ))
+      return;
+    busy = true;
+    root.setAttribute("aria-busy", "true");
+    outcome2.textContent = _("Processing\u2026");
+    try {
+      const result = await registryAction({ ...query }, action, ids);
+      outcome2.textContent = `${_("Completed")}: ${result.done}; ${_("Skipped")}: ${result.skipped}; ${_("Failed")}: ${result.failed}`;
+      const reasons = [
+        ...new Set(
+          result.results.filter((item) => item.reason).map((item) => item.reason)
+        )
+      ];
+      if (reasons.length)
+        outcome2.textContent += ` \xB7 ${reasons.slice(0, 3).join("; ")}`;
+    } catch (error) {
+      outcome2.textContent = error instanceof Error ? error.message : String(error);
+    } finally {
+      busy = false;
+      root.removeAttribute("aria-busy");
+      void load();
+    }
+  };
+  const load = async () => {
+    if (busy) return;
+    busy = true;
+    root.setAttribute("aria-busy", "true");
+    message2.textContent = _("Loading\u2026");
+    const requested = JSON.stringify(query);
+    let again = false;
+    try {
+      const data = await autoRecords({ ...query });
+      if (requested !== JSON.stringify(query)) {
+        again = true;
+        return;
+      }
+      query.page = data.page;
+      selection = data.selection || [];
+      const supported = data.bulk_supported === true;
+      const bulkSupported = supported && !data.legacy_overflow;
+      tabs.replaceChildren(
+        ...["pending", "applied", "excluded"].map((status, i) => {
+          const node = button(
+            `${[_("Awaiting"), _("Applied records"), _("Excluded")][i]} ${data.counts[status] || 0}`,
+            () => {
+              query.status = status;
+              query.page = 1;
+              void load();
+            }
+          );
+          node.setAttribute("aria-pressed", String(status === query.status));
+          return node;
+        })
+      );
+      actions.replaceChildren();
+      const ids = selection.map((row2) => row2.id).filter(Boolean);
+      if (query.status === "pending")
+        actions.append(
+          button(
+            _("Apply all"),
+            () => mutate("apply", ids),
+            !bulkSupported || !selection.some((row2) => row2.eligible)
+          )
+        );
+      if (query.status !== "excluded")
+        actions.append(
+          button(
+            _("Exclude all"),
+            () => mutate("exclude", ids),
+            !bulkSupported || !ids.length
+          )
+        );
+      else
+        actions.append(
+          button(
+            _("Remove all"),
+            () => mutate("remove", ids),
+            !bulkSupported || !ids.length
+          )
+        );
+      body.replaceChildren();
+      if (!data.rows.length)
+        body.append(
+          textE(
+            "p",
+            {},
+            query.search ? _("No matching IPs") : _("No discovered IPs yet")
+          )
+        );
+      else
+        body.append(
+          textE("table", { class: "table" }, [
+            textE(
+              "tr",
+              {},
+              ["IP", _("Route"), _("State"), _("Action")].map(
+                (text8) => textE("th", {}, text8)
+              )
+            ),
+            ...data.rows.map(
+              (row2) => textE("tr", {}, [
+                textE("td", {}, [
+                  textE("strong", {}, row2.ip),
+                  textE("div", {}, row2.domain || _("Domain unknown"))
+                ]),
+                textE(
+                  "td",
+                  {},
+                  row2.target ? `Zapret2 \u2192 ${row2.target === "direct-out" ? "Direct" : row2.target}` : "Zapret2"
+                ),
+                textE("td", {}, [
+                  row2.status === "saved" ? _("Saved; fresh verification required") : statusText(row2.status),
+                  ...row2.expires ? [textE("div", {}, new Date(row2.expires).toLocaleString())] : [],
+                  textE("details", {}, [
+                    textE("summary", {}, _("Details")),
+                    textE("pre", {}, JSON.stringify(row2, null, 2))
+                  ])
+                ]),
+                textE("td", {}, [
+                  ...row2.status === "proposed" ? [
+                    button(
+                      _("Apply"),
+                      () => mutate("apply", [row2.id]),
+                      !supported || !canApply(row2)
+                    )
+                  ] : [],
+                  ...row2.status === "excluded" ? [
+                    button(
+                      _("Remove"),
+                      () => mutate("remove", [row2.id]),
+                      !supported
+                    )
+                  ] : [
+                    button(
+                      _("Exclude"),
+                      () => mutate("exclude", [row2.id]),
+                      !supported || !row2.id || !row2.source_id && !row2.source
+                    )
+                  ],
+                  ...row2.status === "saved" ? [
+                    button(
+                      _("Check"),
+                      () => mutate("recheck", [row2.id]),
+                      !supported
+                    ),
+                    button(
+                      _("Remove"),
+                      () => mutate("forget", [row2.id]),
+                      !supported
+                    )
+                  ] : [],
+                  ...!["applied", "saved", "proposed", "excluded"].includes(
+                    row2.status
+                  ) && row2.id && row2.source && row2.network === "tcp" ? [
+                    button(
+                      _("Check"),
+                      () => mutate("recheck", [row2.id]),
+                      !supported
+                    )
+                  ] : []
+                ])
+              ])
+            )
+          ])
+        );
+      const count2 = Math.max(1, Math.ceil(data.total / 25));
+      pages.replaceChildren(
+        button(
+          "\u2190",
+          () => {
+            query.page--;
+            void load();
+          },
+          query.page <= 1
+        ),
+        textE(
+          "span",
+          {},
+          `${query.page} / ${count2} \xB7 ${data.total ? (query.page - 1) * 25 + 1 : 0}\u2013${Math.min(query.page * 25, data.total)} / ${data.total}`
+        ),
+        button(
+          "\u2192",
+          () => {
+            query.page++;
+            void load();
+          },
+          query.page >= count2
+        )
+      );
+      message2.textContent = data.warning || (data.legacy_overflow ? _(
+        "Legacy exclusions exceed 64 records. Remove entries explicitly or narrow the filter; no exclusions were discarded."
+      ) : "") || (supported ? _(
+        "Up to 64 records per list. Saved approvals are inactive until fresh verification; bulk actions use the entire current filter."
+      ) : data.reason || _("Registry actions require the r12 core API"));
+    } catch (error) {
+      message2.textContent = error instanceof Error ? error.message : String(error);
+    } finally {
+      busy = false;
+      root.removeAttribute("aria-busy");
+      if (again) void load();
+    }
+  };
+  const search = textE("input", {
+    type: "search",
+    placeholder: _("Search IP or domain"),
+    "aria-label": _("Search IP or domain")
+  });
+  search.addEventListener("input", () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      query.search = search.value;
+      query.page = 1;
+      void load();
+    }, 300);
+  });
+  const sort = textE(
+    "select",
+    { "aria-label": _("Sort") },
+    [
+      ["newest", _("Newest first")],
+      ["oldest", _("Oldest first")],
+      ["ip", _("By IP")]
+    ].map(([value, text8]) => textE("option", { value }, text8))
+  );
+  sort.addEventListener("change", () => {
+    query.sort = sort.value;
+    query.page = 1;
+    void load();
+  });
+  root.append(
+    tabs,
+    textE("div", { class: "km-records__tools" }, [
+      search,
+      sort,
+      button("\u21BB", () => load())
+    ]),
+    actions,
+    outcome2,
+    message2,
+    body,
+    pages,
+    textE("details", {}, [
+      textE("summary", {}, _("Advanced settings")),
+      button(_("Stop automatic routing now"), async () => {
+        if (busy || !window.confirm(
+          _(
+            "Stop until the next Save & Apply? To disable permanently, turn off automatic routing and Save & Apply."
+          )
+        ))
+          return;
+        busy = true;
+        try {
+          await autoAction("disable", sectionId);
+        } catch (error) {
+          outcome2.textContent = error instanceof Error ? error.message : String(error);
+        } finally {
+          busy = false;
+          void load();
+        }
+      })
+    ])
+  );
+  let mounted = false;
+  let last = 0;
+  const started2 = Date.now();
+  const timer = setInterval(() => {
+    if (root.isConnected) mounted = true;
+    else if (mounted || Date.now() - started2 > 6e4) {
+      clearInterval(timer);
+      clearTimeout(debounce);
+      return;
+    }
+    if (root.isConnected && root.getClientRects().length && document.visibilityState !== "hidden" && Date.now() - last > 15e3) {
+      last = Date.now();
+      void load();
+    }
+  }, 1e3);
+  return root;
+}
+
 // src/kabanmax/tabs/sections/autoRouting.ts
 var emptyState = {
   sources: [],
@@ -18353,29 +18992,13 @@ var emptyState = {
 function canApply(row2, now = Date.now()) {
   return row2.status === "proposed" && row2.apply_allowed === true && row2.domain_known === true && !!row2.domain && Date.parse(row2.expires || "") > now;
 }
-function evidenceText(evidence) {
-  const labels = {
-    healthy: _("Original HTTPS resource responds; no change"),
-    suspected_failure: _("Repeated transport failure; blocking is not proven"),
-    alternative_reachable: _(
-      "Alternative HTTPS response verified; manual confirmation only"
-    ),
-    verified_for_apply: _(
-      "Strict application contract verified; eligible for automatic application"
-    ),
-    transport_diagnostic: _(
-      "TCP diagnostic only; application identity unknown"
-    )
-  };
-  return labels[evidence] || _("Insufficient evidence");
-}
 function statusText(status) {
   const labels = {
     observing: _("Detected"),
     detected: _("Detected"),
     checking: _("Checking"),
     inconclusive: _("Insufficient evidence"),
-    identity_unknown: _("Insufficient evidence"),
+    identity_unknown: _("Needs verification"),
     unattributed: _("Source section not established"),
     proposed: _("Proposed"),
     applied: _("Applied"),
@@ -18389,50 +19012,6 @@ function statusText(status) {
     blocked_by_policy: _("Forbidden by policy")
   };
   return labels[status] || _("See diagnostic details");
-}
-function reasonText(reason) {
-  if (reason === "original_https_inconclusive")
-    return _(
-      "Original HTTPS checks are inconclusive; no route change is authorized"
-    );
-  if (reason === "repeated_transport_failure_alternative_reachable")
-    return _(
-      "The same IP and hostname responded through the alternative; this does not prove DPI"
-    );
-  if (reason === "actual_destination_ip_unknown")
-    return _(
-      "The actual dialled IP is unknown; other DNS addresses will not be checked"
-    );
-  if (reason === "original_flow_not_attested")
-    return _("No matching original flow attests this IP and identity");
-  if ([
-    "identity_unknown",
-    "no_connection_identity",
-    "connection_error_without_identity"
-  ].includes(reason))
-    return _("Destination identity is not established");
-  if (["first_match_changed", "first_match_not_routable"].includes(reason))
-    return _("A different rule wins; no automatic change");
-  if (reason === "source_mark_unattributed")
-    return _("The source is not an attested Zapret2 route");
-  if (reason === "probe_scope_requires_connection_metadata")
-    return _("Earlier rules require unavailable connection metadata");
-  if (reason === "original_failure_unproven")
-    return _("The application failure contract was not confirmed");
-  if (reason.startsWith("dns_"))
-    return _("DNS evidence is unavailable, changed or expired");
-  if (reason === "suppressed") return _("Excluded by the user");
-  if (reason === "udp_not_supported")
-    return _("UDP is observed but is not checked by this HTTPS mechanism");
-  if (reason === "connection_error" || reason === "no_progress")
-    return _(
-      "A connection problem was observed; application verification is required"
-    );
-  if (reason.includes("infrastructure"))
-    return _("Infrastructure protection forbids this check");
-  if (reason === "verified_alternative_after_contract_failure")
-    return _("The alternative passed the configured application contract");
-  return reason ? _("See diagnostic details") : "";
 }
 async function autoState() {
   const reply = await callUbus({
@@ -18467,258 +19046,53 @@ async function autoAction(op, id) {
     throw new Error(reply.data.message || _("Automatic routing action failed"));
   return reply.data;
 }
-function sourceRows(state, sectionId) {
-  const tag = state.sources.find((source) => source.id === sectionId)?.outbound;
-  const owned = (row2) => row2.source_id === sectionId || !!tag && row2.source === tag;
-  return {
-    candidates: [...state.candidates.filter(owned), ...state.unattributed],
-    leases: state.leases.filter(owned),
-    decisions: state.decisions.filter(owned).filter((row2) => row2.status === "proposed"),
-    results: state.decisions.filter(owned).filter((row2) => row2.status !== "proposed"),
-    history: state.history.filter(owned)
-  };
-}
-function targetRows(state, sectionId, tag) {
-  return state.leases.filter(
-    (row2) => row2.target_section === sectionId || row2.target !== "direct-out" && row2.target?.startsWith(`${tag}/`)
-  );
-}
-function renderAutoRouting(sectionId) {
-  const root = textE("div", {}, []);
-  const body = textE(
-    "div",
-    {},
-    _("Refresh to view backend candidates and temporary routes.")
-  );
-  const message2 = textE("p", {}, "");
-  const source = uci.get(KABANMAX_UCI_PACKAGE, sectionId, "action") === "zapret2";
-  let state = emptyState;
-  let busy = false;
-  const tag = () => state.sources.find((s) => s.id === sectionId)?.outbound || String(uci.get(KABANMAX_UCI_PACKAGE, sectionId, "label") || sectionId);
-  const run = async (op, id) => {
-    if (busy) return;
-    busy = true;
-    message2.textContent = "\u2026";
-    try {
-      if (op && id) await autoAction(op, id);
-      state = await autoState();
-      body.replaceChildren();
-      if (source) {
-        const rows = sourceRows(state, sectionId);
-        const processed = new Set(
-          [...rows.leases, ...rows.decisions, ...rows.results, ...rows.history].map((row2) => row2.ip).filter(Boolean)
-        ).size;
-        body.appendChild(
-          textE(
-            "p",
-            {},
-            `${_("Candidates")}: ${rows.candidates.length}; ${_("Processed IPs (recent results)")}: ${processed}; ${_("Active")}: ${rows.leases.length}; ${_("Suppressed")}: ${state.suppressed_counts?.[sectionId] ?? 0}`
-          )
-        );
-        for (const [title, entries] of [
-          [_("Candidates"), rows.candidates],
-          [_("Active redirects"), rows.leases],
-          [_("Proposals"), rows.decisions],
-          [_("Check results"), rows.results],
-          [_("History"), rows.history]
-        ]) {
-          body.appendChild(textE("h4", {}, title));
-          body.appendChild(table(entries));
-        }
-      } else {
-        body.appendChild(textE("h4", {}, _("Added automatically")));
-        body.appendChild(table(targetRows(state, sectionId, tag())));
-      }
-      message2.textContent = state.version ? _(
-        "Temporary routes are scoped inside the original Zapret2 section. No manual entries are changed."
-      ) : state.reason || _(
-        "Enable automatic routing in a Zapret2 section and apply with the test core."
-      );
-      if (state.disabled_sources?.includes(tag()))
-        message2.textContent = _(
-          "Stopped until the next configuration apply. Disable the section option and Save & Apply to persist this choice."
-        );
-      if (state.suppression_error)
-        message2.textContent = state.suppression_error;
-    } catch (error) {
-      message2.textContent = error instanceof Error ? error.message : String(error);
-    } finally {
-      busy = false;
-    }
-  };
-  const button = (label, op, id, disabled = false) => textE(
-    "button",
-    {
-      type: "button",
-      class: "cbi-button",
-      disabled,
-      click: () => run(op, id)
-    },
-    label
-  );
-  function table(entries) {
-    return textE("table", { class: "table" }, [
-      textE(
-        "tr",
-        {},
-        [
-          "IP",
-          _("Domain"),
-          _("Source"),
-          _("Route"),
-          _("Status"),
-          _("Evidence"),
-          _("Created"),
-          _("Expires"),
-          _("Details")
-        ].map((text8) => textE("th", {}, text8))
-      ),
-      ...entries.map(
-        (row2) => textE("tr", {}, [
-          textE(
-            "td",
-            {},
-            `${row2.ip || "\u2014"}:${row2.port ?? "\u2014"} (${row2.network || "tcp"})`
-          ),
-          textE("td", {}, row2.domain || _("Not established")),
-          textE(
-            "td",
-            {},
-            `${row2.source || _("Unattributed")} / ${row2.source_ip || "\u2014"}`
-          ),
-          textE("td", {}, row2.target || "\u2014"),
-          textE(
-            "td",
-            {},
-            `${statusText(row2.status)}. ${reasonText(row2.reason || "")}`
-          ),
-          textE("td", {}, [
-            evidenceText(row2.evidence || ""),
-            ...row2.status === "proposed" && !canApply(row2) ? [
-              textE(
-                "p",
-                {},
-                _(
-                  "Apply unavailable: identity, permission or validity period is not confirmed"
-                )
-              )
-            ] : []
-          ]),
-          textE(
-            "td",
-            {},
-            row2.created ? new Date(row2.created).toLocaleString() : "\u2014"
-          ),
-          textE(
-            "td",
-            {},
-            row2.expires ? new Date(row2.expires).toLocaleString() : "\u2014"
-          ),
-          textE("td", {}, [
-            textE("details", {}, [
-              textE("summary", {}, _("Details")),
-              textE("pre", {}, JSON.stringify(row2, null, 2))
-            ]),
-            ...row2.id && row2.status === "proposed" ? [
-              button(_("Apply"), "apply", row2.id, !canApply(row2)),
-              button(_("Delete"), "delete", row2.id)
-            ] : [],
-            ...row2.id && row2.status === "applied" && state.leases.some((active) => active.id === row2.id) ? [button(_("Delete"), "delete", row2.id)] : [],
-            ...row2.id && row2.source && row2.network === "tcp" && !["applied", "proposed"].includes(row2.status) ? [button(_("Check"), "probe", row2.id)] : []
-          ])
-        ])
-      )
-    ]);
-  }
-  root.appendChild(
-    textE("h3", {}, source ? _("Automatic routing") : _("Added automatically"))
-  );
-  root.appendChild(button(_("Refresh")));
-  if (source) {
-    root.appendChild(
-      textE(
-        "p",
-        {},
-        _(
-          "Deleting a route withdraws it and stores persistent suppression. Reset suppression to allow automatic selection again."
-        )
-      )
-    );
-    root.appendChild(
-      textE(
-        "button",
-        {
-          type: "button",
-          class: "cbi-button",
-          click: () => run("clear", sectionId)
-        },
-        _("Clear automatic list")
-      )
-    );
-    root.appendChild(
-      textE(
-        "button",
-        {
-          type: "button",
-          class: "cbi-button",
-          click: () => run("reset", sectionId)
-        },
-        _("Reset suppression")
-      )
-    );
-    root.appendChild(
-      textE(
-        "button",
-        {
-          type: "button",
-          class: "cbi-button",
-          click: () => run("disable", sectionId)
-        },
-        _("Stop automatic routing now")
-      )
-    );
-  }
-  root.appendChild(message2);
-  root.appendChild(body);
-  return root;
-}
 function attachAutoRouting(section2) {
   section2.tab("auto_routing", _("Automatic routing"));
   for (const [key, label, defaultValue] of [
     ["auto_routing_enabled", _("Enable automatic routing"), "0"],
-    ["auto_routing_probe_zapret", _("Allow Zapret2 probes"), "1"],
-    ["auto_routing_direct", _("Allow Direct probes"), "0"],
-    [
-      "auto_routing_apply",
-      _("Apply verified temporary routes automatically"),
-      "0"
-    ]
+    ["auto_routing_apply", _("Apply automatically"), "0"],
+    ["auto_routing_direct", _("Use Direct"), "0"],
+    ["auto_routing_use_warp", _("Use WARP"), "1"],
+    ["auto_routing_ip_only", _("Allow redirecting IPs without a domain"), "0"]
   ]) {
     const option2 = section2.taboption("auto_routing", form.Flag, key, label);
     option2.modalonly = true;
     option2.depends("action", "zapret2");
     option2.default = defaultValue;
     option2.retain = true;
+    if (key === "auto_routing_use_warp")
+      option2.load = (id) => uci.get(KABANMAX_UCI_PACKAGE, id, key) ?? (uci.get(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp") ? "1" : "0");
+    if (key === "auto_routing_apply")
+      option2.description = _(
+        "Ordinary HTTPS supports manual proposals only. Automatic application requires a strict nonce contract; viewing or toggling unsaved settings does not change active routes."
+      );
+    if (key === "auto_routing_ip_only") {
+      option2.readonly = true;
+      option2.write = () => void 0;
+      option2.remove = () => void 0;
+      option2.description = _(
+        "Safe IP-only application is unavailable: a trusted domain and flow identity is required. These IPs remain visible for diagnosis; no global IP bypass is created."
+      );
+    }
   }
   const contract = section2.taboption(
     "auto_routing",
     form.TextValue,
     "auto_routing_contract",
-    _("HTTPS verification settings"),
-    _(
-      "Leave empty for ordinary HTTPS checks on port 443 using the trusted flow hostname and GET /. These checks only propose scoped routes for manual confirmation, even when automatic application is enabled. Optional JSON mode web configures path, port, status and content prefix. Existing nonce contracts use mode strict and can qualify for automatic application. Timeout is not proof of DPI; UDP is not verified. Save & Apply may interrupt TCP connections."
-    )
+    _("HTTPS verification settings")
   );
   contract.modalonly = true;
   contract.depends("action", "zapret2");
   contract.retain = true;
-  contract.rows = 5;
-  contract.placeholder = '{"mode":"web","path":"/","port":443,"status":200}';
-  contract.validate = (_sectionId, value) => {
+  contract.rows = 3;
+  contract.description = _(
+    "Leave empty for ordinary HTTPS manual proposals. Strict nonce contracts are preserved. Timeouts do not prove blocking."
+  );
+  contract.validate = (_id, value) => {
     if (!value.trim()) return true;
     try {
-      const parsed = JSON.parse(value);
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? true : _("Expected a JSON object");
+      const v = JSON.parse(value);
+      return v && typeof v === "object" && !Array.isArray(v) ? true : _("Expected a JSON object");
     } catch {
       return _("Expected a JSON object");
     }
@@ -18727,42 +19101,37 @@ function attachAutoRouting(section2) {
     "auto_routing",
     form.ListValue,
     "auto_routing_warp",
-    _("WARP profile for automatic routing")
+    _("WARP profile")
   );
   warp.modalonly = true;
-  warp.depends("action", "zapret2");
+  warp.depends({ action: "zapret2", auto_routing_use_warp: "1" });
   warp.retain = true;
-  warp.value("", _("Do not use WARP"));
-  warp.load = async function(sectionId) {
+  warp.value("", _("Select a WARP profile"));
+  warp.load = async function(id) {
     const snapshot = await autoState().catch(() => emptyState);
-    for (const profile of snapshot.warp_profiles || [])
+    const selected = String(
+      uci.get(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp") || ""
+    );
+    this.keylist = [""];
+    this.vallist = [_("Select a WARP profile")];
+    for (const profile of /* @__PURE__ */ new Set([
+      ...snapshot.warp_profiles || [],
+      ...selected ? [selected] : []
+    ]))
       this.value(profile, profile);
-    return uci.get(KABANMAX_UCI_PACKAGE, sectionId, "auto_routing_warp") || "";
+    return selected;
   };
-  const direct = section2.taboption(
-    "auto_routing",
-    form.ListValue,
-    "auto_routing_direct_section",
-    _("Show Direct routes in Bypass section")
-  );
-  direct.modalonly = true;
-  direct.depends("action", "zapret2");
-  direct.retain = true;
-  direct.value("", _("Direct without a section"));
-  for (const entry of uci.sections(KABANMAX_UCI_PACKAGE, "section") || []) {
-    if (entry.action === "bypass")
-      direct.value(entry[".name"], String(entry.label || entry[".name"]));
-  }
   const list3 = section2.taboption(
     "auto_routing",
     form.DummyValue,
     "_automatic_routes",
-    _("Automatic IP records")
+    _("Found IPs")
   );
   list3.modalonly = true;
+  list3.depends("action", "zapret2");
   list3.write = () => void 0;
   list3.remove = () => void 0;
-  list3.renderWidget = (sectionId) => renderAutoRouting(sectionId);
+  list3.renderWidget = (id) => renderAutoRecords(id);
 }
 
 // src/validators/validateOutboundJson.ts
@@ -25580,10 +25949,7 @@ function addFingerprintOptions(section2, getUri) {
   o.value("", _("Inherit from connection URI"));
   for (const profile of selectableFingerprints) {
     if (profile.id === "chrome_155") continue;
-    o.value(
-      profile.id,
-      profile.family === "chrome" ? "Chrome" : `${profile.label}${profile.version ? ` ${profile.version}` : ""}`
-    );
+    o.value(profile.id, profile.label);
   }
   o.default = "";
   o.rmempty = true;
@@ -25627,13 +25993,27 @@ function addFingerprintOptions(section2, getUri) {
     "_tls_variant",
     _("Fingerprint version")
   );
-  variant.value("chrome", _("Standard (Chrome 133)"));
-  variant.value("chrome_155", "Chrome 155");
+  variant.value("chrome", "133");
+  variant.value("chrome_155", "155");
   variant.default = "chrome";
   variant.rmempty = false;
   variant.retain = true;
   variant.depends("tls_fingerprint", "chrome");
   variant.validate = (_id, value) => ["chrome", "chrome_155"].includes(`${value}`) ? true : _("Unsupported fingerprint version");
+  for (const profile of selectableFingerprints) {
+    if (profile.family === "chrome" || !profile.version) continue;
+    const version = section2.option(
+      form.ListValue,
+      `_tls_version_${profile.id}`,
+      _("Fingerprint version")
+    );
+    version.value(profile.version, profile.version);
+    version.default = profile.version;
+    version.readonly = true;
+    version.depends("tls_fingerprint", profile.id);
+    version.write = () => void 0;
+    version.remove = () => void 0;
+  }
 }
 
 // src/kabanmax/tabs/sections/connectionUri.ts
@@ -25957,6 +26337,7 @@ var FIELD_KEYS = [
 function connectionEditorDefaults(uri) {
   const fields = parseConnectionUri(uri);
   return Object.fromEntries([
+    ["_uri_show", "0"],
     ["_uri_editor", fields.supported ? "fields" : "raw"],
     ["_uri_source", uri],
     ...FIELD_KEYS.map((key) => [`_uri_${key}`, fields[key]])
@@ -25997,6 +26378,13 @@ function currentConnectionEditorUri(map, itemId) {
   }
 }
 function addConnectionEditorOptions(section2, validateUri) {
+  const show = section2.option(form.Flag, "_uri_show", _("Show parameters"));
+  show.default = "0";
+  show.write = () => void 0;
+  show.remove = () => void 0;
+  show.description = _(
+    "Show editable protocol parameters. Viewing does not change the original connection URI."
+  );
   let option2 = section2.option(
     form.ListValue,
     "_uri_editor",
@@ -26004,6 +26392,7 @@ function addConnectionEditorOptions(section2, validateUri) {
   );
   option2.value("fields", _("Editable fields"));
   option2.value("raw", _("Original URI"));
+  option2.retain = true;
   option2.rmempty = false;
   option2.description = _(
     "Fields are available for VLESS, Trojan, AnyTLS, SOCKS and HTTP proxies. Other formats keep the original URI. Unknown parameters are preserved."
@@ -26016,11 +26405,11 @@ function addConnectionEditorOptions(section2, validateUri) {
   option2.password = true;
   option2.retain = true;
   option2.rmempty = false;
-  option2.depends("_uri_editor", "raw");
+  option2.depends({ _uri_editor: "raw", _uri_show: "1" });
   option2.validate = (_id, value) => `${value || ""}`.trim() ? validateUri(`${value}`) : _("Required");
   option2 = section2.option(form.Button, "_uri_import", _("Import URI"));
   option2.inputtitle = _("Import into fields");
-  option2.depends("_uri_editor", "raw");
+  option2.depends("_uri_internal", "1");
   option2.onclick = () => {
     const raw = `${modalOptionFormValue(section2.map, "settings", "uri") ?? ""}`.trim();
     const defaults = connectionEditorDefaults(raw);
@@ -26068,14 +26457,20 @@ function addConnectionEditorOptions(section2, validateUri) {
           const securityModes = ["publicKey", "shortId"].includes(key) ? ["reality"] : ["tls", "xtls", "reality"];
           securityModes.forEach(
             (security) => o.depends({
+              _uri_show: "1",
               _uri_editor: "fields",
               _uri_protocol: protocol,
               _uri_security: security
             })
           );
-        } else o.depends({ _uri_editor: "fields", _uri_protocol: protocol });
+        } else
+          o.depends({
+            _uri_show: "1",
+            _uri_editor: "fields",
+            _uri_protocol: protocol
+          });
       });
-    else o.depends("_uri_editor", "fields");
+    else o.depends({ _uri_show: "1", _uri_editor: "fields" });
     return o;
   };
   const tls = ["vless", "trojan", "anytls"];
@@ -26104,15 +26499,8 @@ function addConnectionEditorOptions(section2, validateUri) {
   field2("alpn", _("TLS ALPN (comma separated)"), tls).description = _(
     "WebSocket, gRPC, HTTPUpgrade and HTTP transports select ALPN in the core; this value applies only where the transport permits it."
   );
-  field2("publicKey", _("REALITY public key"), tls);
+  field2("publicKey", _("REALITY public key"), tls).password = true;
   field2("shortId", _("REALITY short ID"), tls).password = true;
-  const fingerprint2 = field2("fingerprint", _("Fingerprint in URI"), tls);
-  selectableFingerprints.forEach(
-    (profile) => fingerprint2.value(profile.id, fingerprintLabel(profile.id))
-  );
-  fingerprint2.description = _(
-    "The separate TLS fingerprint below overrides this value. Copy link exports the effective fingerprint."
-  );
   field2("flow", _("VLESS flow"), ["vless"]);
   field2("encryption", _("VLESS encryption"), ["vless"]);
   field2("transport", _("Transport"), transport3, [
@@ -26151,6 +26539,7 @@ function addConnectionEditorOptions(section2, validateUri) {
     transport3.forEach(
       (protocol) => transports.forEach(
         (type) => o.depends({
+          _uri_show: "1",
           _uri_editor: "fields",
           _uri_protocol: protocol,
           _uri_transport: type
@@ -26159,7 +26548,7 @@ function addConnectionEditorOptions(section2, validateUri) {
     );
     if (key === "extra") o.password = true;
   }
-  option2 = section2.option(form.Button, "_uri_export", _("Export connection"));
+  option2 = section2.option(form.Button, "_uri_export", _("Copy link"));
   option2.inputtitle = _("Copy link");
   option2.description = _(
     "Copies effective portable parameters. ClientHello splitting, classical key exchange and cascade settings remain local and are not included in a share URI."
@@ -32330,6 +32719,7 @@ function pageTitle(compiledVersion, status) {
 }
 
 // src/kabanmax/entry/view.ts
+var disposeFormUx;
 function addMountedTab(map, type, title, tab) {
   const section2 = map.section(form.TypedSection, type, title);
   section2.anonymous = true;
@@ -32402,12 +32792,14 @@ var KabanMaxView = {
       return ["settings"];
     };
     createSettingsContent(settingsSection);
-    addMountedTab(kabanmaxMap, "diagnostic", _("Status"), DiagnosticTab);
+    addMountedTab(kabanmaxMap, "diagnostic", _("Diagnostics"), DiagnosticTab);
     addMountedTab(kabanmaxMap, "dashboard", _("Dashboard"), DashboardTab);
     addMountedTab(kabanmaxMap, "monitoring", _("Monitoring"), MonitoringTab);
     addMountedTab(kabanmaxMap, "logs", _("Logs"), LogsTab);
     addMountedTab(kabanmaxMap, "components", _("Components"), ComponentsTab);
     const rendered = await kabanmaxMap.render();
+    disposeFormUx?.();
+    disposeFormUx = installFormUx(rendered);
     coreService();
     return rendered;
   }

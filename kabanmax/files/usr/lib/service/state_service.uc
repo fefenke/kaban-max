@@ -384,11 +384,15 @@ function object_methods() {
             call: () => require("diagnostics.auto_routing").state(),
             args: { ubus_rpc_session: "" }
         },
+        auto_records: {
+            call: (request) => require("diagnostics.auto_records").page(request.args),
+            args: { source_section: "", status: "", search: "", sort: "", page: 0, page_size: 0, ubus_rpc_session: "" }
+        },
         auto_action: {
             call: function(request) {
                 if (!common.ensure_dir("/var/run/kabanmax")) return { success: false, message: "State directory unavailable" };
                 let answer = "/var/run/kabanmax/auto-action." + ++import_runs;
-                let finish = () => { let reply = common.read_json_file(answer); fs.unlink(answer); request.reply(reply ?? { success: false, message: "Automatic routing worker failed" }); };
+                let finish = () => { require("diagnostics.auto_records").invalidate(); let reply = common.read_json_file(answer); fs.unlink(answer); request.reply(reply ?? { success: false, message: "Automatic routing worker failed" }); };
                 request.defer();
                 let child = require("uloop").process("/bin/sh", [ "-c", "umask 077; exec \"$@\" > \"$0\"", answer,
                     constants.KABANMAX_BIN, "auto_action_internal", request.args.op, request.args.id ],
@@ -560,6 +564,9 @@ function run() {
     uloop.interval(LOG_POLL_MS, function() {
         log_tick();
     });
+
+    // Coalesce automatic lease capture: at most one background flash update per minute.
+    uloop.interval(60000, function() { require("diagnostics.auto_routing").capture(); });
 
     // Enforced here, inside what the transport in front of a parked request will wait for.
     uloop.interval(MAX_WAIT_MS, function() {

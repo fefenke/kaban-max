@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 const calls = vi.hoisted(() => ({ ubus: vi.fn() }));
 vi.mock('../../../../helpers/callUbus', () => ({ callUbus: calls.ubus }));
 import {
@@ -8,8 +8,69 @@ import {
   targetRows,
   type AutoState,
 } from '../autoRouting';
+import { autoRecords, registryAction } from '../autoRecords';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('automatic routing lists', () => {
+  it('splits a confirmed selection into bounded non-retrying batches with partial outcomes', async () => {
+    calls.ubus
+      .mockResolvedValueOnce({
+        success: true,
+        data: { success: true, done: 8, skipped: 0, failed: 0, results: [] },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { success: true, done: 0, skipped: 1, failed: 0, results: [] },
+      });
+    const query = {
+      source_section: 's1',
+      status: 'pending',
+      search: 'one.test',
+      sort: 'newest',
+      page: 1,
+      page_size: 25,
+    };
+    const result = await registryAction(
+      query,
+      'apply',
+      Array.from({ length: 9 }, (_, i) => `r${i}`),
+    );
+    expect(result).toMatchObject({ done: 8, skipped: 1, failed: 0 });
+    const requests = calls.ubus.mock.calls
+      .slice(-2)
+      .map(([request]) => request);
+    expect(
+      requests.every((request) => request.retryUnavailable === false),
+    ).toBe(true);
+    expect(
+      requests.map((request) => JSON.parse(request.params.id).ids.length),
+    ).toEqual([8, 1]);
+    expect(
+      requests.every(
+        (request) => JSON.parse(request.params.id).source_section === 's1',
+      ),
+    ).toBe(true);
+  });
+  it('requests one bounded source page without downloading the full state', async () => {
+    calls.ubus.mockResolvedValue({
+      success: true,
+      data: { rows: [], total: 0, page: 1, counts: {}, version: 1 },
+    });
+    const query = {
+      source_section: 's1',
+      status: 'pending',
+      search: 'example',
+      sort: 'newest',
+      page: 2,
+      page_size: 25,
+    };
+    await autoRecords(query);
+    expect(calls.ubus).toHaveBeenLastCalledWith(
+      expect.objectContaining({ method: 'auto_records', params: query }),
+    );
+  });
+
   it('requires explicit backend permission, trusted identity and an unexpired decision for Apply', () => {
     const row = {
       ip: '203.0.113.7',
