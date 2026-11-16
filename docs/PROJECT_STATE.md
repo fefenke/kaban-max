@@ -1,5 +1,9 @@
 # Текущее состояние
 
+## Опубликовано 2026-11-16: 0.1.6 prerelease
+
+Выпущен [0.1.6](https://github.com/fefenke/kaban-max/releases/tag/0.1.6), source/tag commit `4445219fa62eac084143620a35bb58d34b704008`, core 1.14.4-r11. Пять GitHub Actions завершились success. Независимо скачаны все 14 публичных assets: SHA256/размеры, 13 записей SHA256SUMS, manifests и точный commit тега совпали; draft=false, prerelease=true. Evidence сохранено локально в `.local/audit/final-qa-publish/public-verification.json`. На оборудование ничего не устанавливалось; аппаратные UNVERIFIED ниже сохраняются. Следующий блок описывает предшествующий локальный GO.
+
 ## Финальная QA 2026-11-16 — кандидат 0.1.6
 
 Локальный GO для prerelease: frontend 175 файлов / 1682 теста, TypeScript/lint/bundle, backend 91/91, installer smoke/migration, po2lmo, clean apply 0001–0007 и пять Go race suites PASS. Чисто собраны 10 IPK/APK приложения/LuCI/RU и ARM64 base/tiny 1.14.4-r11; manifests, 13 SHA256 и payload APK/IPK проверены. Свежий x86_64 executable прошёл synthetic HTTPS/FakeIP/CDN/first-match/TTL smoke. Исправлены reserved tag LuCI и сравнение minimum core с поставляемой версией в release checker. Это локальная приёмка, не аппаратная; публикация фиксируется отдельно после проверки GitHub. [Команды и ограничения](TESTING.md).
