@@ -16,7 +16,13 @@ export interface BatchResult {
   failed: number;
   results: { id: string; status: string; reason?: string }[];
 }
-type RecordAction = 'apply' | 'exclude' | 'remove' | 'forget' | 'recheck';
+type RecordAction =
+  | 'apply'
+  | 'exclude'
+  | 'remove'
+  | 'forget'
+  | 'recheck'
+  | 'dismiss';
 interface RecordPage {
   rows: AutoEntry[];
   total: number;
@@ -101,6 +107,8 @@ export function renderAutoRecords(sectionId: string) {
     page_size: 25,
   };
   let busy = false;
+  let rendered = '';
+  let renderedQuery = '';
   let debounce: ReturnType<typeof setTimeout>;
   let selection: NonNullable<RecordPage['selection']> = [];
   const button = (text: string, click: () => unknown, disabled = false) => {
@@ -120,6 +128,7 @@ export function renderAutoRecords(sectionId: string) {
       remove: _('Remove exclusions'),
       forget: _('Remove saved approvals'),
       recheck: _('Check'),
+      dismiss: _('Remove'),
     }[action];
     if (
       action !== 'recheck' &&
@@ -156,8 +165,9 @@ export function renderAutoRecords(sectionId: string) {
     if (busy) return;
     busy = true;
     root.setAttribute('aria-busy', 'true');
-    message.textContent = _('Loading…');
     const requested = JSON.stringify(query);
+    if (!rendered || requested !== renderedQuery)
+      message.textContent = _('Loading…');
     let again = false;
     try {
       const data = await autoRecords({ ...query });
@@ -166,6 +176,13 @@ export function renderAutoRecords(sectionId: string) {
         return;
       }
       query.page = data.page;
+      const signature = JSON.stringify({ query, data });
+      if (signature === rendered) {
+        message.textContent = data.warning || '';
+        return;
+      }
+      rendered = signature;
+      renderedQuery = JSON.stringify(query);
       selection = data.selection || [];
       const supported = data.bulk_supported === true;
       const bulkSupported = supported && !data.legacy_overflow;
@@ -217,13 +234,26 @@ export function renderAutoRecords(sectionId: string) {
             !bulkSupported || !ids.length,
           ),
         );
+      if (query.status === 'pending')
+        actions.append(
+          button(
+            _('Remove all'),
+            () => mutate('dismiss', ids),
+            !bulkSupported || !ids.length,
+          ),
+        );
+      const openDetails = new Set(
+        Array.from(body.querySelectorAll<HTMLTableRowElement>('tr[data-id]'))
+          .filter((row) => row.querySelector('details[open]'))
+          .map((row) => row.dataset.id),
+      );
       body.replaceChildren();
       if (!data.rows.length)
         body.append(
           E(
             'p',
             {},
-            query.search ? _('No matching IPs') : _('No discovered IPs yet'),
+            query.search ? _('No matching IPs') : _('No connection errors'),
           ),
         );
       else
@@ -237,7 +267,7 @@ export function renderAutoRecords(sectionId: string) {
               ),
             ),
             ...data.rows.map((row) =>
-              E('tr', {}, [
+              E('tr', { 'data-id': row.id || '' }, [
                 E('td', {}, [
                   E('strong', {}, row.ip),
                   E('div', {}, row.domain || _('Domain unknown')),
@@ -246,20 +276,52 @@ export function renderAutoRecords(sectionId: string) {
                   'td',
                   {},
                   row.target
-                    ? `Zapret2 → ${row.target === 'direct-out' ? 'Direct' : row.target}`
-                    : 'Zapret2',
+                    ? `${row.target === 'direct-out' ? 'Direct' : row.target}`
+                    : '—',
                 ),
                 E('td', {}, [
                   row.status === 'saved'
                     ? _('Saved; fresh verification required')
-                    : statusText(row.status),
+                    : row.reason === 'hourly_budget'
+                      ? _('Verification limit reached; try again later.')
+                      : row.reason === 'cooldown'
+                        ? _('Waiting before the next check.')
+                        : statusText(row.status),
                   ...(row.expires
                     ? [E('div', {}, new Date(row.expires).toLocaleString())]
                     : []),
-                  E('details', {}, [
-                    E('summary', {}, _('Details')),
-                    E('pre', {}, JSON.stringify(row, null, 2)),
-                  ]),
+                  ...(row.failure
+                    ? [
+                        E(
+                          'details',
+                          {
+                            ...(openDetails.has(row.id) ? { open: true } : {}),
+                          },
+                          [
+                            E('summary', {}, _('Error')),
+                            E('p', {}, row.failure.message),
+                            E(
+                              'p',
+                              {},
+                              new Date(row.failure.at).toLocaleString(),
+                            ),
+                            ...[
+                              ...new Set(
+                                (row.attempts || []).map(
+                                  (attempt) => attempt.outbound,
+                                ),
+                              ),
+                            ].map((target) =>
+                              E(
+                                'div',
+                                {},
+                                `${target === row.source ? _('Current route') : target === 'direct-out' ? 'Direct' : target}: ${(row.attempts || []).filter((attempt) => attempt.outbound === target).every((attempt) => attempt.status === 'verified') ? _('Verified') : _('Not verified')}`,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ]
+                    : []),
                 ]),
                 E('td', {}, [
                   ...(row.status === 'proposed'
@@ -302,6 +364,20 @@ export function renderAutoRecords(sectionId: string) {
                         ),
                       ]
                     : []),
+                  ...(['pending', 'applied'].includes(query.status) &&
+                  row.status !== 'saved'
+                    ? [
+                        button(
+                          _('Remove'),
+                          () =>
+                            mutate(
+                              query.status === 'pending' ? 'dismiss' : 'forget',
+                              [row.id!],
+                            ),
+                          !supported || !row.id,
+                        ),
+                      ]
+                    : []),
                   ...(!['applied', 'saved', 'proposed', 'excluded'].includes(
                     row.status,
                   ) &&
@@ -321,30 +397,38 @@ export function renderAutoRecords(sectionId: string) {
             ),
           ]),
         );
-      const count = Math.max(1, Math.ceil(data.total / 25));
-      pages.replaceChildren(
-        button(
-          '←',
-          () => {
-            query.page--;
+      const count = Math.max(1, Math.ceil(data.total / query.page_size));
+      pages.replaceChildren();
+      if (count > 1) {
+        pages.append(
+          button(
+            '‹',
+            () => {
+              query.page--;
+              void load();
+            },
+            query.page <= 1,
+          ),
+        );
+        for (let page = 1; page <= count; page++) {
+          const number = button(String(page), () => {
+            query.page = page;
             void load();
-          },
-          query.page <= 1,
-        ),
-        E(
-          'span',
-          {},
-          `${query.page} / ${count} · ${data.total ? (query.page - 1) * 25 + 1 : 0}–${Math.min(query.page * 25, data.total)} / ${data.total}`,
-        ),
-        button(
-          '→',
-          () => {
-            query.page++;
-            void load();
-          },
-          query.page >= count,
-        ),
-      );
+          });
+          if (page === query.page) number.setAttribute('aria-current', 'page');
+          pages.append(number);
+        }
+        pages.append(
+          button(
+            '›',
+            () => {
+              query.page++;
+              void load();
+            },
+            query.page >= count,
+          ),
+        );
+      }
       message.textContent =
         data.warning ||
         (data.legacy_overflow
@@ -354,7 +438,7 @@ export function renderAutoRecords(sectionId: string) {
           : '') ||
         (supported
           ? ''
-          : data.reason || _('Registry actions require the r12 core API'));
+          : data.reason || _('Registry actions require the r13 core API'));
     } catch (error) {
       message.textContent =
         error instanceof Error ? error.message : String(error);

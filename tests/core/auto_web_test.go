@@ -1,6 +1,7 @@
 package autoroute
 
 import (
+	"fmt"
 	"context"
 	"crypto/x509"
 	"github.com/sagernet/sing-box/adapter"
@@ -40,7 +41,7 @@ func webManager(t *testing.T, status int, body string, headers ...map[string]str
 	s.Path = "/"
 	s.Prefix = ""
 	s.FailureStatus = 0
-	s.AutoApply = true
+	s.AutoApply = false
 	m.sources["zap"] = s
 	z.address = "127.0.0.1:1"
 	d.address = ordinary.Listener.Addr().String()
@@ -106,7 +107,7 @@ func TestWebInvalidTLSIsNotTransportFailureProof(t *testing.T) {
 	}
 }
 
-func TestWebOrdinaryResourceProposesButNeverAutoApplies(t *testing.T) {
+func TestWebOrdinaryResourceStaysManualWithoutAutoApply(t *testing.T) {
 	m, q, z, d := webManager(t, 200, normalPage)
 	result, err := m.Probe(context.Background(), q)
 	if err != nil {
@@ -286,21 +287,16 @@ func TestWebIPOnlyIsDiagnosticAndUnattributedCannotDial(t *testing.T) {
 	m, q, z, d := webManager(t, 200, normalPage)
 	q.Domain = ""
 	meta := metadata(q)
-	m.Observe(&meta, "zap")
+	event:=m.Observe(&meta, "zap")
+	m.Failed(event,fmt.Errorf("synthetic IP connection failure"))
 	result, err := m.Probe(context.Background(), q)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decision := result.(Decision)
-	if decision.Status != "identity_unknown" || decision.ApplyAllowed || len(m.leases) != 0 || z.calls.Load() != 2 || d.calls.Load() != 2 {
-		t.Fatal(decision)
-	}
-	if _, err = m.Apply(context.Background(), decision.ID); err == nil {
-		t.Fatal("IP-only manual apply bypass")
-	}
+	if result.(map[string]any)["reason"]!="identity_unknown" || len(m.leases)!=0 || z.calls.Load()!=0 || d.calls.Load()!=0 {t.Fatal("IP-only opt-in ignored",result)}
 	q.SourceIP = "192.0.2.99"
 	_, _ = m.Probe(context.Background(), q)
-	if z.calls.Load() != 2 || d.calls.Load() != 2 {
+	if z.calls.Load() != 0 || d.calls.Load() != 0 {
 		t.Fatal("unattributed diagnostic dial")
 	}
 }

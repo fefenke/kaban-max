@@ -62,22 +62,21 @@ t.test("persistent suppression is independent of manual UCI and corrupt state fa
     t.throws(() => model.suppression());
 });
 
-t.test("write ACL is checked before backend mutation; IP-only candidates remain visible", () => {
+t.test("write ACL is checked before mutation; generic logs cannot add section candidates", () => {
     let runtime = require("diagnostics.auto_routing");
     let ubus = require("ubus");
     let calls = [];
     runtime.paths.lock = require("stub").tmpdir() + "/lock";
     model.paths.suppression = require("stub").tmpdir() + "/suppression.json";
     runtime.io.request = (op, payload) => { push(calls, op); return { version: 1, candidates: [], leases: [], decisions: [], history: [], suppressed: [] }; };
-    runtime.io.logs = () => "dial tcp 203.0.113.7:443: timeout";
-    runtime.io.connections = () => [];
+    runtime.io.logs = () => die("Generic log scanning must not run");
+    runtime.io.connections = () => die("Live connection scanning must not run");
     t.throws(() => runtime.action("delete", "id", ""));
     ubus.__on("session.access", { access: false });
     t.throws(() => runtime.action("delete", "id", "denied"));
     t.eq(calls, []);
     let snapshot = runtime.state();
-    t.eq(snapshot.unattributed[0].ip,"203.0.113.7");
-    t.eq(snapshot.unattributed[0].domain,"");
+    t.eq(snapshot.unattributed,[]);
     ubus.__on("session.access", { access: true });
     t.ok(runtime.action("delete", "id", "allowed").success);
 });
@@ -91,7 +90,7 @@ t.test("ordinary web mode needs no nonce endpoint and strict contracts remain ex
 
 t.test("bounded registry pages cover all 64 records and exclude foreign sources", () => {
     let view=require("diagnostics.auto_records");let candidates=[];
-    for(let i=0;i<64;i++)push(candidates,{id:sprintf("c%05d",i),source_id:"zap",ip:sprintf("203.0.113.%d",i),domain:i==63 ? "last.test" : "",status:"identity_unknown"});
+    for(let i=0;i<64;i++)push(candidates,{id:sprintf("c%05d",i),source_id:"zap",ip:sprintf("203.0.113.%d",i),domain:i==63 ? "last.test" : "",status:"identity_unknown",failure:{id:"error"+i,source_id:"zap",message:"synthetic connection timeout"}});
     push(candidates,{id:"foreign",source_id:"other",ip:"203.0.113.1",domain:"last.test"});
     let snapshot={registry_version:2,sources:[{id:"zap",outbound:"zap"}],candidates,leases:[],decisions:[],unattributed:[]};
     let page=view.select(snapshot,[],{source_section:"zap",status:"pending",page:2,page_size:25});
@@ -107,4 +106,14 @@ t.test("WARP UI toggle preserves its stored profile and leaves baseline policy i
     t.eq(result[0].warp,"");t.eq(result[0].probe_zapret,true);
     t.eq(source.auto_routing_warp,"saved-unavailable-profile");
 });
+t.test("single opted-in Zapret never adopts WARP stalls or unattributed logs",()=>{
+ let view=require("diagnostics.auto_records");
+ let failure={id:"error-zap",source_id:"zap",message:"synthetic dial timeout",at:123};
+ let own={id:"own",source_id:"zap",source:"zap-out",ip:"203.0.113.8",domain:"member.test",status:"detected",failure};
+ let snapshot={registry_version:3,sources:[{id:"zap",outbound:"zap-out"}],candidates:[own,{...own,id:"healthy",ip:"203.0.113.9",failure:null,status:"observing"},{...own,id:"foreign",ip:"203.0.113.10",source_id:"warp",source:"warp-out"},{...own,id:"contradictory",ip:"203.0.113.11",source_id:"warp",source:"zap-out"}],decisions:[],leases:[],unattributed:[{id:"video",ip:"2001:db8::8",domain:"video.test",status:"unattributed",reason:"no_progress_without_trusted_first_match"}]};
+ let page=view.select(snapshot,[],{source_section:"zap",status:"pending"});
+ t.eq(map(page.rows,(row)=>row.id),["own"]);
+ t.eq(page.counts.pending,1);t.eq(length(page.selection),1);
+});
+
 t.done();

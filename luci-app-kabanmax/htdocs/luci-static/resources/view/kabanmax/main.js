@@ -18045,21 +18045,23 @@ var LogsTab = {
 
 // src/kabanmax/cbi/formUx.ts
 var formUxStyles = `
-.kabanmax-ui .cbi-value:not(.hidden) { display:grid; grid-template-columns:minmax(0,26em) minmax(0,1fr); align-items:center; gap:.5em 1em; min-height:3.2em; }
-.kabanmax-ui .cbi-value > .cbi-value-title { float:none; width:auto; margin:0; padding:0; text-align:left; line-height:1.5; }
+.kabanmax-ui .cbi-value:not(.hidden) { display:grid; grid-template-columns:minmax(0,180px) minmax(0,1fr); align-items:center; gap:.5em 20px; }
+.kabanmax-ui .cbi-value > .cbi-value-title { float:none; width:auto; margin:0; padding:0; text-align:right; line-height:1.5; }
 .kabanmax-ui .cbi-value > .cbi-value-field { width:auto; min-width:0; margin:0; padding:0; }
 .kabanmax-ui textarea { min-height:9em; resize:vertical; max-width:100%; box-sizing:border-box; white-space:pre-wrap; overflow-wrap:anywhere; overflow-x:hidden; }
 .kabanmax-ui .km-empty-auto-tab { display:none; }
 .kabanmax-ui .km-flag > .cbi-value-field { display:flex; align-items:center; justify-content:flex-start; }
 .kabanmax-ui .km-flag input[type=checkbox] { margin:0; vertical-align:middle; }
 .kabanmax-ui .km-flag input[type=checkbox]:disabled { opacity:.55; }
+.kabanmax-ui .km-auto-child > .cbi-value-title { padding-inline-start:1em; }
+.kabanmax-ui .km-auto-child > .cbi-value-title::before { content:'\u21B3'; margin-inline-end:.35em; opacity:.65; }
 .kabanmax-ui.fkp-single-field-modal .cbi-value > .cbi-value-title { display:block; }
 .kabanmax-ui .cbi-value[data-name="_uri_editor"]:not(.hidden),.kabanmax-ui .cbi-value[data-name="_uri_import"]:not(.hidden) { display:none; }
 .km-help { display:inline-flex; align-items:center; justify-content:center; inline-size:15px !important; min-inline-size:15px !important; block-size:15px; min-block-size:0 !important; padding:0 !important; margin:0 0 0 .4em; border:0; border-radius:50%; color:#fff; background:#1683da; font:bold 11px Arial,sans-serif; line-height:1; vertical-align:middle; cursor:pointer; }
 .km-help:focus-visible { outline:2px solid #1683da; outline-offset:3px; }
 .km-help-card { position:fixed; z-index:10001; box-sizing:border-box; width:max-content; max-width:min(26em,calc(100vw - 16px)); max-height:min(22em,calc(100vh - 16px)); overflow:auto; padding:1em; border:1px solid currentColor; border-radius:.5em; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 3px 18px #0004; }
 @media(prefers-color-scheme:dark) { .km-help-card { background:var(--background-color-high,#242424); color:var(--text-color-high,#eee); } }
-@media(max-width:600px) { .kabanmax-ui .cbi-value:not(.hidden):not(.km-flag) { grid-template-columns:minmax(0,1fr); } .kabanmax-ui .km-flag:not(.hidden) { grid-template-columns:minmax(0,1fr) auto; } }
+@media(max-width:600px) { .kabanmax-ui .cbi-value:not(.hidden):not(.km-flag) { grid-template-columns:minmax(0,1fr); } .kabanmax-ui .km-flag:not(.hidden) { grid-template-columns:minmax(0,1fr) auto; } .kabanmax-ui .cbi-value > .cbi-value-title { text-align:left; } }
 .km-forecast label { display:grid; gap:.35em; margin:.75em 0; }
 .km-forecast input,.km-forecast select { width:100%; box-sizing:border-box; }
 .km-records { overflow-x:auto; }
@@ -18068,8 +18070,11 @@ var formUxStyles = `
 .km-records__tools { display:flex; gap:.5em; flex-wrap:wrap; align-items:center; margin:.75em 0; }
 .km-records__pages { display:flex; justify-content:flex-end; align-items:center; gap:.6em; margin:1em 0 0; }
 .km-records__pages > .cbi-button { display:inline-flex; align-items:center; justify-content:center; inline-size:1.8em !important; min-inline-size:1.8em !important; block-size:1.8em; min-block-size:0; padding:0 !important; margin:0 !important; line-height:1; flex:0 0 1.8em; }
+.km-records__pages:empty { display:none; }
+.km-records__pages [aria-current=page] { color:#fff; background:#1479c9; border-color:#1479c9; font-weight:bold; }
 .km-records__message:empty { display:none; }
 .kabanmax-ui .cbi-value[data-name="_automatic_routes"]:not(.hidden),.kabanmax-ui .km-forecast:not(.hidden) { grid-template-columns:minmax(0,1fr); }
+.kabanmax-ui .cbi-value[data-name="_automatic_routes"] > .cbi-value-title { text-align:left; }
 `;
 var nextId = 0;
 function installFormUx(root) {
@@ -18163,25 +18168,31 @@ function installFormUx(root) {
       const enabled = !!row2.querySelector(
         "input[type=checkbox]"
       )?.checked;
-      const contract = tab.querySelector(
-        '[data-name="auto_routing_contract"] textarea'
+      const applyRow = tab.querySelector(
+        '[data-name="auto_routing_apply"]'
       );
-      let strict = false;
-      try {
-        const value = JSON.parse(contract?.value || "{}");
-        strict = !!value.domain && !!value.prefix && (value.mode || "strict") === "strict";
-      } catch {
-      }
+      const autoApply = !!applyRow?.querySelector(
+        "input[type=checkbox]"
+      )?.checked;
+      const warpRow = tab.querySelector(
+        '[data-name="auto_routing_warp"]'
+      );
+      if (warpRow && applyRow && warpRow.parentElement === applyRow.parentElement && warpRow.nextElementSibling !== applyRow)
+        applyRow.before(warpRow);
       for (const child of tab.querySelectorAll(
         '.cbi-value[data-name^="auto_routing_"]'
       )) {
         const name = child.dataset.name;
+        child.classList.toggle(
+          "km-auto-child",
+          name === "auto_routing_ip_only"
+        );
         if (name === "auto_routing_enabled") continue;
         for (const control of child.querySelectorAll("input,select,textarea")) {
           if (!originallyDisabled.has(control))
             originallyDisabled.set(control, control.disabled);
           const clearableApply = name === "auto_routing_apply" && "checked" in control && control.type === "checkbox" && control.checked;
-          control.disabled = !!originallyDisabled.get(control) || name === "auto_routing_ip_only" || !clearableApply && (!enabled || name === "auto_routing_apply" && !strict);
+          control.disabled = !!originallyDisabled.get(control) || !clearableApply && (!enabled || name === "auto_routing_ip_only" && !autoApply);
         }
       }
       const advanced = tab.querySelector(
@@ -18675,6 +18686,8 @@ function renderAutoRecords(sectionId) {
     page_size: 25
   };
   let busy = false;
+  let rendered = "";
+  let renderedQuery = "";
   let debounce;
   let selection = [];
   const button = (text8, click, disabled = false) => {
@@ -18693,7 +18706,8 @@ function renderAutoRecords(sectionId) {
       exclude: _("Exclude"),
       remove: _("Remove exclusions"),
       forget: _("Remove saved approvals"),
-      recheck: _("Check")
+      recheck: _("Check"),
+      dismiss: _("Remove")
     }[action];
     if (action !== "recheck" && !window.confirm(
       `${label}: ${ids.length}. ${_("Only eligible records in this source section will be changed. Continue?")}`
@@ -18724,8 +18738,9 @@ function renderAutoRecords(sectionId) {
     if (busy) return;
     busy = true;
     root.setAttribute("aria-busy", "true");
-    message2.textContent = _("Loading\u2026");
     const requested = JSON.stringify(query);
+    if (!rendered || requested !== renderedQuery)
+      message2.textContent = _("Loading\u2026");
     let again = false;
     try {
       const data = await autoRecords({ ...query });
@@ -18734,6 +18749,13 @@ function renderAutoRecords(sectionId) {
         return;
       }
       query.page = data.page;
+      const signature = JSON.stringify({ query, data });
+      if (signature === rendered) {
+        message2.textContent = data.warning || "";
+        return;
+      }
+      rendered = signature;
+      renderedQuery = JSON.stringify(query);
       selection = data.selection || [];
       const supported = data.bulk_supported === true;
       const bulkSupported = supported && !data.legacy_overflow;
@@ -18785,13 +18807,24 @@ function renderAutoRecords(sectionId) {
             !bulkSupported || !ids.length
           )
         );
+      if (query.status === "pending")
+        actions.append(
+          button(
+            _("Remove all"),
+            () => mutate("dismiss", ids),
+            !bulkSupported || !ids.length
+          )
+        );
+      const openDetails = new Set(
+        Array.from(body.querySelectorAll("tr[data-id]")).filter((row2) => row2.querySelector("details[open]")).map((row2) => row2.dataset.id)
+      );
       body.replaceChildren();
       if (!data.rows.length)
         body.append(
           textE(
             "p",
             {},
-            query.search ? _("No matching IPs") : _("No discovered IPs yet")
+            query.search ? _("No matching IPs") : _("No connection errors")
           )
         );
       else
@@ -18805,7 +18838,7 @@ function renderAutoRecords(sectionId) {
               )
             ),
             ...data.rows.map(
-              (row2) => textE("tr", {}, [
+              (row2) => textE("tr", { "data-id": row2.id || "" }, [
                 textE("td", {}, [
                   textE("strong", {}, row2.ip),
                   textE("div", {}, row2.domain || _("Domain unknown"))
@@ -18813,15 +18846,41 @@ function renderAutoRecords(sectionId) {
                 textE(
                   "td",
                   {},
-                  row2.target ? `Zapret2 \u2192 ${row2.target === "direct-out" ? "Direct" : row2.target}` : "Zapret2"
+                  row2.target ? `${row2.target === "direct-out" ? "Direct" : row2.target}` : "\u2014"
                 ),
                 textE("td", {}, [
-                  row2.status === "saved" ? _("Saved; fresh verification required") : statusText(row2.status),
+                  row2.status === "saved" ? _("Saved; fresh verification required") : row2.reason === "hourly_budget" ? _("Verification limit reached; try again later.") : row2.reason === "cooldown" ? _("Waiting before the next check.") : statusText(row2.status),
                   ...row2.expires ? [textE("div", {}, new Date(row2.expires).toLocaleString())] : [],
-                  textE("details", {}, [
-                    textE("summary", {}, _("Details")),
-                    textE("pre", {}, JSON.stringify(row2, null, 2))
-                  ])
+                  ...row2.failure ? [
+                    textE(
+                      "details",
+                      {
+                        ...openDetails.has(row2.id) ? { open: true } : {}
+                      },
+                      [
+                        textE("summary", {}, _("Error")),
+                        textE("p", {}, row2.failure.message),
+                        textE(
+                          "p",
+                          {},
+                          new Date(row2.failure.at).toLocaleString()
+                        ),
+                        ...[
+                          ...new Set(
+                            (row2.attempts || []).map(
+                              (attempt) => attempt.outbound
+                            )
+                          )
+                        ].map(
+                          (target2) => textE(
+                            "div",
+                            {},
+                            `${target2 === row2.source ? _("Current route") : target2 === "direct-out" ? "Direct" : target2}: ${(row2.attempts || []).filter((attempt) => attempt.outbound === target2).every((attempt) => attempt.status === "verified") ? _("Verified") : _("Not verified")}`
+                          )
+                        )
+                      ]
+                    )
+                  ] : []
                 ]),
                 textE("td", {}, [
                   ...row2.status === "proposed" ? [
@@ -18856,6 +18915,16 @@ function renderAutoRecords(sectionId) {
                       !supported
                     )
                   ] : [],
+                  ...["pending", "applied"].includes(query.status) && row2.status !== "saved" ? [
+                    button(
+                      _("Remove"),
+                      () => mutate(
+                        query.status === "pending" ? "dismiss" : "forget",
+                        [row2.id]
+                      ),
+                      !supported || !row2.id
+                    )
+                  ] : [],
                   ...!["applied", "saved", "proposed", "excluded"].includes(
                     row2.status
                   ) && row2.id && row2.source && row2.network === "tcp" ? [
@@ -18870,33 +18939,41 @@ function renderAutoRecords(sectionId) {
             )
           ])
         );
-      const count2 = Math.max(1, Math.ceil(data.total / 25));
-      pages.replaceChildren(
-        button(
-          "\u2190",
-          () => {
-            query.page--;
+      const count2 = Math.max(1, Math.ceil(data.total / query.page_size));
+      pages.replaceChildren();
+      if (count2 > 1) {
+        pages.append(
+          button(
+            "\u2039",
+            () => {
+              query.page--;
+              void load();
+            },
+            query.page <= 1
+          )
+        );
+        for (let page = 1; page <= count2; page++) {
+          const number4 = button(String(page), () => {
+            query.page = page;
             void load();
-          },
-          query.page <= 1
-        ),
-        textE(
-          "span",
-          {},
-          `${query.page} / ${count2} \xB7 ${data.total ? (query.page - 1) * 25 + 1 : 0}\u2013${Math.min(query.page * 25, data.total)} / ${data.total}`
-        ),
-        button(
-          "\u2192",
-          () => {
-            query.page++;
-            void load();
-          },
-          query.page >= count2
-        )
-      );
+          });
+          if (page === query.page) number4.setAttribute("aria-current", "page");
+          pages.append(number4);
+        }
+        pages.append(
+          button(
+            "\u203A",
+            () => {
+              query.page++;
+              void load();
+            },
+            query.page >= count2
+          )
+        );
+      }
       message2.textContent = data.warning || (data.legacy_overflow ? _(
         "Legacy exclusions exceed 64 records. Remove entries explicitly or narrow the filter; no exclusions were discarded."
-      ) : "") || (supported ? "" : data.reason || _("Registry actions require the r12 core API"));
+      ) : "") || (supported ? "" : data.reason || _("Registry actions require the r13 core API"));
     } catch (error) {
       message2.textContent = error instanceof Error ? error.message : String(error);
     } finally {
@@ -18973,12 +19050,12 @@ var emptyState = {
   history: []
 };
 function canApply(row2, now = Date.now()) {
-  return row2.status === "proposed" && row2.apply_allowed === true && row2.domain_known === true && !!row2.domain && Date.parse(row2.expires || "") > now;
+  return row2.status === "proposed" && row2.apply_allowed === true && (row2.domain_known === true && !!row2.domain || row2.ip_only === true) && Date.parse(row2.expires || "") > now;
 }
 function statusText(status) {
   const labels = {
-    observing: _("Detected"),
-    detected: _("Detected"),
+    observing: _("Needs verification"),
+    detected: _("Needs verification"),
     checking: _("Checking"),
     inconclusive: _("Insufficient evidence"),
     identity_unknown: _("Needs verification"),
@@ -19020,9 +19097,9 @@ function attachAutoRouting(section2) {
   section2.tab("auto_routing", _("Automatic routing"));
   for (const [key, label, defaultValue] of [
     ["auto_routing_enabled", _("Enable automatic routing"), "0"],
+    ["auto_routing_direct", "Direct", "0"],
+    ["auto_routing_use_warp", _("WARP"), "1"],
     ["auto_routing_apply", _("Apply automatically"), "0"],
-    ["auto_routing_direct", _("Use Direct"), "0"],
-    ["auto_routing_use_warp", _("Use WARP"), "1"],
     ["auto_routing_ip_only", _("Allow redirecting IPs without a domain"), "0"]
   ]) {
     const option2 = section2.taboption("auto_routing", form.Flag, key, label);
@@ -19030,18 +19107,23 @@ function attachAutoRouting(section2) {
     option2.depends("action", "zapret2");
     option2.default = defaultValue;
     option2.retain = true;
+    if (key === "auto_routing_direct")
+      option2.description = _(
+        "Check Direct as an alternative for failed connections in this section."
+      );
+    if (key === "auto_routing_use_warp")
+      option2.description = _(
+        "Check the selected WARP profile as an alternative for failed connections in this section."
+      );
     if (key === "auto_routing_use_warp")
       option2.load = (id) => uci.get(KABANMAX_UCI_PACKAGE, id, key) ?? (uci.get(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp") ? "1" : "0");
     if (key === "auto_routing_apply")
       option2.description = _(
-        "Ordinary HTTPS supports manual proposals only. Automatic application requires a strict nonce contract; viewing or toggling unsaved settings does not change active routes."
+        "Verify logged failures in this section and automatically apply a working permitted route. Save & Apply activates changes."
       );
     if (key === "auto_routing_ip_only") {
-      option2.readonly = true;
-      option2.write = () => void 0;
-      option2.remove = () => void 0;
       option2.description = _(
-        "Safe IP-only application is unavailable: a trusted domain and flow identity is required. These IPs remain visible for diagnosis; no global IP bypass is created."
+        "Also allow automatic routing for IP-only connections after verified HTTPS content and a valid certificate for that IP. A TCP connection alone is not enough."
       );
     }
   }
@@ -19056,7 +19138,7 @@ function attachAutoRouting(section2) {
   contract.retain = true;
   contract.rows = 3;
   contract.description = _(
-    "Leave empty for ordinary HTTPS manual proposals. Strict nonce contracts are preserved. Timeouts do not prove blocking."
+    "Leave empty for standard HTTPS verification. Strict nonce contracts are preserved."
   );
   contract.validate = (_id, value) => {
     if (!value.trim()) return true;

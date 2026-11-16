@@ -2,7 +2,7 @@ let t=require("t");let fs=require("fs");let stub=require("stub");let model=requi
 let registry=require("config.auto_registry");
 registry.paths.applied=stub.tmpdir()+"/applied.json";registry.paths.budget=stub.tmpdir()+"/write-budget.json";model.paths.suppression=stub.tmpdir()+"/excluded.json";
 let now=1000;registry.io.now=()=>now;
-function record(i) {return {id:"l"+i,owner:"auto-routing",source_id:"zap",source:"zap",ip:"203.0.113."+i,domain:"one.test",domain_known:true,source_ip:"192.0.2.8",inbound:"tproxy-in",port:443,target:"direct-out",created:"2026-11-16T00:00:00Z",expires:"2026-11-16T00:01:00Z",status:"applied"};}
+function record(i) {return {id:"l"+i,owner:"auto-routing",source_id:"zap",source:"zap",ip:"203.0.113."+i,domain:"one.test",domain_known:true,source_ip:"192.0.2.8",inbound:"tproxy-in",port:443,target:"direct-out",created:"2026-11-16T00:00:00Z",expires:"2026-11-16T00:01:00Z",status:"applied",failure:{id:"error"+i,source_id:"zap",message:"synthetic dial timeout"}};}
 t.test("saved leases reload as intents, never as active runtime state; limit preserves existing entries",()=>{
  let rows=[];for(let i=1;i<=64;i++)push(rows,{owner:"auto-routing",scope:registry.key(record(i)),record:record(i)});
  registry.save("applied",rows);t.eq(length(registry.load().entries),64);
@@ -61,6 +61,16 @@ t.test("forget removes only selected live and saved approvals and reports failed
  let remaining=map(registry.load().entries,(entry)=>entry.scope);
  t.eq(length(remaining),3);t.ok(index(remaining,registry.key(failed))>=0);t.ok(index(remaining,registry.key(neighbour))>=0);t.ok(index(remaining,registry.key(foreign))>=0);
  t.eq(model.suppression().entries,[excluded]);
+});
+
+t.test("pending deletion dismisses only its own error without adding exclusions",()=>{
+ fs.unlink(registry.paths.applied);fs.unlink(registry.paths.budget);fs.unlink(model.paths.suppression);
+ let actions=require("diagnostics.auto_registry");let row={...record(31),status:"detected",network:"tcp"};let calls=[];
+ actions.io.state=()=>({registry_version:3,version:1,sources:[{id:"zap",outbound:"zap"}],candidates:[row],decisions:[],leases:[],unattributed:[]});
+ actions.io.request=(op,payload)=>{push(calls,{op,...payload});return {source_id:"zap"};};
+ let result=actions.run(sprintf("%J",{source_section:"zap",status:"pending",action:"dismiss",ids:[row.id,"foreign"]}));
+ t.eq(result.done,1);t.eq(result.skipped,1);t.eq(calls,[{op:"registry_dismiss",source_id:"zap",id:row.id}]);
+ t.eq(registry.load().entries,[]);t.eq(model.suppression().entries,[]);
 });
 
 t.done();

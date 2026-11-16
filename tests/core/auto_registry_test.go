@@ -13,6 +13,7 @@ func TestRegistryExactCandidateExcludeReset(t *testing.T) {
 	m, q, _, _ := testManager(t, "fail:")
 	meta := metadata(q)
 	event := m.Observe(&meta, q.Source)
+	m.Failed(event,fmt.Errorf("synthetic logged failure"))
 	otherQuery := q
 	otherQuery.SourceIP = "192.0.2.55"
 	otherKey := m.key(otherQuery)
@@ -95,7 +96,8 @@ func TestRegistryReservedCapacityRejectsWithoutEviction(t *testing.T) {
 	for i := 0; i < 70; i++ {
 		meta := metadata(q)
 		meta.Source.Port = uint16(1000 + i)
-		m.Observe(&meta, q.Source)
+		event:=m.Observe(&meta, q.Source)
+		m.Failed(event,fmt.Errorf("synthetic capacity-test connection failure"))
 	}
 	if len(m.events) != 64 {
 		t.Fatal("observation RAM limit not enforced")
@@ -130,6 +132,7 @@ func TestRegistrySavedStrictLeaseRequiresFreshVerification(t *testing.T) {
 	restored.Match = m.Match
 	restored.Lookup = m.Lookup
 	restored.Outbound = m.Outbound
+	restored.LogFailure=m.LogFailure
 	if len(restored.leases) != 0 {
 		t.Fatal("saved data activated without verification")
 	}
@@ -139,7 +142,7 @@ func TestRegistrySavedStrictLeaseRequiresFreshVerification(t *testing.T) {
 	}
 	meta := metadata(q)
 	event := restored.Observe(&meta, q.Source)
-	event.Status = "detected"
+	restored.Failed(event,fmt.Errorf("synthetic fresh logged failure"))
 	restored.Sweep(context.Background())
 	if len(restored.leases) != 1 {
 		t.Fatal("verified strict saved intent was not restored")

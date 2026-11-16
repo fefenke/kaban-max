@@ -2,14 +2,8 @@ let common = require("core.common");
 let uci = require("core.uci");
 let lock = require("service.lock");
 let model = require("config.auto_routing");
-let detect = require("diagnostics.auto_detect");
 let paths = { lock: "/var/run/kabanmax.reload.lock" };
-let tracked = {};
-let observations = {};
 let capture_error = "";
-function observation_key(event) {
-    return sprintf("%J", [event.ip, event.port, event.network, event.source_ip ?? "", event.inbound ?? "", event.domain ?? ""]);
-}
 
 function request(op, payload) {
     let api = require("singbox.clash_api");
@@ -20,35 +14,15 @@ function request(op, payload) {
     if (type(value) != "object") die("Invalid auto-routing API reply");
     return value;
 }
-let io = { request, logs: () => require("diagnostics.runtime").logs(),
-    connections: () => {
-        let reply = require("singbox.clash_api").request("GET", "/connections", "");
-        return common.parse_json(reply?.body)?.connections ?? [];
-    } };
+let io = { request };
 
 function state() {
     let answer;
     try { answer = io.request("state", {}); }
     catch (e) { answer = { version: 0, reason: e.message, candidates: [], leases: [], decisions: [], history: [] }; }
-    let unknown = {};
-    for (let line in slice(split(io.logs(), "\n"), -200)) {
-        let event = detect.log_candidate(line, common.now_seconds());
-        if (event == null) continue;
-        let key = observation_key(event);
-        if (unknown[key] != null) unknown[key].count++; else unknown[key] = event;
-    }
-    try {
-        let snapshot = detect.stalled(tracked, io.connections(), common.now_seconds());
-        tracked = snapshot.tracked;
-        for (let event in snapshot.events) unknown[observation_key(event)] = event;
-    } catch (e) { }
-    for (let key, event in unknown) observations[key] = event;
-    for (let key, event in observations) if (common.now_seconds() - event.timestamp > 3600) delete observations[key];
-    while (length(keys(observations)) > 64) {
-        let oldest = sort(keys(observations), (left, right) => observations[left].timestamp - observations[right].timestamp)[0];
-        delete observations[oldest];
-    }
-    answer.unattributed = values(observations);
+    // Only error events attributed by the winning core route belong here.
+    // Generic logs and connection counters cannot establish section ownership.
+    answer.unattributed = [];
     answer.registry_error = capture_error;
     let settings = uci.get_all("kabanmax", "settings") ?? {};
     let config = common.read_json_file(require("singbox.constants").config_path(settings));
@@ -110,7 +84,7 @@ function capture() {
     let answer;
     try {
         answer=io.request("state",{});
-        if(answer.registry_version==2)require("config.auto_registry").remember(answer.leases);
+        if(answer.registry_version==2 || answer.registry_version==3)require("config.auto_registry").remember(answer.leases);
         capture_error="";
     } catch(e) {
         capture_error=e.message;

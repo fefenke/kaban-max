@@ -98,7 +98,7 @@ async function test() {
     status.remove();
     action.remove();
   }
-  const count = 64;
+  let count = 64;
   const requests: Record<string, unknown>[] = [];
   const batches: string[][] = [];
   const operations: Record<string, unknown>[] = [];
@@ -146,6 +146,12 @@ async function test() {
                       ? 'excluded'
                       : 'identity_unknown',
                 domain_known: false,
+                failure: {
+                  id: `error-${start + i}`,
+                  source_id: 'zap',
+                  message: 'synthetic dial timeout',
+                  at: '2026-11-16T00:00:00Z',
+                },
               }),
             ),
             total: count,
@@ -165,8 +171,30 @@ async function test() {
   root.append(records);
   await new Promise((resolve) => setTimeout(resolve, 1200));
   check(records.querySelectorAll('tr').length === 26, '25 records per page');
+  const firstRow = records.querySelector('tr[data-id]')!;
+  const firstDetails = firstRow.querySelector('details')!;
+  firstDetails.open = true;
   Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
-    .find((node) => node.textContent === '\u2192')!
+    .find((node) => node.textContent === '↻')!
+    .click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check(
+    records.querySelector('tr[data-id]') === firstRow && firstDetails.open,
+    'unchanged refresh preserves row and open error',
+  );
+  const numbered = Array.from(
+    records.querySelectorAll('.km-records__pages [aria-current]'),
+  );
+  check(
+    numbered.length === 1 && numbered[0].textContent === '1',
+    'numbered pages identify current page',
+  );
+  check(
+    !records.querySelector('.km-records__pages')!.textContent?.includes('/'),
+    'pagination has no counter fractions',
+  );
+  Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
+    .find((node) => node.textContent === '›')!
     .click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   check(
@@ -255,6 +283,28 @@ async function test() {
     !records.textContent?.includes('Up to 64 records'),
     'no constant technical notice',
   );
+  await selectTab('Awaiting');
+  window.confirm = () => true;
+  const beforeDismiss = operations.length;
+  Array.from(records.querySelectorAll<HTMLButtonElement>('tr[data-id] button'))
+    .find((node) => node.textContent === 'Remove')!
+    .click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check(
+    operations.length === beforeDismiss + 1 &&
+      operations[beforeDismiss].action === 'dismiss',
+    'pending remove is distinct from exclusion',
+  );
+  count = 3;
+  Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
+    .find((node) => node.textContent === '↻')!
+    .click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check(
+    records.querySelector('.km-records__pages')!.childElementCount === 0,
+    'one page has no pagination block',
+  );
+  window.confirm = confirm;
   records.remove();
   const auto = document.createElement('section');
   auto.innerHTML =
@@ -279,7 +329,18 @@ async function test() {
   check(apply.disabled && direct.disabled, 'main gating');
   main.checked = true;
   main.dispatchEvent(new Event('change', { bubbles: true }));
-  check(!direct.disabled && apply.disabled, 'ordinary HTTPS is manual');
+  check(
+    !direct.disabled && !apply.disabled,
+    'auto-apply remains an editable preference',
+  );
+  for (let i = 0; i < 8; i++) {
+    const before = apply.checked;
+    apply.click();
+    check(
+      apply.checked !== before && !apply.disabled,
+      'repeated auto-apply clicks stay functional',
+    );
+  }
   const contract = auto.querySelector('textarea')!;
   contract.value = '{"mode":"strict","domain":"one.test","prefix":"ok:"}';
   contract.dispatchEvent(new Event('input', { bubbles: true }));
@@ -290,8 +351,8 @@ async function test() {
   check(!apply.disabled, 'saved auto-apply can be turned off without strict');
   apply.click();
   check(
-    !apply.checked && apply.disabled,
-    'turning off never permits a new unsafe opt-in',
+    !apply.checked && !apply.disabled,
+    'turning off must not lock the preference',
   );
   apply.checked = true;
   main.checked = false;
@@ -303,11 +364,17 @@ async function test() {
   contract.value = '{"mode":"strict","domain":"one.test","prefix":"ok:"}';
   contract.dispatchEvent(new Event('input', { bubbles: true }));
   check(!apply.disabled && !direct.disabled, 'strict/main controls recover');
+  const ipOnly = auto.querySelector<HTMLInputElement>(
+    '[data-name="auto_routing_ip_only"] input',
+  )!;
+  check(ipOnly.disabled, 'IP-only requires auto-apply preference');
+  apply.click();
+  check(!ipOnly.disabled, 'IP-only becomes editable under auto-apply');
+  ipOnly.click();
+  ipOnly.click();
   check(
-    auto.querySelector<HTMLInputElement>(
-      '[data-name="auto_routing_ip_only"] input',
-    )!.disabled,
-    'IP-only no false promise',
+    !ipOnly.checked && !ipOnly.disabled,
+    'IP-only supports repeated clicks',
   );
   check(
     contract.rows >= 6 && getComputedStyle(contract).resize === 'vertical',

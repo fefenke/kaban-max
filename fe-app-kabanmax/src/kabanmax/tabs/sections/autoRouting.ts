@@ -3,6 +3,9 @@ import { callUbus } from '../../../helpers/callUbus';
 import { KABANMAX_UCI_PACKAGE } from '../../../constants';
 
 export interface AutoEntry {
+  failure?: { id: string; source_id: string; message: string; at: string };
+  ip_only?: boolean;
+  attempts?: { outbound: string; status: string; reason?: string }[];
   id?: string;
   ip: string;
   domain?: string;
@@ -53,16 +56,15 @@ export function canApply(row: AutoEntry, now = Date.now()): boolean {
   return (
     row.status === 'proposed' &&
     row.apply_allowed === true &&
-    row.domain_known === true &&
-    !!row.domain &&
+    ((row.domain_known === true && !!row.domain) || row.ip_only === true) &&
     Date.parse(row.expires || '') > now
   );
 }
 
 export function statusText(status: string): string {
   const labels: Record<string, string> = {
-    observing: _('Detected'),
-    detected: _('Detected'),
+    observing: _('Needs verification'),
+    detected: _('Needs verification'),
     checking: _('Checking'),
     inconclusive: _('Insufficient evidence'),
     identity_unknown: _('Needs verification'),
@@ -120,14 +122,13 @@ export async function autoAction(
 export function sourceRows(state: AutoState, sectionId: string) {
   const tag = state.sources.find((source) => source.id === sectionId)?.outbound;
   const owned = (row: AutoEntry) =>
-    row.source_id === sectionId || (!!tag && row.source === tag);
+    row.source_id
+      ? row.source_id === sectionId && (!row.source || row.source === tag)
+      : !!tag && row.source === tag;
   return {
-    candidates: [
-      ...state.candidates.filter(owned),
-      ...(state.sources.length === 1 && state.sources[0].id === sectionId
-        ? state.unattributed
-        : []),
-    ],
+    candidates: state.candidates
+      .filter(owned)
+      .filter((row) => row.failure?.source_id === sectionId),
     leases: state.leases.filter(owned),
     decisions: state.decisions
       .filter(owned)
@@ -152,9 +153,9 @@ export function attachAutoRouting(section: CBISection) {
   section.tab('auto_routing', _('Automatic routing'));
   for (const [key, label, defaultValue] of [
     ['auto_routing_enabled', _('Enable automatic routing'), '0'],
+    ['auto_routing_direct', 'Direct', '0'],
+    ['auto_routing_use_warp', _('WARP'), '1'],
     ['auto_routing_apply', _('Apply automatically'), '0'],
-    ['auto_routing_direct', _('Use Direct'), '0'],
-    ['auto_routing_use_warp', _('Use WARP'), '1'],
     ['auto_routing_ip_only', _('Allow redirecting IPs without a domain'), '0'],
   ]) {
     const option = section.taboption('auto_routing', form.Flag, key, label);
@@ -162,20 +163,25 @@ export function attachAutoRouting(section: CBISection) {
     option.depends('action', 'zapret2');
     option.default = defaultValue;
     option.retain = true;
+    if (key === 'auto_routing_direct')
+      option.description = _(
+        'Check Direct as an alternative for failed connections in this section.',
+      );
+    if (key === 'auto_routing_use_warp')
+      option.description = _(
+        'Check the selected WARP profile as an alternative for failed connections in this section.',
+      );
     if (key === 'auto_routing_use_warp')
       option.load = (id) =>
         uci.get(KABANMAX_UCI_PACKAGE, id, key) ??
         (uci.get(KABANMAX_UCI_PACKAGE, id, 'auto_routing_warp') ? '1' : '0');
     if (key === 'auto_routing_apply')
       option.description = _(
-        'Ordinary HTTPS supports manual proposals only. Automatic application requires a strict nonce contract; viewing or toggling unsaved settings does not change active routes.',
+        'Verify logged failures in this section and automatically apply a working permitted route. Save & Apply activates changes.',
       );
     if (key === 'auto_routing_ip_only') {
-      option.readonly = true;
-      option.write = () => undefined;
-      option.remove = () => undefined;
       option.description = _(
-        'Safe IP-only application is unavailable: a trusted domain and flow identity is required. These IPs remain visible for diagnosis; no global IP bypass is created.',
+        'Also allow automatic routing for IP-only connections after verified HTTPS content and a valid certificate for that IP. A TCP connection alone is not enough.',
       );
     }
   }
@@ -190,7 +196,7 @@ export function attachAutoRouting(section: CBISection) {
   contract.retain = true;
   contract.rows = 3;
   contract.description = _(
-    'Leave empty for ordinary HTTPS manual proposals. Strict nonce contracts are preserved. Timeouts do not prove blocking.',
+    'Leave empty for standard HTTPS verification. Strict nonce contracts are preserved.',
   );
   contract.validate = (_id, value) => {
     if (!value.trim()) return true;

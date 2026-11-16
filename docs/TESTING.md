@@ -1,5 +1,13 @@
 # Проверки
 
+## 0.1.9 / r13 — подготовка
+
+[Контракт и точная степень приёмки](AUTO_ROUTING_019.md). Чистый pinned upstream + 0001–0009 через `tests/core/run_auto_routing.sh`: пять race packages PASS; `AUTO_BUILD=1` собрал x86_64/ARM64 base. Новый `auto_error_binary.py` на x86_64 в отдельном network-none namespace подтвердил log ID/source ownership, отказ от WARP/незаписанных/здоровых событий, dismiss и автоматическое получение application content через Direct. На роутерах/VPS тесты не запускались.
+
+Из frontend: `npm.cmd run build`, `npm.cmd run lint`, `npm.cmd test -- --run` (176/1686 PASS до финальных текстов; окончательный повтор/CI ниже в статусе). Browser: `node node_modules/esbuild/bin/esbuild ./tests/browser/formUx.browser.ts --bundle --outfile=../.local/audit/auto-routing-repair/formUx.browser.js`, затем из корня `node .local/audit/auto-routing-repair/check-browser.mjs` — 320/375/768/1280 + dark 375 PASS на официальном CSS Bootstrap. Проверены повторные клики, IP parent gating, неизменные DOM/details, номера/одна страница и pending delete. Сырые браузерные профили удалены после проверки из-за заполнения C:, итоговые JSON/PNG сохранены.
+
+После смены package r12→r13 местный backend дал 91/92 только из-за старого ожидания версии; тест обновлён. Окончательный 92/92 должен подтвердить CI: местный Docker после нехватки места получил I/O ошибку. Наличие четырёх локальных ARM64 файлов не считается успешной проверкой упаковки; обязательны чистая Actions-сборка и `scripts/inspect-release.py`.
+
 ## Публикация 0.1.7 подтверждена — 2026-11-16
 
 [Release](https://github.com/fefenke/kaban-max/releases/tag/0.1.7), tag/source `e5dd33bb7f1f3dada87af6672e815f89b54308e3`, core r12. Публичный API подтвердил draft=false/prerelease=true и ref, каждый из 14 browser_download_url скачан и сравнен с local/API SHA256 и размером; SHA256SUMS содержит 13 правильных строк, manifests — 0.1.7/r12. Локальный результат `.local/audit/task017/public-verification.json`.
