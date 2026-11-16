@@ -1,6 +1,6 @@
 # Предложение восстановления оформления — 2026-11-16
 
-Статус: пользователь утвердил макет, попросил уменьшить стрелки и распространить стиль на настройки/общие формы; уточнил удаление только выбранного списка/фильтра и затем разрешил публикацию по готовности. Реализация подготовлена в 0.1.8; ядро r12 не меняется. Исходный макет и его скриншоты не являются снимками установленной LuCI-темы.
+Статус: пользователь утвердил макет, попросил уменьшить стрелки и распространить стиль на настройки/общие формы; уточнил удаление только выбранного списка/фильтра и затем разрешил публикацию по готовности. Реализация опубликована в 0.1.8; ядро r12 не меняется. Исходный макет и его скриншоты не являются снимками установленной LuCI-темы.
 
 ## Причины претензий
 
@@ -47,3 +47,7 @@ PROJECT_STATE, DECISIONS, KNOWN_ISSUES, PITFALLS, ARCHITECTURE/COMPONENTS, ROADM
 Перед выпуском просмотрены `implemented-desktop.png`, `implemented-mobile.png`, `implemented-settings.png`: реальный CBI-адаптер и renderer реестра на тестовой разметке, настройки представлены примером общих CBI-полей (это не полный renderer вкладки). `node .local/audit/ui-style-proposal/live-capture.mjs` — отсутствие горизонтального overflow при 895/375 px PASS, положение checkbox справа ≤379/361 px, стрелки компактные. Screenshot-fixture сначала завершился из-за stale DevToolsActivePort, затем из-за inline-script до появления body; исправлены только ignored harness: отдельный профиль и script внутри body. Эти ошибки не затрагивали приложение.
 
 Документация: `npm.cmd run build` из `docs` — PASS. Пакеты 0.1.8 сохраняют прежние source minimum и core package r12; изменения установщика не требуются.
+
+## Публикация
+
+[0.1.8 prerelease](https://github.com/fefenke/kaban-max/releases/tag/0.1.8) опубликован с source/tag `1d0dd86d36119d651c589aad8d840113773eda90`. GitHub [Frontend CI](https://github.com/fefenke/kaban-max/actions/runs/43820687281), [Backend CI](https://github.com/fefenke/kaban-max/actions/runs/43820687330), [Documentation](https://github.com/fefenke/kaban-max/actions/runs/43820687646) — success. Ignored helpers `github-release.ps1 -Action draft/upload/publish`, `verify-public.ps1` проверили 14 assets по API/local/public download SHA256 и размеру, 13 SHA256SUMS, manifests, точный tag ref и draft=false/prerelease=true. Evidence: `.local/audit/ui-style-proposal/public-verification.json`. История сохранена, старые releases не менялись; на устройства ничего не устанавливалось.

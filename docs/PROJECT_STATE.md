@@ -1,10 +1,12 @@
 # Текущее состояние
 
-## Подготовлено 0.1.8 / r12 — восстановление оформления, 2026-11-16
+## Опубликовано 0.1.8 / r12 — восстановление оформления, 2026-11-16
 
 Пользователь утвердил стиль с уменьшенными стрелками и распространением на настройки/общие формы; уточнил удаление записей только выбранного списка/фильтра и затем разрешил публикацию по готовности. Реализованы синяя справка у подписей, единая колонка контролов без лишних отступов, снятие сохранённого auto-apply без strict, массовое удаление applied через существующий `forget`. Справка реестра перенесена под вопросик, временная stop-кнопка удалена; ошибки/overflow/результаты сохранены.
 
-Свежие проверки: frontend **176/1686**, tsc/lint/build, backend **92/92** (включая mixed live/saved/partial-error forget), браузер **320/375/768/1280 + dark 375**, 10 APK/IPK / 13 SHA256 / 14 assets и payload-сверка PASS. Ядро **1.14.4-r12** используется побайтно из 0.1.7; Go suites не запускались заново. Аппаратная LuCI/theme/Save & Apply приёмка остаётся UNVERIFIED. [Причины, реализация и проверки](audits/UI_STYLE_PROPOSAL.md). Публичный статус выпуска будет зафиксирован после проверки GitHub.
+Свежие проверки: frontend **176/1686**, tsc/lint/build, backend **92/92** (включая mixed live/saved/partial-error forget), браузер **320/375/768/1280 + dark 375**, 10 APK/IPK / 13 SHA256 / 14 assets и payload-сверка PASS. Ядро **1.14.4-r12** используется побайтно из 0.1.7; Go suites не запускались заново. Аппаратная LuCI/theme/Save & Apply приёмка остаётся UNVERIFIED. [Причины, реализация и проверки](audits/UI_STYLE_PROPOSAL.md).
+
+Выпущен [0.1.8 prerelease](https://github.com/fefenke/kaban-max/releases/tag/0.1.8), source/tag commit `1d0dd86d36119d651c589aad8d840113773eda90`. Frontend CI, Backend CI и Documentation — success. Проверены draft=false/prerelease=true, точный ref тега, все **14 публичных загрузок** (API/local/download SHA256 и размеры), **13 записей SHA256SUMS** и manifests. Evidence — ignored `.local/audit/ui-style-proposal/public-verification.json`. На устройства ничего не устанавливалось.
 
 ## Опубликовано 0.1.7 prerelease / r12 — 2026-11-16
 
