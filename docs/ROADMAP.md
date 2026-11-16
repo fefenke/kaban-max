@@ -2,7 +2,7 @@
 
 ## 0.1.7/r12
 
-Реализация нового ТЗ завершена локально; prerelease разрешён им после gates. Следующий отдельный этап — аппаратная приёмка LuCI/themes, reboot/Save & Apply, реальных WARP/VPN/DNS/egress и ARM64 runtime. Универсальный IP-only/generic HTTPS auto-apply не обещается. №05/06/08/09 не затронуты. [Контракт](AUTO_REGISTRY_017.md).
+Реализация нового ТЗ выпущена как [0.1.7 prerelease](https://github.com/fefenke/kaban-max/releases/tag/0.1.7), публичные assets проверены. Следующий отдельный этап — аппаратная приёмка LuCI/themes, reboot/Save & Apply, реальных WARP/VPN/DNS/egress и ARM64 runtime. Универсальный IP-only/generic HTTPS auto-apply не обещается. №05/06/08/09 не затронуты. [Контракт](AUTO_REGISTRY_017.md).
 
 ## UI v2 — локальный review, публикация отменена
 

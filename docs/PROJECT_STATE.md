@@ -1,8 +1,14 @@
 # Текущее состояние
 
-## 0.1.7 / r12 — реализация и подготовка prerelease, 2026-11-16
+## Опубликовано 0.1.7 prerelease / r12 — 2026-11-16
 
-Новое принятое ТЗ разрешило core/API и выпуск 0.1.7. Реализованы bounded реестры 64, отдельные applied intents, безопасный strict restore после свежего flow/verifier, exact suppression reset, scoped bulk с partial outcomes и UI-доработки. [Контракт и ограничения](AUTO_REGISTRY_017.md), [проверки](TESTING.md). Предыдущая отмена публикации ниже относится к этапу UI v2. Статус публичного выпуска будет зафиксирован после отдельной проверки GitHub; устройства не использовались.
+Выпущен [0.1.7](https://github.com/fefenke/kaban-max/releases/tag/0.1.7), source/tag commit `e5dd33bb7f1f3dada87af6672e815f89b54308e3`, core **1.14.4-r12**. Проверены draft=false/prerelease=true, точный ref тега, 14 публичных загрузок и их API/local/download SHA256/размеры, 13 строк SHA256SUMS и manifests. Evidence — ignored `.local/audit/task017/public-verification.json`.
+
+Frontend, Documentation, ShellCheck и Patched core CI прошли для основного изменения `bd7db41`; следующий `e5dd33b` меняет только изоляцию тестовых файлов и имеет успешный Backend CI. Дополнительно весь backend прошёл локально без root: **92/92**. Тег до публикации release перенесён на исправленный коммит с прямого разрешения пользователя; история коммитов сохранена. На устройства ничего не устанавливалось. Ограничения fresh restore, ordinary/IP-only и hardware UNVERIFIED сохраняются.
+
+## Подготовка 0.1.7 / r12 — 2026-11-16
+
+Новое принятое ТЗ разрешило core/API и выпуск 0.1.7. Реализованы bounded реестры 64, отдельные applied intents, безопасный strict restore после свежего flow/verifier, exact suppression reset, scoped bulk с partial outcomes и UI-доработки. [Контракт и ограничения](AUTO_REGISTRY_017.md), [проверки](TESTING.md). Предыдущая отмена публикации ниже относится к этапу UI v2. Публичный выпуск подтверждён выше; устройства не использовались.
 
 ## UI v2 — подготовлено локально, публикация отменена 2026-11-16
 

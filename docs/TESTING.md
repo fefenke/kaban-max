@@ -1,5 +1,13 @@
 # Проверки
 
+## Публикация 0.1.7 подтверждена — 2026-11-16
+
+[Release](https://github.com/fefenke/kaban-max/releases/tag/0.1.7), tag/source `e5dd33bb7f1f3dada87af6672e815f89b54308e3`, core r12. Публичный API подтвердил draft=false/prerelease=true и ref, каждый из 14 browser_download_url скачан и сравнен с local/API SHA256 и размером; SHA256SUMS содержит 13 правильных строк, manifests — 0.1.7/r12. Локальный результат `.local/audit/task017/public-verification.json`.
+
+GitHub Backend CI основного коммита `bd7db41` выявил зависимость старой фикстуры от root: новый write-budget оставался в системном каталоге. Воспроизведено `docker run --rm --user 65534:65534 --network none ... bash tests/run.sh diagnostics/auto_routing`: RED. Четыре строки перенаправляют все registry paths в `stub.tmpdir()`; targeted и полный non-root run — **92/92 PASS**, затем [Backend CI](https://github.com/fefenke/kaban-max/actions/runs/43814438656) success. Приложение/пакеты не менялись. Frontend/Documentation/ShellCheck/core CI для того же production-кода в родителе `bd7db41` — success. История сохранена; тег перенесён на исправление с явного разрешения пользователя до публикации GitHub Release.
+
+Команды публичной проверки выполнялись локальными helpers из ignored audit: `github-release.ps1 -Action publish`, затем `verify-public.ps1`. Первый helper проверки имел старое ожидание core r11 при уже верных r12 manifests; ожидание исправлено, полный download verification повторён успешно. Эта ошибка проверяющего скрипта не меняла опубликованные bytes. Физическая установка/обновление остаются UNVERIFIED.
+
 ## 0.1.7 / r12 — финальные локальные gates, 2026-11-16
 
 Новое принятое ТЗ разрешает prerelease после проверок. [Контракт реестра и оставшиеся ограничения](AUTO_REGISTRY_017.md). Предыдущие UI v2/r11 записи ниже исторические.
