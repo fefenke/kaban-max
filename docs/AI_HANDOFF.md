@@ -1,5 +1,9 @@
 # Контекст следующего чата
 
+## Выпуск завершён: 0.1.6, 2026-11-16
+
+Опубликован [prerelease 0.1.6](https://github.com/fefenke/kaban-max/releases/tag/0.1.6): source/tag `4445219fa62eac084143620a35bb58d34b704008`, core r11, 14 assets. Все пять Actions success; все публичные downloads независимо сверены по SHA256/размерам, manifests и 13 checksum records PASS. Повторно создавать релиз/тег не требуется. Публикация не означает установку: OpenWrt/logread/TZ/UI/NFQUEUE/PBR/mwan3/WARP/VPN/egress/ARM64 runtime не проверены. Ниже — результаты локального GO и исторические этапы.
+
 ## Финальная QA / публикация 0.1.6 — 2026-11-16
 
 Действует новое разрешение пользователя на commit/push/tag/prerelease после GO; прежние запреты публикации ниже исторические. Один агент; оборудование/VPS не используются. Локальный GO: frontend 175/1682, backend 91/91, tsc/lint/bundle/po2lmo, installer и namespace smoke, clean apply семи patches + пять race suites и свежий executable smoke PASS. 10 ARM64/noarch IPK/APK + manifests/install.sh/SHA256SUMS в ignored `.local/audit/final-qa-publish/release`; x86 smoke packages отдельно и в assets не входят. Полные APK/IPK payload совпадают за исключением штатных APK metadata. Версии: приложение 0.1.6, core r11, default minimum r10, opt-in требует r11.

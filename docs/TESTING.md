@@ -1,5 +1,9 @@
 # Проверки
 
+## Публикация 0.1.6 подтверждена — 2026-11-16
+
+[Release](https://github.com/fefenke/kaban-max/releases/tag/0.1.6), source/tag commit `4445219fa62eac084143620a35bb58d34b704008`. Frontend CI, Backend CI (включая новые language/minimum smoke), Documentation, Patched core fallback и Differential ShellCheck — success. GitHub API подтвердил draft=false/prerelease=true. Отдельная проверка публичного `/git/ref/tags/0.1.6` и загрузка **каждого из 14 browser_download_url**: точный commit, локальный/remote/API SHA256 и размер совпали; SHA256SUMS содержит 13 корректных записей, release/core manifests — 0.1.6/r11. Полный результат в ignored `.local/audit/final-qa-publish/public-verification.json`. Полевая приёмка остаётся UNVERIFIED, устройства не использовались. Локальные команды и результаты ниже относятся к выпущенным исходникам; публикационная запись меняет только документацию.
+
 ## Финальная QA 0.1.6 — 2026-11-16
 
 **Локальный GO; аппаратные сценарии UNVERIFIED.** Один агент, контейнеры без сети, никаких устройств/VPS. Источник core: pinned `60d96c99815a672712915a5c00114bf0f690ad80` + patches 0001–0007. Полные логи в ignored `.local/audit/final-qa-publish/`.
