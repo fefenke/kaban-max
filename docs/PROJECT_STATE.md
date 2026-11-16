@@ -1,10 +1,12 @@
 # Текущее состояние
 
-## Подготовка 0.2.0 / r14 — IP/секции, UI и журнал
+## Опубликовано 0.2.0 / r14 — 2026-11-16
 
-Локально исправлены потеря actual IP при отказе A/AAAA, выбор configured выхода секции, IP-only manual proposals, зависшее dismiss без IP, вложенный флаг/отступы и подтверждение операций. Новый patch 0010 и minimum при включённой автоматике — **r14**. Журнал получил быстрый unchanged путь после clear и порционное чтение одной revision. Frontend **176/1690**, backend **92/92**, пять Go race suites, mixed DNS executable и browser matrix PASS. [Контракт, причины и границы](AUTO_ROUTING_IP_FIX.md); свежие команды — TESTING. Опубликованным остаётся комплект 0.1.9/r13; ничего не устанавливалось и не публиковалось.
+Выпущен [0.2.0 prerelease](https://github.com/fefenke/kaban-max/releases/tag/0.2.0), source/tag commit `42937680d66c03788975f7362a2e41fd4e1a6741`, ядро **1.14.4-r14**. Обновлять приложение, LuCI и ядро вместе. Исправлены actual IP при mixed DNS, domain/IP либо IP-only предложения, последовательность Zapret → Direct → настроенный выход выбранной секции, dismiss без IP, вложенный флаг/отступы/подтверждения и чтение журнала после clear. [Контракт и границы](AUTO_ROUTING_IP_FIX.md).
 
-Пользователь разрешил публикацию и задал версию **0.2.0**. Независимое ревью до выпуска выявило общую атрибуцию DNS-попыток и потерю network strategy в generic wrapper. Исправлено: private attempt metadata фиксируется по итоговому conn/error, hooks находятся в Direct и сохраняют исходный parallel/interface dispatch. Новые sibling/strategy regressions проходят; чистый replay, pinned Go CI и пакеты — release gates.
+Все шесть CI успешны: [пакеты](https://github.com/fefenke/kaban-max/actions/runs/43949269956), [ядро Go1.26.10](https://github.com/fefenke/kaban-max/actions/runs/43949270446), [frontend](https://github.com/fefenke/kaban-max/actions/runs/43949270341), [backend](https://github.com/fefenke/kaban-max/actions/runs/43949270179), [ShellCheck](https://github.com/fefenke/kaban-max/actions/runs/43949270602), [документация](https://github.com/fefenke/kaban-max/actions/runs/43949270503). Локальные frontend **176/1690**, backend **92/92**, Go race и mixed A/AAAA binary scenario, browser 320/375/768/1280 + dark375 PASS. Pre-release review исправил shared dial attribution и потерю network strategy; новые sibling/strategy tests включены в CI.
+
+Проверены все **10 APK/IPK**, source payload/RU catalog, ARM64 Go1.26.10 trimpath/версии/лицензии, все **14 публичных загрузок**, API/local/download SHA256 и размеры, **13 SHA256SUMS**, manifests, draft=false/prerelease=true и точный tag ref. Mock upgrade 0.1.9/r13→0.2.0/r14 прошёл для base/tiny. Evidence: ignored `.local/audit/release-0.2.0/`. История и прежние releases сохранены. На роутеры/VPS ничего не устанавливалось; физическая приёмка остаётся открытой. Команды — TESTING.
 
 ## Опубликовано 0.1.9 / r13 — error-first, 2026-11-16
 
