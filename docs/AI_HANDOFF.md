@@ -1,5 +1,7 @@
 # Контекст следующего чата
 
+**Последний статус:** опубликован [0.1.7 prerelease](https://github.com/fefenke/kaban-max/releases/tag/0.1.7), tag/source `e5dd33b`, core r12. Пользователь прямо разрешил публикацию и перенос ещё не выпущенного тега после исправления только CI-фикстуры. Все 14 публичных assets скачаны и сверены по SHA256/размеру, manifests/ref проверены. `.local/audit/task017/public-verification.json` — локальное evidence. Backend дополнительно 92/92 без root; аппаратных установок и тестов не было. Сохранённые intents не равны активным маршрутам; ограничения в AUTO_REGISTRY_017 остаются актуальными.
+
 ## 0.1.7 / r12 — новое ТЗ заменило ограничения этапа UI v2
 
 Пользователь попросил реализовать `KABANMAX_0.1.7_development_TASK.md`: в нём прямо разрешены необходимый core API и prerelease. Новые исходники — patch 0008, `config/auto_registry.uc`, `diagnostics/auto_registry.uc`, обновлённые records UI/API. [Контракт](AUTO_REGISTRY_017.md). Прежние запреты и блокеры в следующих исторических разделах не описывают этот новый этап. Не считать saved intents активными и не расширять ordinary/IP-only eligibility. Точные gates и публикационный статус — PROJECT_STATE/TESTING.
