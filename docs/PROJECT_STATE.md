@@ -1,10 +1,12 @@
 # Текущее состояние
 
-## Подготовка 0.1.9 / r13 — error-first, 2026-11-16
+## Опубликовано 0.1.9 / r13 — error-first, 2026-11-16
 
 После претензий к 0.1.8 пользователь уточнил: адрес должен принадлежать этой Zapret-секции и иметь настоящую ошибку в журнале; no-progress и чужой WARP недопустимы. Реализован отдельный patch 0009: error-first queue, корреляция с log ID, web auto-apply по явному флагу, IP-only с IP-сертификатом, dismiss без исключения. Исправлены клики/порядок флагов, нативное правое выравнивание, номера страниц, JSON и мигание. [Контракт, свежие проверки и границы](AUTO_ROUTING_019.md).
 
-Чистые 5 Go race suites и x86_64 executable сценарий PASS, browser matrix на Bootstrap PASS. Итоговая упаковка перенесена в GitHub Actions после нехватки C: и I/O ошибки Docker; не менять общий Docker/чужие данные. Новая версия пока не опубликована. Source Git/старые releases сохранены, аппаратура не использовалась.
+Выпущен [0.1.9 prerelease](https://github.com/fefenke/kaban-max/releases/tag/0.1.9), source/tag commit `52bfd1b1a00669df99216aeabc868b40e15baa54`, ядро **1.14.4-r13**. Обновлять приложение и ядро вместе. Все шесть CI workflows успешны; свежие 5 Go race suites, executable HTTPS-сценарии, frontend **176/1686**, browser matrix на Bootstrap и сравнение всех 10 APK/IPK PASS. После нехватки C: и I/O ошибки Docker пакеты собраны в чистом CI; с отдельного разрешения пользователя Docker Desktop перезапущен, точные артефакты повторно проверены локально. Source Git/старые releases сохранены, аппаратура не использовалась.
+
+Публичная проверка: **14/14 загрузок**, API/local/download SHA256 и размеры, 13 строк SHA256SUMS и manifests PASS; draft=false/prerelease=true и точный ref тега подтверждены. Evidence: ignored `.local/audit/auto-routing-repair/public-verification.json`. На устройства ничего не устанавливалось.
 
 ## Опубликовано 0.1.8 / r12 — восстановление оформления, 2026-11-16
 
