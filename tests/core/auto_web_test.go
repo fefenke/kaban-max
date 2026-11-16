@@ -283,7 +283,7 @@ func TestWebHealthyOriginalIsUnchanged(t *testing.T) {
 	}
 }
 
-func TestWebIPOnlyIsDiagnosticAndUnattributedCannotDial(t *testing.T) {
+func TestWebIPOnlyRequiresTLSContentAndUnattributedCannotDial(t *testing.T) {
 	m, q, z, d := webManager(t, 200, normalPage)
 	q.Domain = ""
 	meta := metadata(q)
@@ -293,10 +293,11 @@ func TestWebIPOnlyIsDiagnosticAndUnattributedCannotDial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.(map[string]any)["reason"]!="identity_unknown" || len(m.leases)!=0 || z.calls.Load()!=0 || d.calls.Load()!=0 {t.Fatal("IP-only opt-in ignored",result)}
+	if result.(Decision).ApplyAllowed || len(m.leases)!=0 || z.calls.Load()!=2 || d.calls.Load()!=2 {t.Fatal("invalid IP certificate authorized a route",result)}
+	zBefore,dBefore:=z.calls.Load(),d.calls.Load()
 	q.SourceIP = "192.0.2.99"
 	_, _ = m.Probe(context.Background(), q)
-	if z.calls.Load() != 0 || d.calls.Load() != 0 {
+	if z.calls.Load() != zBefore || d.calls.Load() != dBefore {
 		t.Fatal("unattributed diagnostic dial")
 	}
 }

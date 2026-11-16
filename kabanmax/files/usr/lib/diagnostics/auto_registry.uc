@@ -23,7 +23,7 @@ function run(payload) {
   seen[id]=true;
   if(row.source_id!=request.source_section && row.source!=source.outbound){push(results,{id,status:"skipped",reason:"source_not_attested"});continue;}
   let key=store.key({...row,source_id:request.source_section});
-  if(!model.valid_scope(key)) {push(results,{id,status:"skipped",reason:"unattested_scope"});continue;}
+  if(request.action!="dismiss" && !model.valid_scope(key)) {push(results,{id,status:"skipped",reason:"unattested_scope"});continue;}
   push(picked,{row,scope:key});
  }
  // Capacity and storage checks precede any permission-granting core mutation.

@@ -116,4 +116,15 @@ t.test("single opted-in Zapret never adopts WARP stalls or unattributed logs",()
  t.eq(page.counts.pending,1);t.eq(length(page.selection),1);
 });
 
+t.test("selected alternative is a section output, including its configured fallback, without target list matching",()=>{
+ let config={experimental:{clash_api:{secret:"synthetic"}},outbounds:[{tag:"WARP",type:"fallback",outbounds:["WARP/one","WARP/two"]}],endpoints:[{tag:"WARP/one",type:"warp"},{tag:"WARP/two",type:"warp"}],dns:{servers:[]}};
+ let source={".name":"zap",action:"zapret2",auto_routing_enabled:"1",auto_routing_use_warp:"1",auto_routing_warp_section:"warp"};
+ let target={".name":"warp",name:"WARP",action:"vpn",enabled:"1",destinations:"unrelated.example"};
+ let result=model.sources(config,[source,target],(id)=>id=="warp" ? "WARP" : id);
+ t.eq(result[0].warp,"WARP");t.eq(result[0].warp_section,"warp");
+ t.eq(target.destinations,"unrelated.example");
+ config.outbounds[0].outbounds=["WARP/one","not-warp"];
+ t.throws(()=>model.sources(config,[source,target],(id)=>id=="warp" ? "WARP" : id));
+});
+
 t.done();

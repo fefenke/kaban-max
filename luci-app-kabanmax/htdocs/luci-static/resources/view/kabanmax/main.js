@@ -2143,27 +2143,52 @@ var KabanMax;
 var UI_ACTION_RPC_TIMEOUT_MS = 15e3;
 var GET_UI_STATE_RPC_TIMEOUT_MS = 3e3;
 var SYSTEM_INFO_UBUS_TIMEOUT_MS = 5e3;
-var LOG_TEXT_UBUS_TIMEOUT_MS = 5e3;
+var LOG_TEXT_UBUS_TIMEOUT_MS = 15e3;
 var CLASH_API_TRANSPORT_TIMEOUT_MS = 65e3;
 var DIAGNOSTIC_CHECK_RPC_TIMEOUT_MS = 3 * 60 * 1e3;
 var checkLogsRequest = null;
 var servedLog = null;
 async function readLogs() {
-  const served = await callUbus({
-    object: "kabanmax",
-    method: "log_text",
-    params: servedLog ? { cursor: servedLog.cursor } : {},
-    timeoutMs: LOG_TEXT_UBUS_TIMEOUT_MS
-  });
-  const reply = served.success ? served.data : null;
-  if (typeof reply?.cursor === "number") {
-    const text8 = reply.unchanged ? servedLog?.text : reply.text;
-    if (typeof text8 === "string") {
-      servedLog = { cursor: reply.cursor, text: text8 };
+  let params = servedLog ? { cursor: servedLog.cursor } : {};
+  let cursor2;
+  let text8 = "";
+  let resets = 0;
+  for (let page = 0; page < 32; page++) {
+    const served = await callUbus({
+      object: "kabanmax",
+      method: "log_text",
+      params,
+      timeoutMs: LOG_TEXT_UBUS_TIMEOUT_MS,
+      nobatch: true
+    });
+    if (!served.success) return { success: false, error: served.message };
+    const reply = served.data;
+    if (reply.reset || cursor2 !== void 0 && reply.cursor !== cursor2) {
+      if (++resets > 1) break;
+      params = {};
+      cursor2 = void 0;
+      text8 = "";
+      continue;
+    }
+    if (typeof reply.cursor !== "number") break;
+    if (reply.unchanged && !servedLog && cursor2 === void 0 && resets++ === 0) {
+      params = { cursor: -1 };
+      continue;
+    }
+    if (reply.unchanged && servedLog && cursor2 === void 0)
+      return { success: true, data: servedLog.text };
+    if (typeof reply.text !== "string") break;
+    cursor2 = reply.cursor;
+    text8 += reply.text;
+    if (reply.next === void 0) {
+      servedLog = { cursor: cursor2, text: text8 };
       return { success: true, data: text8 };
     }
+    if (!Number.isInteger(reply.next) || reply.next <= Number(params.offset || 0))
+      break;
+    params = { cursor: cursor2, offset: reply.next };
   }
-  return { success: false, error: served.success ? _("Failed to load logs") : served.message };
+  return { success: false, error: _("Failed to load logs") };
 }
 function checkLogs() {
   if (!checkLogsRequest) {
@@ -2229,7 +2254,9 @@ var KabanMaxShellMethods = {
   checkService: async () => diagnosticCheck(
     KabanMax.AvailableMethods.CHECK_SERVICE
   ),
-  checkDns: async () => diagnosticCheck(KabanMax.AvailableMethods.CHECK_DNS),
+  checkDns: async () => diagnosticCheck(
+    KabanMax.AvailableMethods.CHECK_DNS
+  ),
   checkTraffic: async () => diagnosticCheck(
     KabanMax.AvailableMethods.CHECK_TRAFFIC
   ),
@@ -2237,10 +2264,10 @@ var KabanMaxShellMethods = {
     KabanMax.AvailableMethods.CHECK_SERVERS
   ),
   // The router masks the checks by the same rules as the rest of the report.
-  report: async (masked, checks) => diagnosticCheck(KabanMax.AvailableMethods.REPORT, [
-    masked ? "masked" : "raw",
-    checks
-  ]),
+  report: async (masked, checks) => diagnosticCheck(
+    KabanMax.AvailableMethods.REPORT,
+    [masked ? "masked" : "raw", checks]
+  ),
   clashApi: async (method, path, body = "") => callBaseMethod(
     KabanMax.AvailableMethods.CLASH_API,
     [method, path, body],
@@ -18053,8 +18080,11 @@ var formUxStyles = `
 .kabanmax-ui .km-flag > .cbi-value-field { display:flex; align-items:center; justify-content:flex-start; }
 .kabanmax-ui .km-flag input[type=checkbox] { margin:0; vertical-align:middle; }
 .kabanmax-ui .km-flag input[type=checkbox]:disabled { opacity:.55; }
-.kabanmax-ui .km-auto-child > .cbi-value-title { padding-inline-start:1em; }
-.kabanmax-ui .km-auto-child > .cbi-value-title::before { content:'\u21B3'; margin-inline-end:.35em; opacity:.65; }
+.kabanmax-ui .km-auto-child:not(.hidden) { display:flex; flex-direction:row-reverse; justify-content:flex-end; gap:.65em; margin-inline-start:224px; }
+.kabanmax-ui .km-auto-child > .cbi-value-title { text-align:left; }
+.kabanmax-ui .km-auto-advanced { margin:1.5em 0; padding:.85em 0; border-block:1px solid var(--border-color-low,#ddd); }
+.kabanmax-ui .km-auto-advanced > summary { cursor:pointer; padding:.25em 0; }
+.kabanmax-ui .km-auto-advanced[open] > summary { margin-bottom:1em; }
 .kabanmax-ui.fkp-single-field-modal .cbi-value > .cbi-value-title { display:block; }
 .kabanmax-ui .cbi-value[data-name="_uri_editor"]:not(.hidden),.kabanmax-ui .cbi-value[data-name="_uri_import"]:not(.hidden) { display:none; }
 .km-help { display:inline-flex; align-items:center; justify-content:center; inline-size:15px !important; min-inline-size:15px !important; block-size:15px; min-block-size:0 !important; padding:0 !important; margin:0 0 0 .4em; border:0; border-radius:50%; color:#fff; background:#1683da; font:bold 11px Arial,sans-serif; line-height:1; vertical-align:middle; cursor:pointer; }
@@ -18062,6 +18092,10 @@ var formUxStyles = `
 .km-help-card { position:fixed; z-index:10001; box-sizing:border-box; width:max-content; max-width:min(26em,calc(100vw - 16px)); max-height:min(22em,calc(100vh - 16px)); overflow:auto; padding:1em; border:1px solid currentColor; border-radius:.5em; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 3px 18px #0004; }
 @media(prefers-color-scheme:dark) { .km-help-card { background:var(--background-color-high,#242424); color:var(--text-color-high,#eee); } }
 @media(max-width:600px) { .kabanmax-ui .cbi-value:not(.hidden):not(.km-flag) { grid-template-columns:minmax(0,1fr); } .kabanmax-ui .km-flag:not(.hidden) { grid-template-columns:minmax(0,1fr) auto; } .kabanmax-ui .cbi-value > .cbi-value-title { text-align:left; } }
+@media(max-width:600px) { .kabanmax-ui .km-auto-child:not(.hidden) { margin-inline-start:1.5em; } }
+.km-record-confirm { width:min(28em,calc(100vw - 3em)); padding:1.5em; border:1px solid var(--border-color-low,#ccc); border-radius:4px; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 4px 24px #0004; }
+.km-record-confirm::backdrop { background:#0006; }
+.km-record-confirm__actions { display:flex; gap:.75em; justify-content:flex-end; margin-top:1.5em; }
 .km-forecast label { display:grid; gap:.35em; margin:.75em 0; }
 .km-forecast input,.km-forecast select { width:100%; box-sizing:border-box; }
 .km-records { overflow-x:auto; }
@@ -18175,7 +18209,7 @@ function installFormUx(root) {
         "input[type=checkbox]"
       )?.checked;
       const warpRow = tab.querySelector(
-        '[data-name="auto_routing_warp"]'
+        '[data-name="auto_routing_warp_section"]'
       );
       if (warpRow && applyRow && warpRow.parentElement === applyRow.parentElement && warpRow.nextElementSibling !== applyRow)
         applyRow.before(warpRow);
@@ -18200,6 +18234,7 @@ function installFormUx(root) {
       );
       if (advanced && advanced.parentElement === tab) {
         const details = document.createElement("details");
+        details.className = "km-auto-advanced";
         const summary = document.createElement("summary");
         summary.textContent = _("Advanced settings");
         details.append(summary);
@@ -18620,6 +18655,48 @@ function validateUniqueDynamicListItemName(widget, itemNode, value) {
 }
 
 // src/kabanmax/tabs/sections/autoRecords.ts
+function registryNotice(message2 = "") {
+  return message2.includes("automatic_routing_unavailable") ? "" : message2;
+}
+function confirmRecordAction(label, count2) {
+  return new Promise((resolve) => {
+    const previous = document.activeElement;
+    const dialog = textE("dialog", { class: "km-record-confirm" }, [
+      textE("h3", {}, label),
+      textE("p", {}, `${_("Selected records")}: ${count2}`)
+    ]);
+    const finish = (accepted) => {
+      dialog.close();
+      dialog.remove();
+      previous?.focus();
+      resolve(accepted);
+    };
+    dialog.append(
+      textE("div", { class: "km-record-confirm__actions" }, [
+        textE(
+          "button",
+          { type: "button", class: "cbi-button", click: () => finish(false) },
+          _("Cancel")
+        ),
+        textE(
+          "button",
+          {
+            type: "button",
+            class: "cbi-button cbi-button-action",
+            click: () => finish(true)
+          },
+          label
+        )
+      ])
+    );
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      finish(false);
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+}
 async function autoRecords(query) {
   const reply = await callUbus({
     object: "kabanmax",
@@ -18701,6 +18778,8 @@ function renderAutoRecords(sectionId) {
   };
   const mutate = async (action, ids) => {
     if (busy || !ids.length) return;
+    const frozenQuery = { ...query };
+    busy = true;
     const label = {
       apply: _("Apply"),
       exclude: _("Exclude"),
@@ -18709,15 +18788,14 @@ function renderAutoRecords(sectionId) {
       recheck: _("Check"),
       dismiss: _("Remove")
     }[action];
-    if (action !== "recheck" && !window.confirm(
-      `${label}: ${ids.length}. ${_("Only eligible records in this source section will be changed. Continue?")}`
-    ))
+    if (action !== "recheck" && !await confirmRecordAction(label, ids.length)) {
+      busy = false;
       return;
-    busy = true;
+    }
     root.setAttribute("aria-busy", "true");
     outcome2.textContent = _("Processing\u2026");
     try {
-      const result = await registryAction({ ...query }, action, ids);
+      const result = await registryAction(frozenQuery, action, ids);
       outcome2.textContent = `${_("Completed")}: ${result.done}; ${_("Skipped")}: ${result.skipped}; ${_("Failed")}: ${result.failed}`;
       const reasons = [
         ...new Set(
@@ -18751,7 +18829,7 @@ function renderAutoRecords(sectionId) {
       query.page = data.page;
       const signature = JSON.stringify({ query, data });
       if (signature === rendered) {
-        message2.textContent = data.warning || "";
+        message2.textContent = registryNotice(data.warning);
         return;
       }
       rendered = signature;
@@ -18843,13 +18921,9 @@ function renderAutoRecords(sectionId) {
                   textE("strong", {}, row2.ip),
                   textE("div", {}, row2.domain || _("Domain unknown"))
                 ]),
-                textE(
-                  "td",
-                  {},
-                  row2.target ? `${row2.target === "direct-out" ? "Direct" : row2.target}` : "\u2014"
-                ),
+                textE("td", {}, routeText(row2)),
                 textE("td", {}, [
-                  row2.status === "saved" ? _("Saved; fresh verification required") : row2.reason === "hourly_budget" ? _("Verification limit reached; try again later.") : row2.reason === "cooldown" ? _("Waiting before the next check.") : statusText(row2.status),
+                  recordStateText(row2),
                   ...row2.expires ? [textE("div", {}, new Date(row2.expires).toLocaleString())] : [],
                   ...row2.failure ? [
                     textE(
@@ -18971,11 +19045,11 @@ function renderAutoRecords(sectionId) {
           )
         );
       }
-      message2.textContent = data.warning || (data.legacy_overflow ? _(
+      message2.textContent = registryNotice(data.warning) || (data.legacy_overflow ? _(
         "Legacy exclusions exceed 64 records. Remove entries explicitly or narrow the filter; no exclusions were discarded."
-      ) : "") || (supported ? "" : data.reason || _("Registry actions require the r13 core API"));
+      ) : "") || "";
     } catch (error) {
-      message2.textContent = error instanceof Error ? error.message : String(error);
+      message2.textContent = error instanceof Error && error.message.includes("automatic_routing_unavailable") ? "" : error instanceof Error ? error.message : String(error);
     } finally {
       busy = false;
       root.removeAttribute("aria-busy");
@@ -19073,6 +19147,31 @@ function statusText(status) {
   };
   return labels[status] || _("See diagnostic details");
 }
+function routeText(row2) {
+  const target2 = row2.target || row2.source;
+  if (target2 === "direct-out") return "Direct";
+  return row2.target && row2.target_name || target2 || "\u2014";
+}
+function recordStateText(row2) {
+  if (row2.reason?.startsWith("checking:")) {
+    const target2 = row2.reason.slice("checking:".length);
+    return `${_("Checking")}: ${target2 === "direct-out" ? "Direct" : target2}`;
+  }
+  const reasons = {
+    actual_destination_ip_unknown: _(
+      "Connection error has no concrete destination IP"
+    ),
+    no_working_alternative: _("No working alternative found"),
+    original_https_inconclusive: _("Original route check failed; see results"),
+    original_failure_unproven: _("Original route failure was not confirmed"),
+    dns_changed: _("DNS changed; verification must be repeated"),
+    dns_unstable_or_negative: _("Domain and IP could not be confirmed"),
+    hourly_budget: _("Verification limit reached; try again later."),
+    cooldown: _("Waiting before the next check.")
+  };
+  if (row2.status === "saved") return _("Saved; fresh verification required");
+  return reasons[row2.reason || ""] || statusText(row2.status);
+}
 async function autoState() {
   const reply = await callUbus({
     object: "kabanmax",
@@ -19113,17 +19212,17 @@ function attachAutoRouting(section2) {
       );
     if (key === "auto_routing_use_warp")
       option2.description = _(
-        "Check the selected WARP profile as an alternative for failed connections in this section."
+        "Use the selected section as configured, without matching its destination lists."
       );
     if (key === "auto_routing_use_warp")
-      option2.load = (id) => uci.get(KABANMAX_UCI_PACKAGE, id, key) ?? (uci.get(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp") ? "1" : "0");
+      option2.load = (id) => uci.get(KABANMAX_UCI_PACKAGE, id, key) ?? (uci.get(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp_section") || uci.get(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp") ? "1" : "0");
     if (key === "auto_routing_apply")
       option2.description = _(
         "Verify logged failures in this section and automatically apply a working permitted route. Save & Apply activates changes."
       );
     if (key === "auto_routing_ip_only") {
       option2.description = _(
-        "Also allow automatic routing for IP-only connections after verified HTTPS content and a valid certificate for that IP. A TCP connection alone is not enough."
+        "Automatically apply verified IP-only proposals too. Manual IP-only proposals do not require this preference."
       );
     }
   }
@@ -19152,26 +19251,43 @@ function attachAutoRouting(section2) {
   const warp = section2.taboption(
     "auto_routing",
     form.ListValue,
-    "auto_routing_warp",
-    _("WARP profile")
+    "auto_routing_warp_section",
+    _("Alternative section")
   );
   warp.modalonly = true;
   warp.depends({ action: "zapret2", auto_routing_use_warp: "1" });
   warp.retain = true;
-  warp.value("", _("Select a WARP profile"));
+  warp.value("", _("Select a section"));
   warp.load = async function(id) {
     const snapshot = await autoState().catch(() => emptyState);
-    const selected = String(
+    const legacy = String(
       uci.get(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp") || ""
     );
+    const selected = String(
+      uci.get(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp_section") || snapshot.warp_sections?.find(
+        (item) => legacy.startsWith(`${item.outbound}/`) || legacy === item.outbound
+      )?.id || ""
+    );
     this.keylist = [""];
-    this.vallist = [_("Select a WARP profile")];
-    for (const profile of /* @__PURE__ */ new Set([
-      ...snapshot.warp_profiles || [],
-      ...selected ? [selected] : []
-    ]))
-      this.value(profile, profile);
+    this.vallist = [_("Select a section")];
+    for (const item of snapshot.warp_sections || [])
+      this.value(item.id, item.name);
+    if (selected && !this.keylist.includes(selected))
+      this.value(selected, selected);
     return selected;
+  };
+  warp.write = (id, value) => {
+    uci.set(
+      KABANMAX_UCI_PACKAGE,
+      id,
+      "auto_routing_warp_section",
+      String(value ?? "")
+    );
+    uci.unset(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp");
+  };
+  warp.remove = (id) => {
+    uci.unset(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp_section");
+    uci.unset(KABANMAX_UCI_PACKAGE, id, "auto_routing_warp");
   };
   const list3 = section2.taboption(
     "auto_routing",

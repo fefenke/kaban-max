@@ -1,5 +1,7 @@
 # Архитектура
 
+Локально после r13: patch 0010 сохраняет failed dial IP и выбирает lease на уровне конкретного dial, сохраняя source first-match и здоровые DNS siblings. Альтернатива — configured выход секции без её списков. Журнал собирает bounded tail, обслуживает неизменившийся дамп быстрым путём и передаёт одну revision частями. [Контракт и границы](AUTO_ROUTING_IP_FIX.md).
+
 0.1.9/r13: ошибка конкретного соединения → реально записанный log ID → source-owned candidate → повторная first-match/TLS/content проверка → scoped lease по отдельному opt-in. Нет `/connections`/no-progress или угадывания секции. Patch 0009 добавляет Failure provenance/API3 dismiss и IP-only HTTPS identity; отказ альтернативы отзывает только свою lease, не становится исходной ошибкой. Backend фильтрует по подтверждённой failure, UI сохраняет DOM одинаковых snapshots. [Контракт и проверки](AUTO_ROUTING_019.md).
 
 0.1.7/r12: `config.auto_registry` → saved intents/slot inventory в opt-in JSON → core patch 0008. Никакой прямой загрузки intents в active leases. Write-only `auto_action(op=records)` → scoped batch adapter → exact core operations; read-only `auto_records` → source-filtered pages/selection. Existing first-match/DNS/FakeIP/nft/PBR и transport не переписывались. [Контракт](AUTO_REGISTRY_017.md).

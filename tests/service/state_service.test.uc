@@ -158,7 +158,7 @@ t.test("the Logs tab retains captured records after the system ring changes", ()
     let real_parallel = exec.capture_parallel;
     let full_reads = 0;
     exec.capture_parallel = (commands) => map(commands, (argv) =>
-        argv[0] == "logread" && argv[1] == "-e" ? { status: 0, stdout: "whole log " + ++full_reads + "\n" } : die("unexpected " + join(" ", argv)));
+        argv[0] == "logread" && argv[1] == "-l" && argv[2]==1000 ? { status: 0, stdout: "whole log " + ++full_reads + "\n" } : die("unexpected " + join(" ", argv)));
     let log_text = (args) => service.object_methods().log_text.call({ args });
     let first = log_text({});
     let same = log_text({ cursor: first.cursor });
@@ -187,6 +187,33 @@ t.test("clearing the retained journal does not reimport old system records", () 
     service.collect_logs();
     t.eq(methods.log_text.call({ args: {} }).text, "after\n");
     exec.capture_parallel = real_parallel;
+});
+
+t.test("large log replies are bounded and continuation detects revision changes",()=>{
+ let service=fresh_service();let exec=require("core.exec");let real=exec.capture_parallel;
+ let lines=[];for(let i=0;i<3000;i++)push(lines,sprintf("%04d %s",i,join("",map([1,2,3,4,5,6,7,8,9,10],()=>"synthetic log record "))));
+ exec.capture_parallel=()=>[{status:0,stdout:join("\n",lines)+"\n"}];
+ let methods=service.object_methods();let first=methods.log_text.call({args:{}});
+ t.ok(length(first.text)<=262144);t.ok(first.next>0);
+ let text=first.text;let part=first;
+ while(part.next!=null) {part=methods.log_text.call({args:{cursor:first.cursor,offset:part.next}});t.eq(part.cursor,first.cursor);t.ok(length(part.text)<=262144);text+=part.text;}
+ t.eq(text,join("\n",lines)+"\n");
+ let initial=methods.log_text.call({args:{}});
+ let previousnext=initial.next;
+ lines=[...lines,"new while reading"];
+ service.collect_logs();
+ let continued=methods.log_text.call({args:{cursor:initial.cursor,offset:previousnext}});
+ t.eq(continued.cursor,initial.cursor);t.ok(!continued.reset);
+ t.eq(methods.clear_logs.call({args:{}}),{success:true});
+ t.eq(methods.log_text.call({args:{cursor:first.cursor,offset:first.next}}).reset,true);
+ exec.capture_parallel=real;
+});
+
+t.test("empty journal with the RPC zero cursor returns text for a fresh browser",()=>{
+ let service=fresh_service();let exec=require("core.exec");let real=exec.capture_parallel;
+ exec.capture_parallel=()=>[{status:0,stdout:""}];
+ t.eq(service.object_methods().log_text.call({args:{cursor:0}}),{cursor:0,text:""});
+ exec.capture_parallel=real;
 });
 
 t.test("a state service restart preserves the archive and a failed clear preserves its contents", () => {

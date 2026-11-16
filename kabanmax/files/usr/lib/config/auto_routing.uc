@@ -79,6 +79,22 @@ function protected_hosts(config) {
     return result;
 }
 
+function warp_output(config, tag, trail) {
+    trail=trail ?? [];
+    if(tag=="" || length(trail)>8 || index(trail,tag)>=0)return false;
+    let node=filter([...(config.outbounds ?? []),...(config.endpoints ?? [])],(n)=>n.tag==tag)[0];
+    if(node==null)return false;
+    if(node.type=="warp")return (node.detour==null || node.detour=="direct-out") && (node.profile?.detour==null || node.profile.detour=="direct-out");
+    if(index(["selector","fallback","urltest"],node.type)<0 || length(node.providers ?? [])>0 || node.use_all_providers==true)return false;
+    let members=[...(node.outbounds ?? [])];
+    for(let group in node.groups ?? [])members=[...members,...(group.outbounds ?? [])];
+    if(length(members)==0)return false;
+    for(let member in members)if(!warp_output(config,member,[...trail,tag]))return false;
+    return true;
+}
+function warp_sections(config, sections, tag_for_section) {
+    return map(filter(sections,(s)=>common.bool_option(s,"enabled",true) && warp_output(config,tag_for_section(s[".name"]))),(s)=>({id:s[".name"],name:connections.section_display_name(s[".name"]),outbound:tag_for_section(s[".name"])}));
+}
 function sources(config, sections, tag_for_section) {
     let enabled = filter(sections, (s) => common.option(s, "action", "") == "zapret2" && common.bool_option(s, "auto_routing_enabled", false));
     if (length(enabled) == 0) return [];
@@ -112,10 +128,20 @@ function sources(config, sections, tag_for_section) {
     let result = [];
     for (let section in enabled) {
         if (common.option(section, "action", "") != "zapret2") die("Automatic routing can only start from a Zapret2 section");
-        let warp = common.bool_option(section, "auto_routing_use_warp", true) ? common.option(section, "auto_routing_warp", "") : "";
+        let warp = "";
         let warp_section = "";
+        if(common.bool_option(section,"auto_routing_use_warp",true)) {
+            warp_section=common.option(section,"auto_routing_warp_section","");
+            if(warp_section!="") {
+                let selected=filter(sections,(s)=>s[".name"]==warp_section && common.bool_option(s,"enabled",true))[0];
+                if(selected==null)die("Automatic routing target section is unavailable");
+                warp=tag_for_section(warp_section);
+                if(!warp_output(config,warp))die("Automatic routing target section must use WARP without VPN detour");
+            }
+        }
         if (length(tag_for_section(section[".name"])) > 128) die("Automatic routing section names must not exceed 128 bytes");
-        if (warp != "") {
+        if (warp == "" && common.bool_option(section,"auto_routing_use_warp",true) && common.option(section,"auto_routing_warp","")!="") {
+            warp=common.option(section,"auto_routing_warp","");
             let endpoint = filter(config.endpoints ?? [], (e) => e.tag == warp && e.type == "warp")[0];
             if (endpoint == null || (endpoint.detour != null && endpoint.detour != "direct-out"))
                 die("Automatic routing WARP must be a concrete profile without VPN detour");
@@ -125,6 +151,7 @@ function sources(config, sections, tag_for_section) {
                     if (require("singbox.constants").child_tag(tag_for_section(parent[".name"]), connections.tunnel_display_name(tunnels[i], i + 1)) == warp)
                         warp_section = parent[".name"];
             }
+            if(warp_section!="" && warp_output(config,tag_for_section(warp_section)))warp=tag_for_section(warp_section);
         }
         push(result, { ...contract(section), id: section[".name"], outbound: tag_for_section(section[".name"]),
             saved: require("config.auto_registry").saved(section[".name"]),
@@ -140,4 +167,4 @@ function sources(config, sections, tag_for_section) {
     }
     return result;
 }
-return { contract, sources, protected_hosts, suppression, valid_scope, paths };
+return { contract, sources, warp_sections, warp_output, protected_hosts, suppression, valid_scope, paths };

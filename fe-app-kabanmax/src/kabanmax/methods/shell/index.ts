@@ -7,7 +7,7 @@ const UI_ACTION_RPC_TIMEOUT_MS = 15000;
 const GET_UI_STATE_RPC_TIMEOUT_MS = 3000;
 // Covers only the state service still computing its first answer.
 const SYSTEM_INFO_UBUS_TIMEOUT_MS = 5000;
-const LOG_TEXT_UBUS_TIMEOUT_MS = 5000;
+const LOG_TEXT_UBUS_TIMEOUT_MS = 15000;
 // The router-side Clash transport gives an update a minute; LuCI aborts an RPC after twenty
 // seconds unless the timeout is raised.
 const CLASH_API_TRANSPORT_TIMEOUT_MS = 65000;
@@ -17,30 +17,71 @@ const DIAGNOSTIC_CHECK_RPC_TIMEOUT_MS = 3 * 60 * 1000;
 let checkLogsRequest: Promise<KabanMax.MethodResponse<string>> | null = null;
 let servedLog: { cursor: number; text: string } | null = null;
 
-type LogTextReply = { cursor?: number; unchanged?: boolean; text?: string };
+type LogTextReply = {
+  cursor?: number;
+  unchanged?: boolean;
+  text?: string;
+  next?: number;
+  reset?: boolean;
+};
 
 // The state service reads the log again only once a line arrived past the cursor it handed out;
 // the CLI answers when the service does not run. A log with no KabanMax line yet is empty, not a
 // failed read.
 async function readLogs(): Promise<KabanMax.MethodResponse<string>> {
-  const served = await callUbus<LogTextReply>({
-    object: 'kabanmax',
-    method: 'log_text',
-    params: servedLog ? { cursor: servedLog.cursor } : {},
-    timeoutMs: LOG_TEXT_UBUS_TIMEOUT_MS,
-  });
-  const reply = served.success ? served.data : null;
-  if (typeof reply?.cursor === 'number') {
-    const text = reply.unchanged ? servedLog?.text : reply.text;
-    if (typeof text === 'string') {
-      servedLog = { cursor: reply.cursor, text };
+  let params: Record<string, unknown> = servedLog
+    ? { cursor: servedLog.cursor }
+    : {};
+  let cursor: number | undefined;
+  let text = '';
+  let resets = 0;
+  for (let page = 0; page < 32; page++) {
+    const served = await callUbus<LogTextReply>({
+      object: 'kabanmax',
+      method: 'log_text',
+      params,
+      timeoutMs: LOG_TEXT_UBUS_TIMEOUT_MS,
+      nobatch: true,
+    });
+    if (!served.success) return { success: false, error: served.message };
+    const reply = served.data;
+    if (reply.reset || (cursor !== undefined && reply.cursor !== cursor)) {
+      if (++resets > 1) break;
+      params = {};
+      cursor = undefined;
+      text = '';
+      continue;
+    }
+    if (typeof reply.cursor !== 'number') break;
+    if (
+      reply.unchanged &&
+      !servedLog &&
+      cursor === undefined &&
+      resets++ === 0
+    ) {
+      params = { cursor: -1 };
+      continue;
+    }
+    if (reply.unchanged && servedLog && cursor === undefined)
+      return { success: true, data: servedLog.text };
+    if (typeof reply.text !== 'string') break;
+    cursor = reply.cursor;
+    text += reply.text;
+    if (reply.next === undefined) {
+      servedLog = { cursor, text };
       return { success: true, data: text };
     }
+    if (
+      !Number.isInteger(reply.next) ||
+      reply.next <= Number(params.offset || 0)
+    )
+      break;
+    params = { cursor, offset: reply.next };
   }
 
   // The CLI reads the system ring, whose entries are not erased by clear_logs.
   // Falling back to it would resurrect deliberately cleared application lines.
-  return { success: false, error: served.success ? _('Failed to load logs') : served.message };
+  return { success: false, error: _('Failed to load logs') };
 }
 
 function checkLogs() {
@@ -129,7 +170,9 @@ export const KabanMaxShellMethods = {
       KabanMax.AvailableMethods.CHECK_SERVICE,
     ),
   checkDns: async () =>
-    diagnosticCheck<KabanMax.DnsCheckResult>(KabanMax.AvailableMethods.CHECK_DNS),
+    diagnosticCheck<KabanMax.DnsCheckResult>(
+      KabanMax.AvailableMethods.CHECK_DNS,
+    ),
   checkTraffic: async () =>
     diagnosticCheck<KabanMax.TrafficCheckResult>(
       KabanMax.AvailableMethods.CHECK_TRAFFIC,
@@ -140,10 +183,10 @@ export const KabanMaxShellMethods = {
     ),
   // The router masks the checks by the same rules as the rest of the report.
   report: async (masked: boolean, checks: string) =>
-    diagnosticCheck<KabanMax.ReportAttachments>(KabanMax.AvailableMethods.REPORT, [
-      masked ? 'masked' : 'raw',
-      checks,
-    ]),
+    diagnosticCheck<KabanMax.ReportAttachments>(
+      KabanMax.AvailableMethods.REPORT,
+      [masked ? 'masked' : 'raw', checks],
+    ),
   clashApi: async (method: string, path: string, body = '') =>
     callBaseMethod<KabanMax.ClashApiResponse>(
       KabanMax.AvailableMethods.CLASH_API,
@@ -165,7 +208,8 @@ export const KabanMaxShellMethods = {
     ),
   // Through the CLI: init script commands wait on procd's per-service lock.
   enable: async () => callBaseMethod<unknown>(KabanMax.AvailableMethods.ENABLE),
-  disable: async () => callBaseMethod<unknown>(KabanMax.AvailableMethods.DISABLE),
+  disable: async () =>
+    callBaseMethod<unknown>(KabanMax.AvailableMethods.DISABLE),
   checkLogs,
   clearLogs,
   // The state service holds the versions until the installed packages change; the CLI answers

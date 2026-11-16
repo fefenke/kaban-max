@@ -145,9 +145,7 @@ describe('KabanMaxShellMethods.checkLogs', () => {
 
     const first = shell.checkLogs();
     const second = shell.checkLogs();
-    await vi.waitFor(() =>
-      expect(mocks.callUbus).toHaveBeenCalledTimes(1),
-    );
+    await vi.waitFor(() => expect(mocks.callUbus).toHaveBeenCalledTimes(1));
     finishRequest({ success: true, data: { cursor: 1, text: 'line' } });
     await expect(Promise.all([first, second])).resolves.toEqual([
       { success: true, data: 'line' },
@@ -158,11 +156,58 @@ describe('KabanMaxShellMethods.checkLogs', () => {
 
   it('answers an empty log as a log with no lines', async () => {
     const shell = await methods();
-    mocks.callUbus.mockResolvedValue({ success: true, data: { cursor: 1, text: '' } });
+    mocks.callUbus.mockResolvedValue({
+      success: true,
+      data: { cursor: 1, text: '' },
+    });
 
     await expect(shell.checkLogs()).resolves.toEqual({
       success: true,
       data: '',
     });
+  });
+
+  it('recovers an unchanged reply without a local cache after clearing or reloading', async () => {
+    const shell = await methods();
+    mocks.callUbus
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: 0, unchanged: true },
+      })
+      .mockResolvedValueOnce({ success: true, data: { cursor: 0, text: '' } });
+    expect(await shell.checkLogs()).toEqual({ success: true, data: '' });
+    expect(mocks.callUbus.mock.calls[1][0].params).toEqual({ cursor: -1 });
+  });
+
+  it('assembles bounded journal pages and discards mixed revisions after clear', async () => {
+    const shell = await methods();
+    mocks.callUbus
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: 4, text: 'old', next: 3 },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: 5, reset: true },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: 5, text: 'new ', next: 4 },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: 5, text: 'line' },
+      });
+    expect(await shell.checkLogs()).toEqual({
+      success: true,
+      data: 'new line',
+    });
+    expect(mocks.callUbus.mock.calls.map(([call]) => call.params)).toEqual([
+      {},
+      { cursor: 4, offset: 3 },
+      {},
+      { cursor: 5, offset: 4 },
+    ]);
+    expect(mocks.executeShellCommand).not.toHaveBeenCalled();
   });
 });

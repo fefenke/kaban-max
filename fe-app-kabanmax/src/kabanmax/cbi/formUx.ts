@@ -8,8 +8,11 @@ export const formUxStyles = `
 .kabanmax-ui .km-flag > .cbi-value-field { display:flex; align-items:center; justify-content:flex-start; }
 .kabanmax-ui .km-flag input[type=checkbox] { margin:0; vertical-align:middle; }
 .kabanmax-ui .km-flag input[type=checkbox]:disabled { opacity:.55; }
-.kabanmax-ui .km-auto-child > .cbi-value-title { padding-inline-start:1em; }
-.kabanmax-ui .km-auto-child > .cbi-value-title::before { content:'↳'; margin-inline-end:.35em; opacity:.65; }
+.kabanmax-ui .km-auto-child:not(.hidden) { display:flex; flex-direction:row-reverse; justify-content:flex-end; gap:.65em; margin-inline-start:224px; }
+.kabanmax-ui .km-auto-child > .cbi-value-title { text-align:left; }
+.kabanmax-ui .km-auto-advanced { margin:1.5em 0; padding:.85em 0; border-block:1px solid var(--border-color-low,#ddd); }
+.kabanmax-ui .km-auto-advanced > summary { cursor:pointer; padding:.25em 0; }
+.kabanmax-ui .km-auto-advanced[open] > summary { margin-bottom:1em; }
 .kabanmax-ui.fkp-single-field-modal .cbi-value > .cbi-value-title { display:block; }
 .kabanmax-ui .cbi-value[data-name="_uri_editor"]:not(.hidden),.kabanmax-ui .cbi-value[data-name="_uri_import"]:not(.hidden) { display:none; }
 .km-help { display:inline-flex; align-items:center; justify-content:center; inline-size:15px !important; min-inline-size:15px !important; block-size:15px; min-block-size:0 !important; padding:0 !important; margin:0 0 0 .4em; border:0; border-radius:50%; color:#fff; background:#1683da; font:bold 11px Arial,sans-serif; line-height:1; vertical-align:middle; cursor:pointer; }
@@ -17,6 +20,10 @@ export const formUxStyles = `
 .km-help-card { position:fixed; z-index:10001; box-sizing:border-box; width:max-content; max-width:min(26em,calc(100vw - 16px)); max-height:min(22em,calc(100vh - 16px)); overflow:auto; padding:1em; border:1px solid currentColor; border-radius:.5em; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 3px 18px #0004; }
 @media(prefers-color-scheme:dark) { .km-help-card { background:var(--background-color-high,#242424); color:var(--text-color-high,#eee); } }
 @media(max-width:600px) { .kabanmax-ui .cbi-value:not(.hidden):not(.km-flag) { grid-template-columns:minmax(0,1fr); } .kabanmax-ui .km-flag:not(.hidden) { grid-template-columns:minmax(0,1fr) auto; } .kabanmax-ui .cbi-value > .cbi-value-title { text-align:left; } }
+@media(max-width:600px) { .kabanmax-ui .km-auto-child:not(.hidden) { margin-inline-start:1.5em; } }
+.km-record-confirm { width:min(28em,calc(100vw - 3em)); padding:1.5em; border:1px solid var(--border-color-low,#ccc); border-radius:4px; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 4px 24px #0004; }
+.km-record-confirm::backdrop { background:#0006; }
+.km-record-confirm__actions { display:flex; gap:.75em; justify-content:flex-end; margin-top:1.5em; }
 .km-forecast label { display:grid; gap:.35em; margin:.75em 0; }
 .km-forecast input,.km-forecast select { width:100%; box-sizing:border-box; }
 .km-records { overflow-x:auto; }
@@ -136,7 +143,7 @@ export function installFormUx(root: HTMLElement): () => void {
         'input[type=checkbox]',
       )?.checked;
       const warpRow = tab.querySelector<HTMLElement>(
-        '[data-name="auto_routing_warp"]',
+        '[data-name="auto_routing_warp_section"]',
       );
       if (
         warpRow &&
@@ -177,6 +184,7 @@ export function installFormUx(root: HTMLElement): () => void {
       );
       if (advanced && advanced.parentElement === tab) {
         const details = document.createElement('details');
+        details.className = 'km-auto-advanced';
         const summary = document.createElement('summary');
         summary.textContent = _('Advanced settings');
         details.append(summary);

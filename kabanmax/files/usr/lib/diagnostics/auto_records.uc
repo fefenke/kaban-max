@@ -57,6 +57,7 @@ function select(snapshot, exclusions, query, saved) {
         if(order=="newest")cmp=-cmp;
         return cmp || (common.as_string(a.id)<common.as_string(b.id) ? -1 : 1);
     });
+    rows=map(rows,(row)=>({...row,target_name:filter(snapshot.warp_sections ?? [],(s)=>s.id==row.target_section)[0]?.name ?? row.target}));
     let total=length(rows);
     page=min(page,max(1,int((total+size-1)/size)));
     return {rows:slice(rows,(page-1)*size,page*size),total,page,page_size:size,

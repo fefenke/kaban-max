@@ -6,7 +6,7 @@ function fingerprint(line) {
     let a = 5381;
     let b = 2166136261;
     for (let i = 0; i < length(line); i++) {
-        let byte = ord(substr(line, i, 1));
+        let byte = ord(line, i);
         a = (a * 33 + byte) % 4294967291;
         b = (b * 65599 + byte) % 4294967279;
     }
@@ -15,6 +15,9 @@ function fingerprint(line) {
 
 function create(options, saved) {
     options = options ?? {};
+    let hash = options.fingerprint ?? fingerprint;
+    // Transient snapshot only; never persisted in archive/dedup metadata.
+    let last_dump = null;
     let max_age = options.max_age ?? 86400;
     let max_bytes = options.max_bytes ?? 2097152;
     let max_storage_bytes = options.max_storage_bytes ?? 2097152;
@@ -53,14 +56,19 @@ function create(options, saved) {
     }
 
     function ingest(lines, now) {
+        let dump = join("\n", lines);
+        if (last_dump != null && dump == last_dump) {
+            prune(now);
+            return [];
+        }
         // Compare the prior dump and then its bounded suffix window. Fingerprints
         // survive clear/expiry so an unchanged system dump is never reimported.
-        let hashes = map(lines, fingerprint);
-        let digest = fingerprint(join("\n", hashes));
+        let hashes = map(lines, hash);
+        let digest = hash(join("\n", hashes));
         let overlap = length(previous) < length(lines) ? length(previous) : length(lines);
         let end = 0;
         if (previous_count > 0 && length(hashes) >= previous_count &&
-            fingerprint(join("\n", slice(hashes, 0, previous_count))) == previous_digest)
+            hash(join("\n", slice(hashes, 0, previous_count))) == previous_digest)
             end = previous_count;
         for (; end == 0 && overlap > 0; overlap--) {
             // The bounded prior window can start inside a larger system dump.
@@ -83,6 +91,7 @@ function create(options, saved) {
         previous = slice(hashes, length(hashes) > 128 ? length(hashes) - 128 : 0);
         previous_count = length(hashes);
         previous_digest = digest;
+        last_dump = dump;
         for (let line in fresh)
             push(entries, { at: now, line });
         if (length(fresh) > 0)

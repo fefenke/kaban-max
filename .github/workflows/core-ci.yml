@@ -37,6 +37,8 @@ jobs:
           cp "$GITHUB_WORKSPACE/tests/core/auto_web_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/auto_registry_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/auto_repair_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_ip_failure_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_dial_isolation_test.go" common/autoroute/
           go test -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./common/autoroute ./route ./experimental/clashapi ./experimental/cachefile
       - name: Check error-first routing with the actual executable
         working-directory: /tmp/kaban-core

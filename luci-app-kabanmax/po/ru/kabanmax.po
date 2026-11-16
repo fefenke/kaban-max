@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: KABANMAX\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-16 18:06+0300\n"
-"PO-Revision-Date: 2026-11-16 18:06+0300\n"
+"POT-Creation-Date: 2026-11-16 22:10+0300\n"
+"PO-Revision-Date: 2026-11-16 22:10+0300\n"
 "Last-Translator: K.A.B.A.N.-MAX contributors\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -317,11 +317,11 @@ msgstr "Разрешённые IP-адреса"
 msgid "ALPN"
 msgstr "ALPN"
 
-msgid "Also allow automatic routing for IP-only connections after verified HTTPS content and a valid certificate for that IP. A TCP connection alone is not enough."
-msgstr "Разрешать маршрутизацию IP без домена после проверки HTTPS-ответа и сертификата именно для этого IP. Одного TCP-соединения недостаточно."
-
 msgid "Also deflate"
 msgstr "Также deflate"
+
+msgid "Alternative section"
+msgstr "Секция"
 
 msgid "An even number of hex digits, up to 16"
 msgstr "Чётное число hex-цифр, не больше 16"
@@ -400,6 +400,9 @@ msgstr "Автоматическая маршрутизация"
 
 msgid "Automatic routing action failed"
 msgstr "Не удалось выполнить действие автомаршрутизации"
+
+msgid "Automatically apply verified IP-only proposals too. Manual IP-only proposals do not require this preference."
+msgstr "Автоматически применять также проверенные предложения для IP без домена. Для ручного принятия эта галка не нужна."
 
 msgid "Availability check for every server"
 msgstr "Проверка доступности каждого сервера"
@@ -523,9 +526,6 @@ msgstr "Параметры проверок"
 
 msgid "Check the installed build before updating"
 msgstr "Перед обновлением проверьте установленную сборку"
-
-msgid "Check the selected WARP profile as an alternative for failed connections in this section."
-msgstr "Проверять выбранный профиль WARP как альтернативу при ошибках в этой секции."
 
 msgid "Check timeout"
 msgstr "Таймаут проверки"
@@ -679,6 +679,9 @@ msgstr "Подключаться к серверу туннеля через д�
 
 msgid "Connection closed"
 msgstr "Соединение закрыто"
+
+msgid "Connection error has no concrete destination IP"
+msgstr "В ошибке соединения не установлен конкретный IP"
 
 msgid "Connection errors"
 msgstr "Ошибки соединений"
@@ -878,6 +881,9 @@ msgstr "Выключено"
 msgid "Disables QUIC for compatibility and to fix video streaming"
 msgstr "Отключает QUIC для совместимости и исправления видеостриминга"
 
+msgid "DNS changed; verification must be repeated"
+msgstr "DNS изменился; требуется повторная проверка"
+
 msgid "DNS outside the rules"
 msgstr "DNS вне правил"
 
@@ -919,6 +925,9 @@ msgstr "не слушает %s"
 
 msgid "does not use the router's DNS"
 msgstr "не использует DNS роутера"
+
+msgid "Domain and IP could not be confirmed"
+msgstr "Связь домена с IP не подтверждена"
 
 msgid "Domain Resolver"
 msgstr "Резолвер доменов"
@@ -1967,6 +1976,9 @@ msgstr "Нет поля tag"
 msgid "No updates available"
 msgstr "Обновлений нет"
 
+msgid "No working alternative found"
+msgstr "Рабочая альтернатива не найдена"
+
 msgid "Node key"
 msgstr "Ключ узла"
 
@@ -2087,9 +2099,6 @@ msgstr "Только a-z, 0-9 и дефис, до 63 символов"
 msgid "Only anyconnect://create and anyconnect://connect links carry a server"
 msgstr "Сервер есть только в ссылках anyconnect://create и anyconnect://connect"
 
-msgid "Only eligible records in this source section will be changed. Continue?"
-msgstr "Будут изменены только подходящие записи этой исходной секции. Продолжить?"
-
 msgid "Only for a key protected by a passphrase"
 msgstr "Только для ключа, защищённого паролем"
 
@@ -2140,6 +2149,12 @@ msgstr "Время ожидания истекло"
 
 msgid "Original connection URI"
 msgstr "Исходная ссылка подключения"
+
+msgid "Original route check failed; see results"
+msgstr "Проверка исходного маршрута не завершена; см. результаты"
+
+msgid "Original route failure was not confirmed"
+msgstr "Сбой исходного маршрута не подтвердился"
 
 msgid "Original URI"
 msgstr "Исходная ссылка"
@@ -2372,9 +2387,6 @@ msgstr "Отказываться от обмена ключами TLS 1.2 без
 msgid "Registry action failed"
 msgstr "Действие с реестром не выполнено"
 
-msgid "Registry actions require the r13 core API"
-msgstr "Для работы с записями требуется ядро r13"
-
 msgid "remote: no server"
 msgstr "remote: не указан сервер"
 
@@ -2585,11 +2597,11 @@ msgstr "Выберите файл .ovpn, .conf, .xml или .nmconnection"
 msgid "Select a device"
 msgstr "Выберите устройство"
 
+msgid "Select a section"
+msgstr "Выберите секцию"
+
 msgid "Select a server or set a pattern"
 msgstr "Выберите сервер или задайте шаблон"
-
-msgid "Select a WARP profile"
-msgstr "Выберите профиль WARP"
 
 msgid "Select an interface"
 msgstr "Выберите интерфейс"
@@ -2611,6 +2623,9 @@ msgstr "Указанные домены"
 
 msgid "Selected for"
 msgstr "Выбран"
+
+msgid "Selected records"
+msgstr "Выбрано записей"
 
 msgid "Selects the first available node by priority"
 msgstr "Выбирает первый доступный узел по приоритету"
@@ -3385,6 +3400,9 @@ msgstr "Использовать подсети, анонсированные д
 
 msgid "Use the original URI editor for this format."
 msgstr "Для этого формата используйте редактор исходной ссылки."
+
+msgid "Use the selected section as configured, without matching its destination lists."
+msgstr "Использовать выбранную секцию с её настройками выхода, без проверки её списков адресов."
 
 msgid "Use the tunnel's DNS for the domains its server declares. Add those domains to the section so that devices reach them through the tunnel"
 msgstr "Использовать DNS туннеля для доменов, которые объявляет его сервер. Добавьте эти домены в секцию, чтобы устройства ходили к ним через туннель"

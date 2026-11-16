@@ -36,12 +36,19 @@ describe('source-only automatic routing controls', () => {
     h.uci.add('kabanmax', 'section', 'zap');
     Object.assign(h.store.get('zap'), {
       action: 'zapret2',
-      auto_routing_warp: 'WARP/saved',
+      auto_routing_warp_section: 'warp-section',
     });
-    const warp = grid.children.find((o) => o.option === 'auto_routing_warp');
+    const warp = grid.children.find(
+      (o) => o.option === 'auto_routing_warp_section',
+    );
     for (let i = 0; i < 10; i++) {
-      expect(await warp.load('zap')).toBe('WARP/saved');
-      expect(warp.keylist).toEqual(['', 'WARP/saved']);
+      expect(await warp.load('zap')).toBe('warp-section');
+      expect(warp.keylist).toEqual(['', 'warp-section']);
     }
+    h.uci.set('kabanmax', 'zap', 'auto_routing_warp', 'WARP/legacy');
+    warp.write('zap', 'warp-section');
+    expect(h.uci.get('kabanmax', 'zap', 'auto_routing_warp')).toBeNull();
+    warp.remove('zap');
+    expect(h.uci.get('kabanmax', 'zap', 'auto_routing_warp_section')).toBeNull();
   });
 });

@@ -73,4 +73,14 @@ t.test("pending deletion dismisses only its own error without adding exclusions"
  t.eq(registry.load().entries,[]);t.eq(model.suppression().entries,[]);
 });
 
+t.test("dismiss accepts logged source-owned failures with unknown IP but apply still rejects them",()=>{
+ fs.unlink(registry.paths.applied);fs.unlink(registry.paths.budget);fs.unlink(model.paths.suppression);
+ let actions=require("diagnostics.auto_registry");let row={...record(32),ip:"",status:"inconclusive",network:"tcp"};let calls=[];
+ actions.io.state=()=>({registry_version:3,version:1,sources:[{id:"zap",outbound:"zap"}],candidates:[row],decisions:[],leases:[]});
+ actions.io.request=(op,payload)=>{push(calls,{op,...payload});return {source_id:"zap"};};
+ let result=actions.run(sprintf("%J",{source_section:"zap",status:"pending",action:"dismiss",ids:[row.id]}));
+ t.eq(result.done,1);t.eq(result.skipped,0);t.eq(calls,[{op:"registry_dismiss",source_id:"zap",id:row.id}]);
+ t.eq(registry.load().entries,[]);t.eq(model.suppression().entries,[]);
+});
+
 t.done();

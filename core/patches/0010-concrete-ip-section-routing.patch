@@ -1,0 +1,551 @@
+diff --git a/common/autoroute/ip_failure.go b/common/autoroute/ip_failure.go
+new file mode 100644
+index 0000000..16a6c82
+--- /dev/null
++++ b/common/autoroute/ip_failure.go
+@@ -0,0 +1,190 @@
++package autoroute
++
++import (
++	"context"
++	"github.com/sagernet/sing-box/common/dialer"
++	C "github.com/sagernet/sing-box/constant"
++	"net"
++	"net/netip"
++	"time"
++
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++)
++
++// DNS confirms a domain/IP pair. A failed confirmation never discards an
++// attested address: retain the original identity only for first-match policy.
++func (m *Manager) bindDomain(ctx context.Context, q Query) Query {
++	s, ok := m.source(q.Source)
++	if !ok || s.Mode != "web" || q.Domain == "" || m.protected(q) || m.loggedFailure(q) == nil {
++		return q
++	}
++	addresses, ttl, err := m.Lookup(ctx, q.Domain)
++	if err == nil && ttl > 0 && containsIP(addresses, q.IP) {
++		return q
++	}
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	for _, event := range m.events {
++		if event.Query == q && event.Failure != nil {
++			event.ObservedDomain = q.Domain
++			event.Domain = ""
++			event.DomainKnown = false
++		}
++	}
++	q.Domain = ""
++	return q
++}
++
++// Wrap the actual serial dial, after the winning source rule has been chosen.
++// Each member gets its own concrete IP: never pin a whole DNS set to one lease.
++func WrapDial(ctx context.Context, d N.Dialer) N.Dialer {
++	item, ok := ctx.Value(observationKey{}).(observation)
++	if !ok {
++		return d
++	}
++	return &scopedDialer{Dialer: d, item: item}
++}
++
++func (m *Manager) warpOutput(tag string, trail []string) bool {
++	if len(trail) > 8 {
++		return false
++	}
++	for _, old := range trail {
++		if old == tag {
++			return false
++		}
++	}
++	out, ok := m.Outbound(tag)
++	if !ok {
++		return false
++	}
++	if out.Type() == "warp" {
++		for _, dep := range out.Dependencies() {
++			d, ok := m.Outbound(dep)
++			if !ok || d.Type() != "direct" || len(d.Dependencies()) != 0 {
++				return false
++			}
++		}
++		return true
++	}
++	if out.Type() != "fallback" && out.Type() != "selector" && out.Type() != "urltest" {
++		return false
++	}
++	if len(out.Dependencies()) == 0 {
++		return false
++	}
++	for _, dep := range out.Dependencies() {
++		if !m.warpOutput(dep, append(append([]string{}, trail...), tag)) {
++			return false
++		}
++	}
++	return true
++}
++
++func (m *Manager) loggedFailureCount(q Query) int {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	count := 0
++	var latest time.Time
++	for _, event := range m.events {
++		if event.Query == q && event.Failure != nil && time.Since(event.Failure.At) < time.Hour && event.Failure.At.After(latest) {
++			count = event.Count
++			latest = event.Failure.At
++		}
++	}
++	return count
++}
++
++type scopedDialer struct {
++	N.Dialer
++	item observation
++}
++
++func (d *scopedDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++	return d.dial(ctx, network, destination, func(c context.Context, selected N.Dialer, original bool) (net.Conn, error) {
++		return selected.DialContext(c, network, destination)
++	})
++}
++
++type observedDialError struct {
++	error
++	attempt *Event
++}
++
++func (e *observedDialError) Unwrap() error { return e.error }
++
++type observedConn struct {
++	net.Conn
++	attempt *Event
++}
++
++func (c *observedConn) Upstream() any           { return c.Conn }
++func (c *observedConn) ReaderReplaceable() bool { return true }
++func (c *observedConn) WriterReplaceable() bool { return true }
++
++func WrapParallelDial(ctx context.Context, base dialer.ParallelInterfaceDialer) dialer.ParallelInterfaceDialer {
++	item, ok := ctx.Value(observationKey{}).(observation)
++	if !ok {
++		return base
++	}
++	return &scopedInterfaceDialer{scopedDialer: &scopedDialer{Dialer: base, item: item}, base: base}
++}
++
++type scopedInterfaceDialer struct {
++	*scopedDialer
++	base dialer.ParallelInterfaceDialer
++}
++
++func (d *scopedInterfaceDialer) DialParallelInterface(ctx context.Context, network string, destination M.Socksaddr, strategy *C.NetworkStrategy, types, fallback []C.InterfaceType, delay time.Duration) (net.Conn, error) {
++	return d.dial(ctx, network, destination, func(c context.Context, selected N.Dialer, original bool) (net.Conn, error) {
++		if original {
++			return d.base.DialParallelInterface(c, network, destination, strategy, types, fallback, delay)
++		}
++		if parallel, ok := selected.(dialer.ParallelNetworkDialer); ok {
++			return parallel.DialParallelNetwork(c, network, destination, []netip.Addr{destination.Addr}, strategy, types, fallback, delay)
++		}
++		return selected.DialContext(c, network, destination)
++	})
++}
++func (d *scopedInterfaceDialer) ListenSerialInterfacePacket(ctx context.Context, destination M.Socksaddr, strategy *C.NetworkStrategy, types, fallback []C.InterfaceType, delay time.Duration) (net.PacketConn, error) {
++	return d.base.ListenSerialInterfacePacket(ctx, destination, strategy, types, fallback, delay)
++}
++
++func (d *scopedDialer) dial(ctx context.Context, network string, destination M.Socksaddr, call func(context.Context, N.Dialer, bool) (net.Conn, error)) (net.Conn, error) {
++	m, event := d.item.manager, d.item.event
++	if network != "tcp" || !destination.IsIP() {
++		return call(ctx, d.Dialer, true)
++	}
++	m.mu.Lock()
++	attempt := *event
++	m.mu.Unlock()
++	attempt.routedLease, attempt.routedTarget = "", ""
++	attempt.Failure = nil
++	q := attempt.Query
++	q.IP = destination.Addr.Unmap().String()
++	attempt.Query = q
++	meta := metadata(q)
++	meta.DestinationAddresses = []netip.Addr{destination.Addr.Unmap()}
++	target := m.SelectForEvent(ctx, q.Source, &meta, &attempt)
++	dialer := d.Dialer
++	if target != q.Source {
++		if out, ok := m.Outbound(target); ok {
++			dialer = out
++		} else {
++			target = q.Source
++			attempt.routedLease, attempt.routedTarget = "", ""
++		}
++	}
++	// The selected outbound may itself use Direct internally. Do not attribute
++	// its transport or a cancelled sibling racer as the winning application dial.
++	dialCtx := context.WithValue(ctx, observationKey{}, nil)
++	conn, err := call(dialCtx, dialer, target == q.Source)
++	if err != nil {
++		if attempt.routedLease != "" {
++			m.Failed(&attempt, err)
++		}
++		return nil, &observedDialError{error: err, attempt: &attempt}
++	}
++	return &observedConn{Conn: conn, attempt: &attempt}, nil
++}
+diff --git a/common/autoroute/lease.go b/common/autoroute/lease.go
+old mode 100755
+new mode 100644
+index 07e7bdd..572fbd6
+--- a/common/autoroute/lease.go
++++ b/common/autoroute/lease.go
+@@ -43,7 +43,7 @@ func (l Lease) matches(source string, m *adapter.InboundContext, now time.Time)
+ 		return false
+ 	}
+ 	if l.IPOnly {
+-		return l.Domain == "" && m.Domain == "" && m.Destination.IsIP() && m.Destination.Addr.Unmap().String() == l.IP
++		return l.Domain == "" && ((m.Destination.IsIP() && m.Destination.Addr.Unmap().String() == l.IP) || (len(m.DestinationAddresses) == 1 && m.DestinationAddresses[0].Unmap().String() == l.IP))
+ 	}
+ 	// Never authorize from Domain: it may have come from global reverse mapping.
+ 	if !m.Destination.IsDomain() || strings.TrimSuffix(strings.ToLower(m.Destination.Fqdn), ".") != l.Domain {
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+old mode 100755
+new mode 100644
+index 9b78110..9360046
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -31,25 +31,26 @@ type Query struct {
+ }
+ type Event struct {
+ 	Query
+-	Failure      *Failure  `json:"failure,omitempty"`
+-	SourceID     string    `json:"source_id"`
+-	RoutingMark  uint32    `json:"routing_mark"`
+-	DomainKnown  bool      `json:"domain_known"`
+-	ID           string    `json:"id"`
+-	Network      string    `json:"network"`
+-	Status       string    `json:"status"`
+-	Reason       string    `json:"reason"`
+-	Count        int       `json:"count"`
+-	Created      time.Time `json:"created"`
+-	Updated      time.Time `json:"updated"`
+-	Upload       int64     `json:"upload"`
+-	Download     int64     `json:"download"`
+-	progress     time.Time
+-	lastJob      time.Time
+-	active       int
+-	attempted    bool
+-	routedLease  string
+-	routedTarget string
++	ObservedDomain string    `json:"observed_domain,omitempty"`
++	Failure        *Failure  `json:"failure,omitempty"`
++	SourceID       string    `json:"source_id"`
++	RoutingMark    uint32    `json:"routing_mark"`
++	DomainKnown    bool      `json:"domain_known"`
++	ID             string    `json:"id"`
++	Network        string    `json:"network"`
++	Status         string    `json:"status"`
++	Reason         string    `json:"reason"`
++	Count          int       `json:"count"`
++	Created        time.Time `json:"created"`
++	Updated        time.Time `json:"updated"`
++	Upload         int64     `json:"upload"`
++	Download       int64     `json:"download"`
++	progress       time.Time
++	lastJob        time.Time
++	active         int
++	attempted      bool
++	routedLease    string
++	routedTarget   string
+ }
+ type Decision struct {
+ 	Lease
+@@ -205,7 +206,7 @@ func (m *Manager) guard(ctx context.Context, q Query) (option.KabanmaxAutoSource
+ 	if !ok {
+ 		return s, errors.New("disabled_or_unattributed")
+ 	}
+-	if q.Domain == "" && (s.Mode != "web" || !s.AllowIPOnly) {
++	if q.Domain == "" && s.Mode != "web" {
+ 		return s, errors.New("identity_unknown")
+ 	}
+ 	if (s.Domain != "" && q.Domain != s.Domain) || q.Port != s.Port || m.protected(q) {
+@@ -262,6 +263,15 @@ func (m *Manager) guard(ctx context.Context, q Query) (option.KabanmaxAutoSource
+ 	meta := metadata(q)
+ 	if q.Domain == "" {
+ 		meta.Protocol = ""
++		m.mu.Lock()
++		for _, event := range m.events {
++			if m.key(event.Query) == m.key(q) && event.ObservedDomain != "" {
++				meta.Destination.Fqdn = event.ObservedDomain
++				meta.Destination.Addr = netip.Addr{}
++				break
++			}
++		}
++		m.mu.Unlock()
+ 	}
+ 	selected, e := m.Match(ctx, &meta)
+ 	if e != nil {
+@@ -314,15 +324,9 @@ func (m *Manager) target(s option.KabanmaxAutoSource, tag string) (adapter.Outbo
+ 			return nil, errors.New("direct_not_permitted")
+ 		}
+ 	default:
+-		if tag == "" || tag != s.WARP || o.Type() != "warp" {
++		if tag == "" || tag != s.WARP || !m.warpOutput(tag, nil) {
+ 			return nil, errors.New("warp_not_permitted")
+ 		}
+-		for _, dep := range o.Dependencies() {
+-			d, ok := m.Outbound(dep)
+-			if !ok || d.Type() != "direct" || len(d.Dependencies()) != 0 {
+-				return nil, errors.New("warp_egress_unknown")
+-			}
+-		}
+ 	}
+ 	return o, nil
+ }
+@@ -412,7 +416,7 @@ func (m *Manager) Failed(e *Event, err error) {
+ 		return
+ 	}
+ 	for _, old := range m.events {
+-		if m.key(old.Query) == m.key(e.Query) && old.Count >= e.Count {
++		if m.key(old.Query) == m.key(e.Query) && old.Failure != nil && time.Since(old.Failure.At) < time.Hour && old.Failure.Message == err.Error() && old.Count >= e.Count {
+ 			e.Count = old.Count + 1
+ 		}
+ 	}
+@@ -444,7 +448,7 @@ func (m *Manager) Select(ctx context.Context, original string, meta *adapter.Inb
+ 	return m.SelectForEvent(ctx, original, meta, nil)
+ }
+ func (m *Manager) SelectForEvent(ctx context.Context, original string, meta *adapter.InboundContext, event *Event) string {
+-	if s, ok := m.source(original); !ok || !m.isZapret(s) || meta.Network != "tcp" || (!meta.Destination.IsDomain() && !(meta.Destination.IsIP() && s.AllowIPOnly)) {
++	if s, ok := m.source(original); !ok || !m.isZapret(s) || meta.Network != "tcp" || (!meta.Destination.IsDomain() && !meta.Destination.IsIP()) {
+ 		return original
+ 	}
+ 	policy, _ := m.source(original)
+@@ -458,7 +462,8 @@ func (m *Manager) SelectForEvent(ctx context.Context, original string, meta *ada
+ 			delete(m.leases, k)
+ 			continue
+ 		}
+-		if (!l.IPOnly || (meta.Destination.IsIP() && meta.Destination.Addr.Unmap().String() == l.IP)) && l.Source == original && l.Domain == strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".") && l.SourceIP == meta.Source.Addr.Unmap().String() && l.Inbound == meta.Inbound && l.Port == meta.Destination.Port {
++		concreteIP := (meta.Destination.IsIP() && meta.Destination.Addr.Unmap().String() == l.IP) || (len(meta.DestinationAddresses) == 1 && containsIP(meta.DestinationAddresses, l.IP))
++		if ((!l.IPOnly && l.Domain == strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".")) || (l.IPOnly && concreteIP)) && l.Source == original && (len(meta.DestinationAddresses) == 0 || containsIP(meta.DestinationAddresses, l.IP)) && l.SourceIP == meta.Source.Addr.Unmap().String() && l.Inbound == meta.Inbound && l.Port == meta.Destination.Port {
+ 			copy := l
+ 			candidate = &copy
+ 			break
+diff --git a/common/autoroute/probe.go b/common/autoroute/probe.go
+old mode 100755
+new mode 100644
+index 62b3d1a..476ff52
+--- a/common/autoroute/probe.go
++++ b/common/autoroute/probe.go
+@@ -162,6 +162,7 @@ func (m *Manager) Probe(ctx context.Context, q Query) (any, error) {
+ 	m.mu.Unlock()
+ 	defer func() { m.mu.Lock(); m.batchCancel = nil; m.mu.Unlock() }()
+ 	if q.IP != "" {
++		q = m.bindDomain(ctx, q)
+ 		return m.probeSingle(ctx, q)
+ 	}
+ 	source, ok := m.source(q.Source)
+@@ -267,7 +268,7 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 	}
+ 	d := Decision{Lease: Lease{ID: id(), Owner: "auto-routing", Source: q.Source, SourceID: s.ID, IP: q.IP, Domain: q.Domain, SourceIP: q.SourceIP, Inbound: q.Inbound, Port: q.Port, Created: now, Status: "inconclusive"}, DNS: initial, Scope: key}
+ 	d.Failure = m.loggedFailure(q)
+-	d.IPOnly = q.Domain == "" && s.AllowIPOnly
++	d.IPOnly = q.Domain == ""
+ 	d.Generation = generation
+ 	d.DomainKnown = q.Domain != ""
+ 	d.OriginSourcePort = q.SourcePort
+@@ -283,19 +284,21 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		if _, e = m.target(s, tag); e != nil {
+ 			d.Attempts = append(d.Attempts, Attempt{Outbound: tag, Status: "blocked_by_policy", Reason: e.Error(), At: time.Now()})
+ 			if i == 0 {
++				if s.Mode == "web" && m.loggedFailureCount(q) >= 2 {
++					originalFailed = true
++					d.Evidence = "repeated_logged_source_failure"
++					continue
++				}
+ 				// A forbidden original probe supplies no failure evidence. Never infer it.
+ 				d.Reason = "original_failure_unproven"
+ 				break
+ 			}
+ 			continue
+ 		}
++		m.stage(q, "checking", "checking:"+tag)
+ 		first := m.attempt(ctx, q, s, tag)
+ 		second := m.attempt(ctx, q, s, tag)
+ 		d.Attempts = append(d.Attempts, first, second)
+-		if s.Mode == "web" && q.Domain == "" && !s.AllowIPOnly {
+-			originalFailed = true // diagnostic enumeration only; never an apply verdict
+-			continue
+-		}
+ 		if i == 0 {
+ 			if first.Status == "verified" && second.Status == "verified" {
+ 				d.Status = "unchanged"
+@@ -307,7 +310,7 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 			if s.Mode == "web" {
+ 				failureKind = "transport_failure"
+ 			}
+-			if first.Status != failureKind || second.Status != failureKind {
++			if (first.Status != failureKind || second.Status != failureKind) && !(s.Mode == "web" && m.loggedFailureCount(q) >= 2) {
+ 				d.Reason = "original_failure_unproven"
+ 				if s.Mode == "web" {
+ 					d.Reason = "original_https_inconclusive"
+@@ -325,7 +328,7 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 			}
+ 			d.Status = "proposed"
+ 			d.ApplyAllowed = true
+-			d.AutoApplyEligible = s.Mode != "web" || s.AutoApply
++			d.AutoApplyEligible = (s.Mode != "web" || s.AutoApply) && (q.Domain != "" || s.AllowIPOnly)
+ 			d.Evidence = "verified_for_apply"
+ 			d.Reason = "verified_alternative_after_contract_failure"
+ 			if s.Mode == "web" {
+@@ -356,10 +359,8 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		d.Status = "inconclusive"
+ 		d.Reason = "dns_ttl_elapsed"
+ 	}
+-	if q.Domain == "" && !s.AllowIPOnly {
+-		d.Status = "identity_unknown"
+-		d.Evidence = "transport_diagnostic"
+-		d.Reason = "no_connection_identity"
++	if d.Status == "inconclusive" && d.Reason == "" {
++		d.Reason = "no_working_alternative"
+ 	}
+ 	if d.Status != "proposed" {
+ 		d.ApplyAllowed = false
+@@ -381,6 +382,11 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 		}
+ 	}
+ 	if len(m.decisions) < 64 {
++		for id, previous := range m.decisions {
++			if previous.Scope == d.Scope {
++				delete(m.decisions, id)
++			}
++		}
+ 		m.decisions[d.ID] = d
+ 	}
+ 	m.mu.Unlock()
+diff --git a/common/autoroute/web.go b/common/autoroute/web.go
+old mode 100755
+new mode 100644
+index b722882..53b6dee
+--- a/common/autoroute/web.go
++++ b/common/autoroute/web.go
+@@ -47,20 +47,6 @@ func (m *Manager) webAttempt(ctx context.Context, q Query, s option.KabanmaxAuto
+ 		}
+ 		return conn, err
+ 	}
+-	if q.Domain == "" && !s.AllowIPOnly {
+-		a.Method = "TCP"
+-		a.Path = ""
+-		conn, err := dial(ctx, "tcp", "")
+-		if err != nil {
+-			a.Status = "transport_failure"
+-			a.Reason = "tcp_dial_failed_identity_unknown"
+-		} else {
+-			conn.Close()
+-			a.Status = "transport_reachable"
+-			a.Reason = "tcp_only_not_application_evidence"
+-		}
+-		return a
+-	}
+ 	identity := q.Domain
+ 	if identity == "" {
+ 		identity = q.IP
+@@ -191,10 +177,38 @@ func BindObservation(ctx context.Context, m *Manager, e *Event) context.Context
+ // not for a DNS lookup, probe, sibling connection or alternative tunnel.
+ func ReportDial(ctx context.Context, conn net.Conn, err error) {
+ 	item, ok := ctx.Value(observationKey{}).(observation)
+-	if !ok || err != nil || conn == nil {
++	if !ok {
++		return
++	}
++	var attempt *Event
++	if observed, ok := conn.(*observedConn); ok {
++		attempt = observed.attempt
++	}
++	var failed *observedDialError
++	if err != nil && errors.As(err, &failed) {
++		attempt = failed.attempt
++	}
++	if attempt != nil {
++		item.manager.mu.Lock()
++		item.event.IP = attempt.IP
++		item.event.routedLease = attempt.routedLease
++		item.event.routedTarget = attempt.routedTarget
++		item.manager.mu.Unlock()
++		return
++	}
++	var address net.Addr
++	if err != nil {
++		var op *net.OpError
++		if !errors.As(err, &op) || op.Op != "dial" || op.Addr == nil {
++			return
++		}
++		address = op.Addr
++	} else if conn != nil {
++		address = conn.RemoteAddr()
++	} else {
+ 		return
+ 	}
+-	endpoint, e := netip.ParseAddrPort(conn.RemoteAddr().String())
++	endpoint, e := netip.ParseAddrPort(address.String())
+ 	if e != nil {
+ 		return
+ 	}
+diff --git a/protocol/direct/outbound.go b/protocol/direct/outbound.go
+index ad7a651..bcee04a 100644
+--- a/protocol/direct/outbound.go
++++ b/protocol/direct/outbound.go
+@@ -9,6 +9,7 @@ import (
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
++	"github.com/sagernet/sing-box/common/autoroute"
+ 	"github.com/sagernet/sing-box/common/dialer"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/log"
+@@ -167,7 +168,7 @@ func (h *Outbound) DialContext(ctx context.Context, network string, destination
+ 	case N.NetworkUDP:
+ 		h.logger.InfoContext(ctx, "outbound packet connection to ", destination)
+ 	}
+-	return h.dialer.DialContext(ctx, network, destination)
++	return autoroute.WrapDial(ctx, h.dialer).DialContext(ctx, network, destination)
+ }
+ 
+ func (h *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+@@ -230,7 +231,7 @@ func (h *Outbound) DialParallel(ctx context.Context, network string, destination
+ 	case N.NetworkUDP:
+ 		h.logger.InfoContext(ctx, "outbound packet connection to ", destination)
+ 	}
+-	return dialer.DialParallelNetwork(ctx, h.dialer, network, destination, destinationAddresses, len(destinationAddresses) > 0 && destinationAddresses[0].Is6(), nil, nil, nil, h.fallbackDelay)
++	return dialer.DialParallelNetwork(ctx, autoroute.WrapParallelDial(ctx, h.dialer), network, destination, destinationAddresses, len(destinationAddresses) > 0 && destinationAddresses[0].Is6(), nil, nil, nil, h.fallbackDelay)
+ }
+ 
+ func (h *Outbound) DialParallelNetwork(ctx context.Context, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, networkStrategy *C.NetworkStrategy, networkType []C.InterfaceType, fallbackNetworkType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error) {
+@@ -250,7 +251,7 @@ func (h *Outbound) DialParallelNetwork(ctx context.Context, network string, dest
+ 	if fallbackDelay == 0 {
+ 		fallbackDelay = h.fallbackDelay
+ 	}
+-	return dialer.DialParallelNetwork(ctx, h.dialer, network, destination, destinationAddresses, len(destinationAddresses) > 0 && destinationAddresses[0].Is6(), networkStrategy, networkType, fallbackNetworkType, fallbackDelay)
++	return dialer.DialParallelNetwork(ctx, autoroute.WrapParallelDial(ctx, h.dialer), network, destination, destinationAddresses, len(destinationAddresses) > 0 && destinationAddresses[0].Is6(), networkStrategy, networkType, fallbackNetworkType, fallbackDelay)
+ }
+ 
+ func (h *Outbound) ListenSerialNetworkPacket(ctx context.Context, destination M.Socksaddr, destinationAddresses []netip.Addr, networkStrategy *C.NetworkStrategy, networkType []C.InterfaceType, fallbackNetworkType []C.InterfaceType, fallbackDelay time.Duration) (net.PacketConn, netip.Addr, error) {
+diff --git a/route/route.go b/route/route.go
+index 2124df3..54a5b42 100644
+--- a/route/route.go
++++ b/route/route.go
+@@ -167,14 +167,6 @@ func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata ad
+ 		ctx = autoroute.BindObservation(ctx, r.autoRouting, event)
+ 		autoTrack = func(c net.Conn) net.Conn { return r.autoRouting.Track(c, event) }
+ 		onClose = N.AppendClose(onClose, func(err error) { r.autoRouting.Failed(event, err) })
+-		if target := r.autoRouting.SelectForEvent(ctx, original, &metadata, event); target != original {
+-			var loaded bool
+-			selectedOutbound, loaded = r.outbound.Outbound(target)
+-			if !loaded {
+-				buf.ReleaseMulti(buffers)
+-				return E.New("automatic outbound unavailable")
+-			}
+-		}
+ 	}
+ 	chain, err := resolveOutbound(selectedOutbound, N.NetworkTCP)
+ 	if err != nil {

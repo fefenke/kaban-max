@@ -1,5 +1,48 @@
 # Проверки
 
+## Локально после 0.1.9: actual IP, секция и clear журнала
+
+[Причины, поведение и границы](AUTO_ROUTING_IP_FIX.md). Публикации/установки нет. Свежие frontend **176 файлов / 1690 тестов PASS**, TypeScript/build и lint PASS. Backend **92/92 файлов PASS**. Browser **320/375/768/1280 + dark 375 PASS** с Bootstrap; новый HTML dialog, отмена без mutation, scoped bulk, вложенный флаг без стрелки и отделённые advanced settings.
+
+Из `fe-app-kabanmax`:
+
+```powershell
+npm.cmd run build
+npm.cmd run locales
+npm.cmd test -- --run --reporter=dot
+npm.cmd run lint
+node node_modules/esbuild/bin/esbuild ./tests/browser/formUx.browser.ts --bundle --outfile=../.local/audit/auto-routing-repair/formUx.browser.js
+```
+
+После locales добавлены 11 русских переводов, затем полный test run. Из корня:
+
+```powershell
+$ipRoot=(Get-Location).Path
+docker run --rm --network none --mount "type=bind,source=$ipRoot,target=/work,readonly" -w /work forkop-zapret2-test-tools:local bash tests/run.sh
+node .local/audit/auto-routing-ip-fix/check-browser.mjs
+git diff --check
+```
+
+Чистый pinned upstream + **0001–0010**: пять Go race suites PASS, Go **1.25.10** из имеющегося образа, production tags. Это не результат ещё не запущенного CI с закреплённым Go 1.26.10.
+
+```powershell
+docker run --rm --network none --mount "type=bind,source=$ipRoot/core,target=/core,readonly" --mount "type=bind,source=$ipRoot/.local/core-src,target=/source,readonly" --mount "type=bind,source=$ipRoot/tests/core,target=/extra-tests,readonly" --mount type=volume,source=kabanmax-chrome155-go-mod,target=/root/go/pkg/mod --mount type=volume,source=kabanmax-chrome155-go-build,target=/root/.cache/go-build -e GOPROXY=off kabanmax-release:2.1.0 sh /extra-tests/run_auto_routing.sh
+```
+
+Новые Go-регрессии: failed dial с mixed DNS сохраняет конкретный IP; подтверждённая domain/IP пара или IP-only; manual без auto-apply; Direct перед WARP; configured fallback output и отказ смешанной группе; перенаправление только отдельного dial IP; повторные одинаковые logged failures и отказ старым/другим ошибкам. API dismiss без IP воспроизведён RED до исправления и проходит после него.
+
+Перед разрешённой публикацией 0.2.0 независимое ревью выявило общую атрибуцию sibling dial и потерю optional network interface dispatch. Добавлен `auto_dial_isolation_test.go`: failed alternative → original sibling success/failure, фиксация IP/source/lease по итоговому результату, forwarding strategy/interface types/fallback delay. После переноса hooks в Direct полный local race run снова PASS; новый тест включён в clean runner и CI.
+
+Собран тестовый x86_64 binary (`CGO_ENABLED=0 go build -trimpath -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn -o /task/sing-box ./cmd/sing-box`). Изолированный binary сценарий с mixed A/AAAA прошёл: только собственная ошибка и log ID, actual IPv4, dismiss, no logging/no failure, автоматический Direct и реально полученное содержимое; чужая секция не захвачена.
+
+```powershell
+docker run --rm --network none --cap-add NET_ADMIN --mount "type=bind,source=$ipRoot,target=/work,readonly" --mount "type=bind,source=$ipRoot/.local/audit/auto-routing-ip-fix,target=/task,readonly" -w /work kabanmax-release:2.1.0 python3 tests/core/auto_error_binary.py /task/sing-box /task/fixtures /task/tools
+```
+
+Журнал: chunk assembly/revision reset/empty cursor=0, snapshot при новых строках и invalidation после clear PASS. Синтетический benchmark 10 000 строк (~1,2 МБ): до изменения first **3356 мс**, after-clear **3880 мс**; после first **2856 мс**, after-clear **2 мс**. Команда: `docker run --rm --network none --mount "type=bind,source=$ipRoot,target=/work,readonly" -w /work forkop-zapret2-test-tools:local ucode -L kabanmax/files/usr/lib .local/audit/auto-routing-ip-fix/journal_bench.uc`. Это локальное сравнение, не аппаратный performance SLA. Сбор теперь ограничен tail 1000 строк/опрос; при больших bursts нужна отдельная streaming доработка.
+
+Ignored helpers/fixtures/binary/evidence: `.local/audit/auto-routing-ip-fix/`. Старые промежуточные результаты и ошибки окружения перечислены в отчёте; итоговые тесты не подменяют pinned CI, ARM64/APK/IPK или аппаратную приёмку.
+
 ## 0.1.9 / r13 — подготовка
 
 [Контракт и точная степень приёмки](AUTO_ROUTING_019.md). Чистый pinned upstream + 0001–0009 через `tests/core/run_auto_routing.sh`: пять race packages PASS; `AUTO_BUILD=1` собрал x86_64/ARM64 base. Новый `auto_error_binary.py` на x86_64 в отдельном network-none namespace подтвердил log ID/source ownership, отказ от WARP/незаписанных/здоровых событий, dismiss и автоматическое получение application content через Direct. На роутерах/VPS тесты не запускались.
