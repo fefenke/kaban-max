@@ -1,3 +1,4 @@
+import { renderUpdateStatus } from './updateStatus';
 import { createAcornGame } from './acornGame';
 import { createBoar } from '../../helpers/boar';
 import { copyToClipboard } from '../../../helpers/copyToClipboard';
@@ -305,6 +306,8 @@ export function initController(): void {
         onClick,
       });
 
+    const updateStatus = renderUpdateStatus(releaseBusy, releaseError, release);
+
     part(root, 'components-actions').replaceChildren(
       E('div', { class: 'fkp_components-page__heading' }, [
         E('b', {}, 'KabanMax'),
@@ -314,22 +317,7 @@ export function initController(): void {
         E('span', {}, 'sing-box-kabanmax '),
         E('span', { id: 'components-core-version' }),
       ]),
-      E(
-        'p',
-        {
-          role: 'status',
-          class: `fkp_components-page__update-status${releaseBusy ? '' : releaseError ? ' fkp_components-page__update-status--error' : release ? ' fkp_components-page__update-status--success' : ''}`,
-          hidden: !releaseBusy && !releaseError && !release,
-        },
-        releaseBusy
-          ? _('The boar looks for fresh acorns...')
-          : releaseError ||
-              (release?.update_available
-                ? `${_('Update available')}: ${release.latest || release.release || ''}`
-                : release
-                  ? _('No updates available')
-                  : ''),
-      ),
+      updateStatus,
       button(
         'update',
         renderDownloadIcon24,

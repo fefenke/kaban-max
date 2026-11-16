@@ -1,5 +1,13 @@
 # Контекст следующего чата
 
+## 0.1.7 / r12 — новое ТЗ заменило ограничения этапа UI v2
+
+Пользователь попросил реализовать `KABANMAX_0.1.7_development_TASK.md`: в нём прямо разрешены необходимый core API и prerelease. Новые исходники — patch 0008, `config/auto_registry.uc`, `diagnostics/auto_registry.uc`, обновлённые records UI/API. [Контракт](AUTO_REGISTRY_017.md). Прежние запреты и блокеры в следующих исторических разделах не описывают этот новый этап. Не считать saved intents активными и не расширять ordinary/IP-only eligibility. Точные gates и публикационный статус — PROJECT_STATE/TESTING.
+
+## UI v2, 2026-11-16: НЕ ПУБЛИКОВАТЬ
+
+Последнее указание пользователя отменяет первоначальное «публикуй»: подготовить локально и показать сделанное/несделанное. Ни commits, ни push/tags/releases в этой задаче не выполнялись. Исходный dirty tree сохранён. Изменения и воспроизведённые границы core — [UI_FIXES_V2](audits/UI_FIXES_V2.md), команды — [TESTING](TESTING.md). Подготовлен reviewable `main.js`; новых release packages нет. Не выдавать paged ограниченный r11 snapshot за полный реестр ядра или работу на роутере.
+
 ## Выпуск завершён: 0.1.6, 2026-11-16
 
 Опубликован [prerelease 0.1.6](https://github.com/fefenke/kaban-max/releases/tag/0.1.6): source/tag `4445219fa62eac084143620a35bb58d34b704008`, core r11, 14 assets. Все пять Actions success; все публичные downloads независимо сверены по SHA256/размерам, manifests и 13 checksum records PASS. Повторно создавать релиз/тег не требуется. Публикация не означает установку: OpenWrt/logread/TZ/UI/NFQUEUE/PBR/mwan3/WARP/VPN/egress/ARM64 runtime не проверены. Ниже — результаты локального GO и исторические этапы.

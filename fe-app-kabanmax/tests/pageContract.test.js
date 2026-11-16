@@ -114,7 +114,12 @@ describe('a password field', () => {
     }
     const itemId = `${typeName}_probe`;
     harness.uci.add('kabanmax', typeName, itemId);
-    harness.uci.set('kabanmax', itemId, option.ownerOption || 'section', ownerId);
+    harness.uci.set(
+      'kabanmax',
+      itemId,
+      option.ownerOption || 'section',
+      ownerId,
+    );
     const dialog = await harness.openDialog(option, ownerId, itemId);
     const options = dialog.map.children.flatMap((section) => section.children);
     for (const field of passwordFields(options)) {
@@ -165,11 +170,29 @@ describe('a password field', () => {
 
   it('is one the contract names', async () => {
     const found = await renderedPasswordFields();
-    const transient = found.filter(({ typeName, field }) => typeName === 'connection_link' && field.startsWith('_uri_'));
-    expect(transient.map(({ field }) => field).sort()).toEqual(['_uri_credential', '_uri_extra', '_uri_password', '_uri_shortId']);
-    expect([...new Set(found.filter(({ typeName, field }) => !(typeName === 'connection_link' && field.startsWith('_uri_'))).map(({ field }) => field))].sort()).toEqual(
-      Object.keys(contract.password_fields).sort(),
+    const transient = found.filter(
+      ({ typeName, field }) =>
+        typeName === 'connection_link' && field.startsWith('_uri_'),
     );
+    expect(transient.map(({ field }) => field).sort()).toEqual([
+      '_uri_credential',
+      '_uri_extra',
+      '_uri_password',
+      '_uri_publicKey',
+      '_uri_shortId',
+    ]);
+    expect(
+      [
+        ...new Set(
+          found
+            .filter(
+              ({ typeName, field }) =>
+                !(typeName === 'connection_link' && field.startsWith('_uri_')),
+            )
+            .map(({ field }) => field),
+        ),
+      ].sort(),
+    ).toEqual(Object.keys(contract.password_fields).sort());
   });
 
   it('is stored in the option the contract says the diagnostics mask', async () => {

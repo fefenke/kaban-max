@@ -1,5 +1,9 @@
 # Архитектура
 
+0.1.7/r12: `config.auto_registry` → saved intents/slot inventory в opt-in JSON → core patch 0008. Никакой прямой загрузки intents в active leases. Write-only `auto_action(op=records)` → scoped batch adapter → exact core operations; read-only `auto_records` → source-filtered pages/selection. Existing first-match/DNS/FakeIP/nft/PBR и transport не переписывались. [Контракт](AUTO_REGISTRY_017.md).
+
+UI v2 добавляет `cbi/formUx.ts` (делегированная справка и scoped layout) и read-only RPC `auto_records` → `diagnostics/auto_records.uc` (серверный paged view существующего snapshot, не новый verifier). Старый write-only `auto_action` остаётся единственным путём мутаций. Core, DNS/nft/PBR и transport не менялись. [Границы реализации](audits/UI_FIXES_V2.md).
+
 ## Доработка №04Б-ФИНАЛ, 2026-11-16
 
 Patch 0007 добавляет web verifier и дополнительные facts поверх 0006. Route connection manager передаёт actual dial remote IP в context-bound event исходного Zapret2; DNS siblings не копируются в кандидаты. Lease application требует single exact original DestinationAddress. Server-side decision разделяет evidence/apply_allowed/auto_apply_eligible: web — только manual, strict — прежняя строгая автоматика. [Контракт](AUTO_ROUTING_IMPLEMENTATION_04B.md).

@@ -1,4 +1,4 @@
-"""Actual r11 executable, isolated synthetic IP and loopback HTTPS/DNS only.
+"""Actual patched executable, isolated synthetic IP and loopback HTTPS/DNS only.
 
 Requires an isolated --network none container with NET_ADMIN. Never run on an
 existing router/host namespace: nft changes are private to this container.
@@ -259,6 +259,17 @@ try:
                     raise AssertionError("IP-only apply succeeded")
                 except urllib.error.HTTPError as error:
                     assert error.code == 409
+                assert api(api_port)["registry_version"] == 2
+                registry_scope = json.dumps(["s1", unknown["ip"], unknown["domain"], unknown["source_ip"], unknown["inbound"], unknown["port"]], separators=(",", ":"))
+                excluded = api(api_port, "registry_exclude", source_id="s1", id=unknown["id"])
+                assert excluded["suppressed"] == [registry_scope], excluded
+                try:
+                    api(api_port, "registry_reset", source_id="other", scope=registry_scope)
+                    raise AssertionError("foreign source reset succeeded")
+                except urllib.error.HTTPError as error:
+                    assert error.code == 409
+                api(api_port, "registry_reset", source_id="s1", scope=registry_scope)
+                assert not api(api_port)["leases"], "reset resurrected an IP-only lease"
             web_fake = copy.deepcopy(fake_config)
             web_fake["route"]["kabanmax_auto"] = web_config["route"]["kabanmax_auto"]
             with running(web_fake):

@@ -1,5 +1,17 @@
 # Текущее состояние
 
+## 0.1.7 / r12 — реализация и подготовка prerelease, 2026-11-16
+
+Новое принятое ТЗ разрешило core/API и выпуск 0.1.7. Реализованы bounded реестры 64, отдельные applied intents, безопасный strict restore после свежего flow/verifier, exact suppression reset, scoped bulk с partial outcomes и UI-доработки. [Контракт и ограничения](AUTO_REGISTRY_017.md), [проверки](TESTING.md). Предыдущая отмена публикации ниже относится к этапу UI v2. Статус публичного выпуска будет зафиксирован после отдельной проверки GitHub; устройства не использовались.
+
+## UI v2 — подготовлено локально, публикация отменена 2026-11-16
+
+Общий CBI help/layout, компактный VPN editor, Диагностика со скрытым read-only forecast и LAN chooser, исходная Zapret2-вкладка и серверные страницы ограниченного runtime-снимка. Полная реализация 5000 live records, filtered bulk/exact-scope reset и IP-only/generic HTTPS auto-apply упираются в запрещённые этим ТЗ изменения core API. [Постатейный отчёт и глобальный UX-аудит](audits/UI_FIXES_V2.md). Пользователь отозвал публикацию: новых коммитов/push/тегов/releases нет; версия и пакеты 0.1.6 не заменялись. Аппаратная LuCI/theme/Save & Apply приёмка остаётся открытой.
+
+## Локально после 0.1.6 — boolean attributes LuCI, 2026-11-16
+
+Исправлены два воспроизведённых UI-дефекта: результат проверки обновлений оставался скрытым из-за `hidden="false"`, кнопки Refresh/Check/Apply/Delete автосписка блокировались `disabled="false"`. Теперь используются DOM properties; mocks учитывают setAttribute-семантику LuCI. Оба RED → GREEN, 4 файла / 11 целевых тестов, tsc/lint/bundle PASS. Исправление только локальное, в опубликованных пакетах 0.1.6 его нет. [Команды](TESTING.md).
+
 ## Опубликовано 2026-11-16: 0.1.6 prerelease
 
 Выпущен [0.1.6](https://github.com/fefenke/kaban-max/releases/tag/0.1.6), source/tag commit `4445219fa62eac084143620a35bb58d34b704008`, core 1.14.4-r11. Пять GitHub Actions завершились success. Независимо скачаны все 14 публичных assets: SHA256/размеры, 13 записей SHA256SUMS, manifests и точный commit тега совпали; draft=false, prerelease=true. Evidence сохранено локально в `.local/audit/final-qa-publish/public-verification.json`. На оборудование ничего не устанавливалось; аппаратные UNVERIFIED ниже сохраняются. Следующий блок описывает предшествующий локальный GO.

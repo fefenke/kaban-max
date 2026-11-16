@@ -45,8 +45,11 @@ t.test("persistent suppression is independent of manual UCI and corrupt state fa
     let key='["zap","203.0.113.7","one.test","192.168.1.8","tproxy-in",443]';
     runtime.persist("delete", "entry", [key]);
     t.eq(model.suppression().entries[0].scope,key);
+    let other='["other","203.0.113.7","other.test","192.168.1.9","tproxy-in",8443]';
+    runtime.persist("delete", "other", [other]);
     runtime.persist("reset", "zap", []);
-    t.eq(model.suppression().entries,[]);
+    t.eq(length(model.suppression().entries),1);
+    t.eq(model.suppression().entries[0].scope,other,"reset preserves other source/domain/device/port scopes");
     fs.writefile(model.paths.suppression,"not-json");
     t.throws(() => model.suppression());
     t.throws(() => runtime.persist("delete","entry",[key]));
@@ -82,4 +85,22 @@ t.test("ordinary web mode needs no nonce endpoint and strict contracts remain ex
     t.throws(()=>model.contract({auto_routing_contract:'{"mode":"web","path":"/","port":443,"status":200,"failure_status":451}'}));
 });
 
+t.test("bounded registry pages cover all 64 records and exclude foreign sources", () => {
+    let view=require("diagnostics.auto_records");let candidates=[];
+    for(let i=0;i<64;i++)push(candidates,{id:sprintf("c%05d",i),source_id:"zap",ip:sprintf("203.0.113.%d",i),domain:i==63 ? "last.test" : "",status:"identity_unknown"});
+    push(candidates,{id:"foreign",source_id:"other",ip:"203.0.113.1",domain:"last.test"});
+    let snapshot={registry_version:2,sources:[{id:"zap",outbound:"zap"}],candidates,leases:[],decisions:[],unattributed:[]};
+    let page=view.select(snapshot,[],{source_section:"zap",status:"pending",page:2,page_size:25});
+    t.eq(length(page.rows),25);t.eq(page.total,64);t.eq(length(page.selection),64);t.eq(page.rows[0].id,"c00025");
+    t.eq(view.select(snapshot,[],{source_section:"zap",status:"pending",search:"last.test",page:1,page_size:25}).total,1);
+    t.throws(()=>view.select(snapshot,[],{source_section:"zap",page_size:5000}));
+});
+t.test("WARP UI toggle preserves its stored profile and leaves baseline policy intact", () => {
+    let config={experimental:{clash_api:{secret:"synthetic"}},outbounds:[],endpoints:[],dns:{servers:[]}};
+    let source={".name":"zap",action:"zapret2",auto_routing_enabled:"1",auto_routing_warp:"saved-unavailable-profile",auto_routing_use_warp:"0"};
+    model.paths.suppression=require("stub").tmpdir()+"/toggle-suppression.json";
+    let result=model.sources(config,[source],(id)=>id);
+    t.eq(result[0].warp,"");t.eq(result[0].probe_zapret,true);
+    t.eq(source.auto_routing_warp,"saved-unavailable-profile");
+});
 t.done();

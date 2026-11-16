@@ -1,5 +1,110 @@
 # Проверки
 
+## 0.1.7 / r12 — финальные локальные gates, 2026-11-16
+
+Новое принятое ТЗ разрешает prerelease после проверок. [Контракт реестра и оставшиеся ограничения](AUTO_REGISTRY_017.md). Предыдущие UI v2/r11 записи ниже исторические.
+
+Свежий последовательный frontend run из `fe-app-kabanmax`:
+
+```powershell
+node node_modules/vitest/vitest.mjs run --reporter=dot
+node node_modules/typescript/bin/tsc --noEmit
+$uxLint = Get-Content -Raw ../.local/audit/task017/lint-files.json | ConvertFrom-Json
+node node_modules/eslint/bin/eslint.js @uxLint
+node ../scripts/generate-fingerprints.mjs --check
+node node_modules/tsup/dist/cli-default.js src/main.ts
+```
+
+PASS **176 файлов / 1686 тестов**, tsc, целевой lint изменённых+новых frontend файлов, каталог и bundle. Логи — ignored `.local/audit/task017/frontend-final.txt`. Новый regression проверяет пачки 8/1, frozen source/filter, no retry и partial outcomes.
+
+Из корня, `$uxRoot=(Get-Location).Path`:
+
+```powershell
+docker run --rm --network none --mount "type=bind,source=$uxRoot,target=/work,readonly" -w /work forkop-zapret2-test-tools:local bash tests/run.sh
+docker run --rm --network none --mount "type=bind,source=$uxRoot,target=/work,readonly" -w /work forkop-zapret2-test-tools:local bash tests/installer-upgrade-017.sh
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-ui-browser.ps1
+git diff --check
+```
+
+PASS **92/92 backend**, base/tiny upgrade decision 0.1.6/r11→0.1.7/r12, diff check. Новый backend test: атомарные intents, reload, 64 limit без eviction, flash budget, source/domain/device/port isolation, eligible-only/idempotent bulk, exact reset и rollback grant при ошибке durable write. Headless Edge: **320/375/768/1280 и dark 375**, help lifecycle, status DOM, flag gating/alignment, 25-row pagination, bulk всех 64 через другие страницы, textarea ≥6/vertical resize/длинные строки без горизонтальной прокрутки, пустая auto-вкладка и смена dependencies — PASS.
+
+Чистые Go race suites из pinned upstream + всех восьми patches:
+
+```powershell
+docker run --rm --network none --mount "type=bind,source=$uxRoot\.local\core-src,target=/source,readonly" --mount "type=bind,source=$uxRoot\core,target=/core,readonly" --mount "type=bind,source=$uxRoot\scripts,target=/scripts,readonly" --mount "type=bind,source=$uxRoot\tests\core,target=/extra-tests,readonly" --mount type=volume,source=kabanmax-chrome155-go-mod,target=/go/pkg/mod --mount type=volume,source=kabanmax-chrome155-go-build,target=/go/build -e GOMODCACHE=/go/pkg/mod -e GOCACHE=/go/build -e GOTOOLCHAIN=go1.26.10 kabanmax-release:2.1.0 sh /extra-tests/run_auto_routing.sh
+```
+
+PASS `common/autoroute`, `route`, `experimental/clashapi`, `protocol/group`, `experimental/cachefile`. Registry tests покрывают fresh strict restore, ограничение исходным TTL, отсутствие auto-restore expired/web, лимиты RAM/reserved scopes, source-owned candidate exclude и exact reset, сохранение proof другого устройства. Raw `.local/core-src` не менялся; отдельный `core-work` использовался только для подготовки patch 0008.
+
+ARM64 base/tiny и x86_64 smoke заново собраны `scripts/build-core.sh` с `CORE_SOURCE=/source`, `GOPROXY=off`, `GOFLAGS=-p=2`, теми же mounts/caches и package version **1.14.4-r12**. Результаты в ignored `task017/release` и `task017/smoke`; логи `core-packages-final.txt`. Исполняемый smoke:
+
+```powershell
+docker run --rm --network none --cap-add NET_ADMIN --mount "type=bind,source=$uxRoot\tests\core,target=/tests,readonly" --mount "type=bind,source=$uxRoot\.local\audit\task017\smoke,target=/output,readonly" --mount "type=bind,source=$uxRoot\.local\audit\auto-routing-04b\fixtures,target=/fixtures,readonly" --mount "type=bind,source=$uxRoot\.local\audit\auto-routing-04b\tools,target=/tools,readonly" kabanmax-release:2.1.0 python3 /tests/auto_routing_binary.py /output/build/amd64/base/sing-box /fixtures /tools
+```
+
+PASS synthetic strict/ordinary TLS, actual FakeIP, CDN/mixed DNS/first-match/TTL/restart во всех pre-resolve режимах; exact IP-only exclusion/reset и запрет чужого source. Только loopback HTTPS/DNS и documentation IP в отдельном network namespace.
+
+Финальные пакеты:
+
+```powershell
+docker run --rm --network none --mount "type=bind,source=$uxRoot,target=/work,readonly" --mount "type=bind,source=$uxRoot\.local\audit\task017\release,target=/output" -e PO2LMO=/usr/local/bin/po2lmo -w /work kabanmax-release:2.1.0 bash -c 'set -e; bash scripts/build-zapret2-local.sh 0.1.7 /output; bash scripts/finalize-release.sh /output; python3 /work/.local/audit/task017/inspect_packages.py; bash tests/installer-release-pin.sh; bash tests/release-manifest-smoke.sh; bash -n install.sh tests/installer-upgrade-017.sh'
+```
+
+PASS **10 APK/IPK, 13 SHA256, 14 assets**, official RU po2lmo, manifests, minimum/core comparison, payload allowlist, bundle с подстановкой 0.1.7, binary identity/licences, pin/reinstall. Это извлечение пакетов и mock upgrade, не установка на OpenWrt.
+
+RED/неудачные эксперименты: core API и restore tests сначала отказали на старом r11; storage test — отсутствующий модуль. Первый full backend выявил только старое ожидание package r11; обновлено на r12, повтор 92/92. Windows cp1251 повредил вспомогательный browser fixture при генерации; восстановлен UTF-8, вся матрица повторена. `Array.at` не входил в ES2020 lib — заменён индексом, tsc/lint повторены. В executable test имя локальной переменной затеняло `exact()`; исправлено, финальный smoke повторён на окончательном бинарнике. Старые логи сохранены рядом с финальными.
+
+UNVERIFIED: аппаратные LuCI/themes/Save & Apply/reboot, ARM64 execution, реальные WARP/VPN/DNS/egress и package install/upgrade/downgrade. Auto capture пакетный до 60 с, ordinary HTTPS остаётся manual-only, IP-only не получает lease. Универсальная детекция DPI и бесперебойное восстановление после потери питания не заявлены.
+
+## UI v2 — финальная локальная проверка, 2026-11-16
+
+Публикация отменена пользователем. Коммитов/push/тегов/releases и новых пакетов нет; core не менялся и Go/core build не повторялись. [Сделанное, границы API и глобальный UX-аудит](audits/UI_FIXES_V2.md).
+
+Из `fe-app-kabanmax`, последовательные команды (bundle перед тестами уже соответствовал исходникам):
+
+```powershell
+node node_modules/vitest/vitest.mjs run --reporter=dot
+node node_modules/typescript/bin/tsc --noEmit
+$uxLint = Get-Content -Raw ../.local/audit/ui-v2/lint-files.json | ConvertFrom-Json
+node node_modules/eslint/bin/eslint.js @uxLint
+node ../scripts/generate-fingerprints.mjs --check
+node node_modules/tsup/dist/cli-default.js src/main.ts
+```
+
+PASS: **176 файлов / 1685 тестов**; tsc, целевой lint **18 изменённых/новых frontend файлов**, каталог и bundle — exit 0. Список lint построен из `git diff --name-only` и `git ls-files --others --exclude-standard` только для frontend src/tests; JSON находится в ignored audit. Финальный full run также включает 10 повторных загрузок WARP-профиля без дублирования. Лог: `.local/audit/ui-v2/frontend-final.txt`.
+
+Из корня (локальные контейнеры без сети):
+
+```powershell
+$uxRoot = (Get-Location).Path
+docker run --rm --network none --mount "type=bind,source=$uxRoot,target=/work,readonly" -w /work forkop-zapret2-test-tools:local bash tests/run.sh diagnostics/auto_routing
+docker run --rm --network none --mount "type=bind,source=$uxRoot,target=/work,readonly" -w /work forkop-zapret2-test-tools:local bash tests/run.sh service/state_service
+docker run --rm --network none --mount "type=bind,source=$uxRoot,target=/work,readonly" -w /work kabanmax-release:2.1.0 /usr/local/bin/po2lmo /work/luci-app-kabanmax/po/ru/kabanmax.po /tmp/ui-v2.lmo
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-ui-browser.ps1
+git diff --check
+```
+
+PASS: backend **1/1 diagnostics + 1/1 state_service**, RU po2lmo, diff check. Backend проверяет synthetic 500/5000, page_size cap, whole-snapshot search, чужую секцию и сохранение другого domain/device/port при source reset, а также сохранение выключенного WARP-профиля.
+
+Headless Edge PASS: **320/375/768/1280 + dark 375**. Настоящий DOM проверяет status.hidden/вычисленную видимость/порядок над кнопкой, help outside/inside/Escape/другую подсказку/10 циклов, позицию checkbox, viewport, main/strict/IP-only gating и DOM ≤100 строк при synthetic 500/5000. Fixtures структурно соответствуют официальному LuCI CBI DOM; установленная на роутере тема не загружалась. Live LuCI/theme/реальные LAN RPC/Save & Apply/physical networking/ARM64 runtime остаются **UNVERIFIED**.
+
+Зафиксированные RED: отсутствовал `diagnostics.auto_records`; отсутствовала компактная VPN форма; после реализации старые тесты редактировали скрытые поля без включения «Показать параметры», FakeNode не имел addEventListener, password contract не учитывал маскировку REALITY public key. Тесты обновлены под новый UI, no-op/validation/unknown URI regressions остались активными. Один финальный wrapper вызвал Git из другого Windows user context без safe.directory; full Vitest/tsc/build прошли, но список lint затем независимо пересоздан в исходном контексте и все 18 файлов проверены повторно. Глобальный Git config не менялся.
+
+## LuCI boolean attributes — 2026-11-16, после выпуска 0.1.6
+
+По сообщению пользователя и серой Refresh на скриншоте проверена реальная [LuCI dom.attr](https://github.com/openwrt/luci/blob/master/modules/luci-base/htdocs/luci-static/resources/luci.js): false передаётся в setAttribute, а наличие hidden/disabled остаётся истинным HTML boolean attribute. Ранее mock копировал false как DOM property и скрывал дефект. Исправленные mocks дали RED отдельно для updateFeedback и autoRouting. Production теперь устанавливает `.hidden` и `.disabled` через свойства DOM. Zapret2 уже менял hidden через property, поэтому его статус был виден.
+
+Из `fe-app-kabanmax`, последовательно, свежий PASS:
+
+```powershell
+node node_modules/vitest/vitest.mjs run src/kabanmax/tabs/sections/tests/autoRouting.test.ts src/kabanmax/tabs/components/tests/updateFeedback.test.ts src/kabanmax/tabs/components/tests/releaseCheck.test.ts src/kabanmax/tabs/components/tests/zapret2Feedback.test.ts
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/eslint/bin/eslint.js src/kabanmax/tabs/sections/autoRouting.ts src/kabanmax/tabs/sections/tests/autoRouting.test.ts src/kabanmax/tabs/components/initController.ts src/kabanmax/tabs/components/tests/updateFeedback.test.ts
+node node_modules/tsup/dist/cli-default.js src/main.ts
+```
+
+4 файла / **11 тестов**, tsc/lint/bundle exit 0; `git diff --check` из корня PASS. Полный suite/backend/core не повторялись: изменён только локальный UI. Установки, подключения к устройствам и новая публикация не выполнялись; реальный браузер LuCI остаётся UNVERIFIED. Выпущенные 0.1.6 assets не менялись.
+
 ## Публикация 0.1.6 подтверждена — 2026-11-16
 
 [Release](https://github.com/fefenke/kaban-max/releases/tag/0.1.6), source/tag commit `4445219fa62eac084143620a35bb58d34b704008`. Frontend CI, Backend CI (включая новые language/minimum smoke), Documentation, Patched core fallback и Differential ShellCheck — success. GitHub API подтвердил draft=false/prerelease=true. Отдельная проверка публичного `/git/ref/tags/0.1.6` и загрузка **каждого из 14 browser_download_url**: точный commit, локальный/remote/API SHA256 и размер совпали; SHA256SUMS содержит 13 корректных записей, release/core manifests — 0.1.6/r11. Полный результат в ignored `.local/audit/final-qa-publish/public-verification.json`. Полевая приёмка остаётся UNVERIFIED, устройства не использовались. Локальные команды и результаты ниже относятся к выпущенным исходникам; публикационная запись меняет только документацию.

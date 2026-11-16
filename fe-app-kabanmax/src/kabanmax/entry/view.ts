@@ -21,6 +21,9 @@ import { createSettingsContent } from '../tabs/settings';
 import { configureGridSection } from './gridSection';
 import { createPageStatus } from './pageStatus';
 import { pageTitle } from './pageTitle';
+import { installFormUx } from '../cbi/formUx';
+
+let disposeFormUx: (() => void) | undefined;
 
 // A tab that renders itself: one anonymous section holding the node its controller binds to.
 function addMountedTab(
@@ -107,13 +110,15 @@ export const KabanMaxView = {
     };
     createSettingsContent(settingsSection);
 
-    addMountedTab(kabanmaxMap, 'diagnostic', _('Status'), DiagnosticTab);
+    addMountedTab(kabanmaxMap, 'diagnostic', _('Diagnostics'), DiagnosticTab);
     addMountedTab(kabanmaxMap, 'dashboard', _('Dashboard'), DashboardTab);
     addMountedTab(kabanmaxMap, 'monitoring', _('Monitoring'), MonitoringTab);
     addMountedTab(kabanmaxMap, 'logs', _('Logs'), LogsTab);
     addMountedTab(kabanmaxMap, 'components', _('Components'), ComponentsTab);
 
     const rendered = await kabanmaxMap.render();
+    disposeFormUx?.();
+    disposeFormUx = installFormUx(rendered);
     coreService();
 
     return rendered;

@@ -7,10 +7,6 @@ import {
 import { modalOptionFormValue, setModalOptionValue } from '../../cbi/modal';
 import { copyToClipboard } from '../../../helpers/copyToClipboard';
 import { showToast } from '../../../helpers/showToast';
-import {
-  selectableFingerprints,
-  fingerprintLabel,
-} from '../../services/tlsFingerprints';
 import { currentFingerprintSelection } from './fingerprintOptions';
 
 const FIELD_KEYS = [
@@ -38,6 +34,7 @@ const FIELD_KEYS = [
 export function connectionEditorDefaults(uri: string): ChildSettings {
   const fields = parseConnectionUri(uri);
   return Object.fromEntries([
+    ['_uri_show', '0'],
     ['_uri_editor', fields.supported ? 'fields' : 'raw'],
     ['_uri_source', uri],
     ...FIELD_KEYS.map((key) => [`_uri_${key}`, fields[key]]),
@@ -88,6 +85,13 @@ export function addConnectionEditorOptions(
   section: CBISection,
   validateUri: (uri: string) => true | string,
 ) {
+  const show = section.option(form.Flag, '_uri_show', _('Show parameters'));
+  show.default = '0';
+  show.write = () => undefined;
+  show.remove = () => undefined;
+  show.description = _(
+    'Show editable protocol parameters. Viewing does not change the original connection URI.',
+  );
   let option = section.option(
     form.ListValue,
     '_uri_editor',
@@ -95,6 +99,7 @@ export function addConnectionEditorOptions(
   );
   option.value('fields', _('Editable fields'));
   option.value('raw', _('Original URI'));
+  option.retain = true;
   option.rmempty = false;
   option.description = _(
     'Fields are available for VLESS, Trojan, AnyTLS, SOCKS and HTTP proxies. Other formats keep the original URI. Unknown parameters are preserved.',
@@ -112,13 +117,13 @@ export function addConnectionEditorOptions(
   option.password = true;
   option.retain = true;
   option.rmempty = false;
-  option.depends('_uri_editor', 'raw');
+  option.depends({ _uri_editor: 'raw', _uri_show: '1' });
   option.validate = (_id, value) =>
     `${value || ''}`.trim() ? validateUri(`${value}`) : _('Required');
 
   option = section.option(form.Button, '_uri_import', _('Import URI'));
   option.inputtitle = _('Import into fields');
-  option.depends('_uri_editor', 'raw');
+  option.depends('_uri_internal', '1');
   option.onclick = () => {
     const raw =
       `${modalOptionFormValue(section.map, 'settings', 'uri') ?? ''}`.trim();
@@ -175,14 +180,20 @@ export function addConnectionEditorOptions(
             : ['tls', 'xtls', 'reality'];
           securityModes.forEach((security) =>
             o.depends({
+              _uri_show: '1',
               _uri_editor: 'fields',
               _uri_protocol: protocol,
               _uri_security: security,
             }),
           );
-        } else o.depends({ _uri_editor: 'fields', _uri_protocol: protocol });
+        } else
+          o.depends({
+            _uri_show: '1',
+            _uri_editor: 'fields',
+            _uri_protocol: protocol,
+          });
       });
-    else o.depends('_uri_editor', 'fields');
+    else o.depends({ _uri_show: '1', _uri_editor: 'fields' });
     return o;
   };
   const tls = ['vless', 'trojan', 'anytls'];
@@ -211,15 +222,8 @@ export function addConnectionEditorOptions(
   field('alpn', _('TLS ALPN (comma separated)'), tls).description = _(
     'WebSocket, gRPC, HTTPUpgrade and HTTP transports select ALPN in the core; this value applies only where the transport permits it.',
   );
-  field('publicKey', _('REALITY public key'), tls);
+  field('publicKey', _('REALITY public key'), tls).password = true;
   field('shortId', _('REALITY short ID'), tls).password = true;
-  const fingerprint = field('fingerprint', _('Fingerprint in URI'), tls);
-  selectableFingerprints.forEach((profile) =>
-    fingerprint.value(profile.id, fingerprintLabel(profile.id)),
-  );
-  fingerprint.description = _(
-    'The separate TLS fingerprint below overrides this value. Copy link exports the effective fingerprint.',
-  );
   field('flow', _('VLESS flow'), ['vless']);
   field('encryption', _('VLESS encryption'), ['vless']);
   field('transport', _('Transport'), transport, [
@@ -263,6 +267,7 @@ export function addConnectionEditorOptions(
     transport.forEach((protocol) =>
       transports.forEach((type) =>
         o.depends({
+          _uri_show: '1',
           _uri_editor: 'fields',
           _uri_protocol: protocol,
           _uri_transport: type,
@@ -271,7 +276,7 @@ export function addConnectionEditorOptions(
     );
     if (key === 'extra') o.password = true;
   }
-  option = section.option(form.Button, '_uri_export', _('Export connection'));
+  option = section.option(form.Button, '_uri_export', _('Copy link'));
   option.inputtitle = _('Copy link');
   option.description = _(
     'Copies effective portable parameters. ClientHello splitting, classical key exchange and cascade settings remain local and are not included in a share URI.',

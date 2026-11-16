@@ -61,7 +61,9 @@ jobs:
         run: tests/run.sh
 
       - name: Check explicit release selection
-        run: bash tests/installer-release-pin.sh
+        run: |
+          bash tests/installer-release-pin.sh
+          bash tests/installer-upgrade-017.sh
 
       - name: Check installer language and release core minimum
         run: |

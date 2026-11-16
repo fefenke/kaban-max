@@ -2,9 +2,9 @@ name: Patched core fallback
 on:
   push:
     branches: [main]
-    paths: ['core/**', 'scripts/build-core.sh', 'scripts/brand-core.py', '.github/workflows/core-ci.yml']
+    paths: ['core/**', 'tests/core/**', 'scripts/build-core.sh', 'scripts/brand-core.py', '.github/workflows/core-ci.yml']
   pull_request:
-    paths: ['core/**', 'scripts/build-core.sh', 'scripts/brand-core.py', '.github/workflows/core-ci.yml']
+    paths: ['core/**', 'tests/core/**', 'scripts/build-core.sh', 'scripts/brand-core.py', '.github/workflows/core-ci.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,3 +30,10 @@ jobs:
       - name: Test TLS fingerprints, parsers and fallback including concurrent checks
         working-directory: /tmp/kaban-core
         run: go test -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./cmd/sing-box ./parser/... ./protocol/parser ./protocol/group ./common/tls ./common/tlsfragment
+      - name: Test scoped automatic registry and restoration
+        working-directory: /tmp/kaban-core
+        run: |
+          cp "$GITHUB_WORKSPACE/tests/core/auto_routing_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_web_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_registry_test.go" common/autoroute/
+          go test -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./common/autoroute ./route ./experimental/clashapi ./experimental/cachefile

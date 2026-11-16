@@ -43,6 +43,24 @@ function storedLinks() {
 }
 
 describe('manual servers referenced by fallback levels', () => {
+  it('keeps protocol parameters collapsed and has one effective TLS selector', async () => {
+    const list = linkList();
+    const values = [];
+    paste(
+      list,
+      values,
+      'vless://a@node.example:443?security=tls&fp=chrome#Node',
+    );
+    const dialog = await harness.openDialog(list, 'sec', values[0]);
+    const fields = dialog.map.children[0].children;
+    const option = (name) => fields.find((o) => o.option === name);
+    expect(option('_uri_show').default).toBe('0');
+    expect(option('_uri_server').deps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ _uri_show: '1' })]),
+    );
+    expect(option('tls_fingerprint').vallist).not.toContain('Firefox 148');
+    expect(option('_tls_variant').vallist).toEqual(['133', '155']);
+  });
   beforeEach(() => {
     for (const [id, name, order] of [
       ['austria', 'Austria', '0'],
@@ -91,6 +109,9 @@ describe('manual servers referenced by fallback levels', () => {
     dialog.map.children[0].children.find(
       (o) => o.option === '_uri_editor',
     ).formvalue = () => 'raw';
+    dialog.map.children[0].children.find(
+      (o) => o.option === '_uri_show',
+    ).formvalue = () => '1';
     expect((await dialog.save()).saved).toBe(true);
     expect(harness.store.get('poland').uri).toBe('socks://127.0.0.1:1081#New');
     for (const name of ['Warsaw', 'Poland']) {
@@ -338,6 +359,7 @@ describe('a stored link', () => {
     const dialog = await harness.openDialog(list, 'sec', 'link1');
     const field = (name) =>
       dialog.map.children[0].children.find((o) => o.option === name);
+    field('_uri_show').formvalue = () => '1';
     expect(field('tls_fingerprint').keylist).toContain('randomized');
     expect(field('tls_fingerprint').keylist).toContain('qq');
     expect(field('tls_fingerprint').keylist).not.toContain('chrome_psk');
@@ -390,6 +412,7 @@ describe('a stored link', () => {
     };
     const fields = dialog.map.children[0].children;
     const field = (name) => fields.find((o) => o.option === name);
+    field('_uri_show').formvalue = () => '1';
     expect(field('_uri_port').formvalue('settings')).toBe('443');
     expect(field('_uri_security').formvalue('settings')).toBe('reality');
     field('_uri_port').formvalue = () => '8443';
@@ -432,6 +455,7 @@ describe('a stored link', () => {
     const dialog = await harness.openDialog(list, 'sec', 'link1');
     const field = (name) =>
       dialog.map.children[0].children.find((o) => o.option === name);
+    field('_uri_show').formvalue = () => '1';
     field('_uri_port').formvalue = () => '65536';
     field('_uri_credential').formvalue = () => 'never-log-this';
     const before = JSON.stringify(harness.store.get('link1'));
@@ -450,6 +474,7 @@ describe('a stored link', () => {
     const dialog = await harness.openDialog(list, 'sec', 'link1');
     const field = (name) =>
       dialog.map.children[0].children.find((o) => o.option === name);
+    field('_uri_show').formvalue = () => '1';
     for (const option of dialog.map.children[0].children) {
       option.getUIElement = () => ({
         setValue: (value) => {
@@ -553,6 +578,7 @@ describe('a stored link', () => {
     const dialog = await harness.openDialog(list, 'sec', 'link1');
     const fields = dialog.map.children[0].children;
     const field = (name) => fields.find((option) => option.option === name);
+    field('_uri_show').formvalue = () => '1';
     expect(dialog.map.data.get(dialog.map.config, 'settings', 'uri')).toBe(
       'vless://a@a.example:443#USA',
     );
@@ -599,6 +625,7 @@ describe('a stored link', () => {
     const dialog = await harness.openDialog(linkList(), 'sec', 'link1');
     const fields = dialog.map.children[0].children;
     const field = (name) => fields.find((option) => option.option === name);
+    field('_uri_show').formvalue = () => '1';
     field('uri').formvalue = () =>
       'vless://a@a.example:443?security=reality#USA';
     field('_uri_editor').formvalue = () => 'raw';

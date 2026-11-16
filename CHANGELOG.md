@@ -1,5 +1,23 @@
 # Изменения
 
+## 0.1.7 preview — 2026-11-16
+
+- Core r12: до 64 RAM-наблюдений/leases, exact source/scope suppression API, безопасный restore сохранённых strict intents после нового flow и verifier, без продления исходного TTL.
+- Отдельное atomic хранение applied/excluded, бюджет записи во flash, отказ при переполнении без молчаливого удаления; scoped bulk и удаление одного исключения с partial results.
+- Страницы по 25, единые подсказки и выравнивание, textarea от шести строк с переносом, скрытие пустых auto-вкладок; ранее подготовленные обновления/Диагностика/VPN/uTLS из UI v2 включены.
+- Ordinary HTTPS остаётся manual-only, IP-only — диагностика/точное исключение. Hardware/real egress не проверены. [Контракт и ограничения](docs/AUTO_REGISTRY_017.md).
+
+### Подготовлено ранее в UI v2, включено в 0.1.7
+
+- Общие CBI подсказки по клику рядом с названием, scoped alignment; Диагностика со свёрнутым forecast и LAN chooser.
+- Компактный VPN editor с сохранением URI и каталогом browser/version; source-only Zapret2 controls и серверные страницы ограниченного IP snapshot.
+- Честные ограничения r11 для IP-only/generic auto-apply и filtered bulk/reset; [полный отчёт](docs/audits/UI_FIXES_V2.md).
+- На этом предыдущем этапе публикация была отменена; новое ТЗ разрешило выпуск 0.1.7 после проверок.
+
+## Не выпущено — после 0.1.6
+
+- LuCI: показывается результат проверки обновлений приложения; кнопки автоматического списка маршрутов получают корректное состояние доступности. Исправлены hidden/disabled boolean attributes и воспроизводящие их mocks.
+
 ## 0.1.6 — предварительная версия
 
 - Core 1.14.4-r11, pinned upstream + patches 0001–0007: mixed DNS/FakeIP isolation, scoped fail-closed и opt-in проверка маршрута. Обычный HTTPS даёт ручное предложение; auto-apply требует strict nonce-контракта.

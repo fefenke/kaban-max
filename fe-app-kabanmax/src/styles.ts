@@ -8,8 +8,10 @@ import { LogsTab } from './kabanmax/tabs/logs';
 import { PartialStyles } from './partials';
 import { KABANMAX_UCI_PACKAGE as KABANMAX_CBI_PREFIX } from './constants';
 import { SPIN_PERIOD_MS } from './helpers/spinPhase';
+import { formUxStyles } from './kabanmax/cbi/formUx';
 
 export const GlobalStyles = `
+${formUxStyles}
 ${DashboardTab.styles}
 ${DiagnosticTab.styles}
 ${MonitoringTab.styles}

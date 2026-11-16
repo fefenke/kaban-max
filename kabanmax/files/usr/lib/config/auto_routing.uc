@@ -112,7 +112,7 @@ function sources(config, sections, tag_for_section) {
     let result = [];
     for (let section in enabled) {
         if (common.option(section, "action", "") != "zapret2") die("Automatic routing can only start from a Zapret2 section");
-        let warp = common.option(section, "auto_routing_warp", "");
+        let warp = common.bool_option(section, "auto_routing_use_warp", true) ? common.option(section, "auto_routing_warp", "") : "";
         let warp_section = "";
         if (length(tag_for_section(section[".name"])) > 128) die("Automatic routing section names must not exceed 128 bytes");
         if (warp != "") {
@@ -127,6 +127,8 @@ function sources(config, sections, tag_for_section) {
             }
         }
         push(result, { ...contract(section), id: section[".name"], outbound: tag_for_section(section[".name"]),
+            saved: require("config.auto_registry").saved(section[".name"]),
+            registry_scopes: map(filter(require("config.auto_registry").load().entries,(e)=>common.parse_json(e.scope)[0]==section[".name"]),(e)=>e.scope),
             direct_section: common.option(section, "auto_routing_direct_section", ""),
             warp_section,
             excluded_sources: excluded.addresses, excluded_system: excluded.router,
