@@ -5293,16 +5293,6 @@ msgstr ""
 msgid "Stop"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRecords.ts:407
-#: luci-app-kabanmax/htdocs/luci-static/resources/view/kabanmax/main.js:18946
-msgid "Stop automatic routing now"
-msgstr ""
-
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRecords.ts:411
-#: luci-app-kabanmax/htdocs/luci-static/resources/view/kabanmax/main.js:18948
-msgid "Stop until the next Save & Apply? To disable permanently, turn off automatic routing and Save & Apply."
-msgstr ""
-
 #: fe-app-kabanmax/src/kabanmax/helpers/serviceStatusDisplay.ts:52
 #: luci-app-kabanmax/htdocs/luci-static/resources/view/kabanmax/main.js:32672
 msgid "stopped"

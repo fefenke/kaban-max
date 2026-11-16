@@ -40,4 +40,27 @@ t.test("failed durable approval withdraws the runtime grant instead of leaving a
  t.throws(()=>actions.run(sprintf("%J",{source_section:"zap",status:"pending",action:"apply",ids:["l10"]})));
  t.eq(active,[]);t.eq(registry.load().entries,[]);
 });
+t.test("forget removes only selected live and saved approvals and reports failed withdrawals",()=>{
+ fs.unlink(registry.paths.applied);fs.unlink(registry.paths.budget);fs.unlink(model.paths.suppression);
+ let actions=require("diagnostics.auto_registry");
+ let live=record(21);let saved=record(22);let failed=record(23);let neighbour=record(24);
+ let foreign={...record(25),source_id:"other",source:"other"};
+ registry.save("applied",map([live,saved,failed,neighbour,foreign],(row)=>({owner:"auto-routing",scope:registry.key(row),record:row})));
+ let excluded={owner:"auto-routing",scope:registry.key(record(26)),created:now};registry.save("excluded",[excluded]);
+ let calls=[];
+ actions.io.state=()=>({registry_version:2,version:1,sources:[{id:"zap",outbound:"zap"},{id:"other",outbound:"other"}],decisions:[],candidates:[],leases:[live,failed],unattributed:[]});
+ actions.io.request=(op,payload)=>{
+  push(calls,{op,...payload});
+  if(op=="registry_withdraw" && payload.id==failed.id)die("synthetic withdrawal failure");
+  return {};
+ };
+ let result=actions.run(sprintf("%J",{source_section:"zap",status:"applied",search:"",sort:"newest",action:"forget",ids:[live.id,"saved:"+registry.key(saved),failed.id,"saved:"+registry.key(foreign)]}));
+ t.eq(result.done,2);t.eq(result.failed,1);t.eq(result.skipped,1);
+ t.eq(length(filter(calls,(call)=>call.op=="registry_withdraw" && call.id==live.id && call.source_id=="zap")),1);
+ t.eq(length(filter(calls,(call)=>call.op=="registry_withdraw")),2);
+ let remaining=map(registry.load().entries,(entry)=>entry.scope);
+ t.eq(length(remaining),3);t.ok(index(remaining,registry.key(failed))>=0);t.ok(index(remaining,registry.key(neighbour))>=0);t.ok(index(remaining,registry.key(foreign))>=0);
+ t.eq(model.suppression().entries,[excluded]);
+});
+
 t.done();

@@ -101,6 +101,7 @@ async function test() {
   const count = 64;
   const requests: Record<string, unknown>[] = [];
   const batches: string[][] = [];
+  const operations: Record<string, unknown>[] = [];
   Object.assign(globalThis, {
     rpc: {
       declare:
@@ -114,6 +115,7 @@ async function test() {
             check(payload.source_section === 'zap', 'bulk source');
             check(payload.ids.length <= 8, 'batch limit');
             batches.push(payload.ids);
+            operations.push(payload);
             return {
               success: true,
               done: payload.ids.length,
@@ -135,7 +137,14 @@ async function test() {
                 ip: `203.0.113.${start + i}`,
                 source_id: 'zap',
                 source: 'zap',
-                status: 'identity_unknown',
+                status:
+                  params.status === 'applied'
+                    ? i % 2
+                      ? 'saved'
+                      : 'applied'
+                    : params.status === 'excluded'
+                      ? 'excluded'
+                      : 'identity_unknown',
                 domain_known: false,
               }),
             ),
@@ -178,6 +187,74 @@ async function test() {
     'all filtered records once across pages',
   );
   check(records.textContent?.includes('Completed: 64'), 'bulk result');
+  const search = records.querySelector<HTMLInputElement>('input[type=search]')!;
+  search.value = '203.0.113.';
+  search.dispatchEvent(new Event('input', { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  window.confirm = () => false;
+  const selectTab = async (prefix: string) => {
+    Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
+      .find((node) => node.textContent?.startsWith(prefix))!
+      .click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  await selectTab('Applied records');
+  const removeApplied = Array.from(
+    records.querySelectorAll<HTMLButtonElement>('button'),
+  ).find((node) => node.textContent === 'Remove all');
+  check(
+    removeApplied && !removeApplied.disabled,
+    'applied list has bulk deletion',
+  );
+  const beforeCancel = operations.length;
+  removeApplied!.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check(
+    operations.length === beforeCancel,
+    'cancel bulk deletion performs no mutation',
+  );
+  window.confirm = () => true;
+  removeApplied!.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const deletedApplied = operations.slice(beforeCancel);
+  check(
+    deletedApplied.flatMap((op) => op.ids as string[]).length === 64 &&
+      deletedApplied.every(
+        (op) =>
+          op.action === 'forget' &&
+          op.status === 'applied' &&
+          op.source_section === 'zap' &&
+          op.search === '203.0.113.',
+      ),
+    'delete all applied spans pages and preserves tab/source',
+  );
+  await selectTab('Excluded');
+  const beforeExcluded = operations.length;
+  Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
+    .find((node) => node.textContent === 'Remove all')!
+    .click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const deletedExcluded = operations.slice(beforeExcluded);
+  check(
+    deletedExcluded.flatMap((op) => op.ids as string[]).length === 64 &&
+      deletedExcluded.every(
+        (op) =>
+          op.action === 'remove' &&
+          op.status === 'excluded' &&
+          op.source_section === 'zap' &&
+          op.search === '203.0.113.',
+      ),
+    'delete all exclusions preserves tab/source',
+  );
+  window.confirm = confirm;
+  check(
+    !records.textContent?.includes('Stop automatic routing now'),
+    'no redundant stop button',
+  );
+  check(
+    !records.textContent?.includes('Up to 64 records'),
+    'no constant technical notice',
+  );
   records.remove();
   const auto = document.createElement('section');
   auto.innerHTML =
@@ -207,6 +284,25 @@ async function test() {
   contract.value = '{"mode":"strict","domain":"one.test","prefix":"ok:"}';
   contract.dispatchEvent(new Event('input', { bubbles: true }));
   check(!apply.disabled, 'strict eligibility');
+  apply.checked = true;
+  contract.value = '';
+  contract.dispatchEvent(new Event('input', { bubbles: true }));
+  check(!apply.disabled, 'saved auto-apply can be turned off without strict');
+  apply.click();
+  check(
+    !apply.checked && apply.disabled,
+    'turning off never permits a new unsafe opt-in',
+  );
+  apply.checked = true;
+  main.checked = false;
+  main.dispatchEvent(new Event('change', { bubbles: true }));
+  check(!apply.disabled, 'saved auto-apply can be cleared with main disabled');
+  apply.click();
+  check(!apply.checked && apply.disabled, 'cleared auto-apply stays gated');
+  main.checked = true;
+  contract.value = '{"mode":"strict","domain":"one.test","prefix":"ok:"}';
+  contract.dispatchEvent(new Event('input', { bubbles: true }));
+  check(!apply.disabled && !direct.disabled, 'strict/main controls recover');
   check(
     auto.querySelector<HTMLInputElement>(
       '[data-name="auto_routing_ip_only"] input',

@@ -1,28 +1,29 @@
 // Adapt LuCI's rendered frames, leaving CBI values, dependencies and save hooks intact.
 export const formUxStyles = `
-.kabanmax-ui .cbi-value:not(.hidden) { display:grid; grid-template-columns:minmax(10em, 2fr) minmax(0,3fr); align-items:center; gap:.5em 1em; }
+.kabanmax-ui .cbi-value:not(.hidden) { display:grid; grid-template-columns:minmax(0,26em) minmax(0,1fr); align-items:center; gap:.5em 1em; min-height:3.2em; }
 .kabanmax-ui .cbi-value > .cbi-value-title { float:none; width:auto; margin:0; padding:0; text-align:left; line-height:1.5; }
 .kabanmax-ui .cbi-value > .cbi-value-field { width:auto; min-width:0; margin:0; padding:0; }
 .kabanmax-ui textarea { min-height:9em; resize:vertical; max-width:100%; box-sizing:border-box; white-space:pre-wrap; overflow-wrap:anywhere; overflow-x:hidden; }
 .kabanmax-ui .km-empty-auto-tab { display:none; }
-.kabanmax-ui .km-flag:not(.hidden) { grid-template-columns:minmax(0,1fr) auto; }
-.kabanmax-ui .km-flag > .cbi-value-field { display:flex; align-items:center; justify-content:center; }
+.kabanmax-ui .km-flag > .cbi-value-field { display:flex; align-items:center; justify-content:flex-start; }
 .kabanmax-ui .km-flag input[type=checkbox] { margin:0; vertical-align:middle; }
-.kabanmax-ui .km-nested { margin-left:1.5em; }
-.kabanmax-ui .km-nested-deep { margin-left:3em; }
+.kabanmax-ui .km-flag input[type=checkbox]:disabled { opacity:.55; }
 .kabanmax-ui.fkp-single-field-modal .cbi-value > .cbi-value-title { display:block; }
 .kabanmax-ui .cbi-value[data-name="_uri_editor"]:not(.hidden),.kabanmax-ui .cbi-value[data-name="_uri_import"]:not(.hidden) { display:none; }
-.km-help { display:inline-flex; align-items:center; justify-content:center; width:1.5em; height:1.5em; padding:0; margin:0 0 0 .4em; border:1px solid currentColor; border-radius:50%; color:inherit; background:transparent; font:inherit; font-size:.85em; vertical-align:middle; cursor:pointer; }
-.km-help:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
+.km-help { display:inline-flex; align-items:center; justify-content:center; inline-size:15px !important; min-inline-size:15px !important; block-size:15px; min-block-size:0 !important; padding:0 !important; margin:0 0 0 .4em; border:0; border-radius:50%; color:#fff; background:#1683da; font:bold 11px Arial,sans-serif; line-height:1; vertical-align:middle; cursor:pointer; }
+.km-help:focus-visible { outline:2px solid #1683da; outline-offset:3px; }
 .km-help-card { position:fixed; z-index:10001; box-sizing:border-box; width:max-content; max-width:min(26em,calc(100vw - 16px)); max-height:min(22em,calc(100vh - 16px)); overflow:auto; padding:1em; border:1px solid currentColor; border-radius:.5em; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 3px 18px #0004; }
 @media(prefers-color-scheme:dark) { .km-help-card { background:var(--background-color-high,#242424); color:var(--text-color-high,#eee); } }
-@media(max-width:480px) { .kabanmax-ui .cbi-value:not(.hidden):not(.km-flag) { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:600px) { .kabanmax-ui .cbi-value:not(.hidden):not(.km-flag) { grid-template-columns:minmax(0,1fr); } .kabanmax-ui .km-flag:not(.hidden) { grid-template-columns:minmax(0,1fr) auto; } }
 .km-forecast label { display:grid; gap:.35em; margin:.75em 0; }
 .km-forecast input,.km-forecast select { width:100%; box-sizing:border-box; }
 .km-records { overflow-x:auto; }
 .km-records table { width:100%; }
 .km-records td,.km-records th { padding:.5em; text-align:left; vertical-align:top; }
 .km-records__tools { display:flex; gap:.5em; flex-wrap:wrap; align-items:center; margin:.75em 0; }
+.km-records__pages { display:flex; justify-content:flex-end; align-items:center; gap:.6em; margin:1em 0 0; }
+.km-records__pages > .cbi-button { display:inline-flex; align-items:center; justify-content:center; inline-size:1.8em !important; min-inline-size:1.8em !important; block-size:1.8em; min-block-size:0; padding:0 !important; margin:0 !important; line-height:1; flex:0 0 1.8em; }
+.km-records__message:empty { display:none; }
 .kabanmax-ui .cbi-value[data-name="_automatic_routes"]:not(.hidden),.kabanmax-ui .km-forecast:not(.hidden) { grid-template-columns:minmax(0,1fr); }
 `;
 
@@ -82,11 +83,6 @@ export function installFormUx(root: HTMLElement): () => void {
     }
     for (const row of scope.querySelectorAll<HTMLElement>('.cbi-value')) {
       if (row.dataset.widget === 'CBI.FlagValue') row.classList.add('km-flag');
-      const name = row.dataset.name || '';
-      if (name.startsWith('auto_routing_') && name !== 'auto_routing_enabled')
-        row.classList.add(
-          name === 'auto_routing_ip_only' ? 'km-nested-deep' : 'km-nested',
-        );
       const title = row.querySelector<HTMLElement>(':scope > .cbi-value-title');
       if (!title) continue;
       const help = Array.from(
@@ -151,11 +147,18 @@ export function installFormUx(root: HTMLElement): () => void {
         >('input,select,textarea')) {
           if (!originallyDisabled.has(control))
             originallyDisabled.set(control, control.disabled);
+          // A stored opt-in remains clearable after its prerequisites disappear.
+          // Once cleared, it cannot be enabled without them again.
+          const clearableApply =
+            name === 'auto_routing_apply' &&
+            'checked' in control &&
+            control.type === 'checkbox' &&
+            control.checked;
           control.disabled =
             !!originallyDisabled.get(control) ||
-            !enabled ||
             name === 'auto_routing_ip_only' ||
-            (name === 'auto_routing_apply' && !strict);
+            (!clearableApply &&
+              (!enabled || (name === 'auto_routing_apply' && !strict)));
         }
       }
       const advanced = tab.querySelector<HTMLElement>(
