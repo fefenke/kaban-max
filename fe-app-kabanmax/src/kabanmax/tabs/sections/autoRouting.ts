@@ -234,6 +234,9 @@ export function attachAutoRouting(section: CBISection) {
     _('Found IPs'),
   );
   list.modalonly = true;
+  list.description = _(
+    'Up to 64 records per list. Saved approvals are inactive until fresh verification; bulk actions use the entire current filter.',
+  );
   list.depends('action', 'zapret2');
   list.write = () => undefined;
   list.remove = () => undefined;

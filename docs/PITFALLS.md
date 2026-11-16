@@ -6,6 +6,8 @@
 
 ## UI v2
 
+0.1.8: нельзя блокировать checked opt-in только из-за отсутствия prerequisites — разрешение должно отзываться. После снятия снова блокировать включение без strict/main; исходный readonly сохранять. `minmax(0,1fr) auto` для desktop Flag растягивает промежуток до правого края: использовать общую с полями колонку. Компактным help/стрелкам нужен явный min-inline-size/padding из-за стилей LuCI-тем.
+
 Распознавать Flag по `data-widget="CBI.FlagValue"`, а не по любому вложенному checkbox: MultiValue/dropdown также могут содержать checkbox. LuCI label click toggles control; кнопке help нужен stopPropagation до этого обработчика. Не скрывать help однополевой модалки вместе с её title. Snapshot cache нужно инвалидировать в `state_service` после завершения worker: CLI-процесс имеет другой module cache. При смене фильтра во время RPC старый ответ не должен обновлять таблицу. [Проверки и границы](audits/UI_FIXES_V2.md).
 
 LuCI E/dom.attr записывает boolean false через setAttribute: `hidden="false"` скрывает, `disabled="false"` блокирует. Для таких состояний присваивать DOM properties либо вообще не создавать атрибут при false. Mock `...attrs` не моделирует эту семантику; regression должен различать attribute presence и property value. Воспроизведено для release feedback и кнопок autoRouting после 0.1.6.

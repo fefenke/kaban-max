@@ -6,6 +6,8 @@
 
 ## UI v2: CBI-адаптер и честная граница core
 
+Уточнение 0.1.8: desktop-колонка полей 26em, синие help справа от подписей, без вложенных отступов; компактные стрелки справа. Checked auto-apply доступен для снятия без prerequisites, unchecked включается только при их наличии. Массовое удаление «Применены» использует `forget`, «Исключены» — `remove`, только source/status/search выбранного списка. Утверждено пользователем; [проверки](audits/UI_STYLE_PROPOSAL.md).
+
 Подсказки и layout адаптируют отрендеренные KABANMAX frames; UCI write/load/depends/retain и обработчики остаются LuCI. `auto_records` пагинирует только доступный core snapshot и persistent suppression, с page_size 25/50/100, source filtering и двухсекундным общим read cache. Не эмулировать полный реестр или filtered bulk по обрезанному State; не править persistent suppression отдельно от runtime. Пересмотр — после нового scoped/versioned core API. [Доказательства](audits/UI_FIXES_V2.md).
 
 ## 2026-11-16 — ordinary HTTPS не даёт автоматического разрешения

@@ -1,11 +1,6 @@
 import { E } from '../../../helpers/element';
 import { callUbus } from '../../../helpers/callUbus';
-import {
-  autoAction,
-  canApply,
-  statusText,
-  type AutoEntry,
-} from './autoRouting';
+import { canApply, statusText, type AutoEntry } from './autoRouting';
 
 export interface RecordQuery {
   source_section: string;
@@ -89,14 +84,14 @@ export async function registryAction(
 }
 export function renderAutoRecords(sectionId: string) {
   const root = E('div', { class: 'km-records' }, []);
-  const message = E('p', {}, _('Loading…'));
+  const message = E('p', { class: 'km-records__message' }, _('Loading…'));
   message.setAttribute('aria-live', 'polite');
   const outcome = E('p', {}, '');
   outcome.setAttribute('aria-live', 'polite');
   const tabs = E('div', { class: 'km-records__tools', role: 'group' }, []);
   const actions = E('div', { class: 'km-records__tools' }, []);
   const body = E('div', {}, []);
-  const pages = E('div', { class: 'km-records__tools' }, []);
+  const pages = E('div', { class: 'km-records__pages' }, []);
   const query: RecordQuery = {
     source_section: sectionId,
     status: 'pending',
@@ -211,6 +206,14 @@ export function renderAutoRecords(sectionId: string) {
           button(
             _('Remove all'),
             () => mutate('remove', ids),
+            !bulkSupported || !ids.length,
+          ),
+        );
+      if (query.status === 'applied')
+        actions.append(
+          button(
+            _('Remove all'),
+            () => mutate('forget', ids),
             !bulkSupported || !ids.length,
           ),
         );
@@ -350,9 +353,7 @@ export function renderAutoRecords(sectionId: string) {
             )
           : '') ||
         (supported
-          ? _(
-              'Up to 64 records per list. Saved approvals are inactive until fresh verification; bulk actions use the entire current filter.',
-            )
+          ? ''
           : data.reason || _('Registry actions require the r12 core API'));
     } catch (error) {
       message.textContent =
@@ -402,30 +403,6 @@ export function renderAutoRecords(sectionId: string) {
     message,
     body,
     pages,
-    E('details', {}, [
-      E('summary', {}, _('Advanced settings')),
-      button(_('Stop automatic routing now'), async () => {
-        if (
-          busy ||
-          !window.confirm(
-            _(
-              'Stop until the next Save & Apply? To disable permanently, turn off automatic routing and Save & Apply.',
-            ),
-          )
-        )
-          return;
-        busy = true;
-        try {
-          await autoAction('disable', sectionId);
-        } catch (error) {
-          outcome.textContent =
-            error instanceof Error ? error.message : String(error);
-        } finally {
-          busy = false;
-          void load();
-        }
-      }),
-    ]),
   );
   let mounted = false;
   let last = 0;

@@ -2858,12 +2858,6 @@ msgstr "Статус"
 msgid "Stop"
 msgstr "Остановить"
 
-msgid "Stop automatic routing now"
-msgstr "Остановить автомаршрутизацию сейчас"
-
-msgid "Stop until the next Save & Apply? To disable permanently, turn off automatic routing and Save & Apply."
-msgstr "Остановить до следующего сохранения и применения? Для постоянного отключения снимите главную галочку и сохраните настройки."
-
 msgid "stopped"
 msgstr "остановлен"
 
