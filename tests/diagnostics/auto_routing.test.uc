@@ -3,6 +3,10 @@ let detect = require("diagnostics.auto_detect");
 let model = require("config.auto_routing");
 let fixture = require("fixture");
 let generator = require("singbox.generator");
+let registry = require("config.auto_registry");
+registry.paths.budget = require("stub").tmpdir() + "/auto-routing-write-budget.json";
+registry.paths.applied = require("stub").tmpdir() + "/auto-routing-applied.json";
+model.paths.suppression = require("stub").tmpdir() + "/auto-routing-initial-suppression.json";
 
 t.test("IP-first logs retain IPv4 IPv6 and unknown attribution without hostname", () => {
     for (let pair in [["dial tcp 203.0.113.7:443: timeout", "203.0.113.7"], ["dial tcp [2001:db8::7]:443: connection refused", "2001:db8::7"]]) {
