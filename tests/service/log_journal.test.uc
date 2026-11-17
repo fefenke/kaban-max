@@ -1,6 +1,14 @@
 let t = require("t");
 let journal = require("service.log_journal");
 
+t.test("a rotating log tail hashes new lines instead of all existing plaintext again",()=>{
+ let calls=0;let log=journal.create({fingerprint:(line)=>{calls++;return line;}});let lines=[];
+ for(let i=0;i<1000;i++)push(lines,"synthetic log line "+i);
+ log.ingest(lines,100);calls=0;
+ let fresh=log.ingest([...slice(lines,1),"synthetic log line 1000"],101);
+ t.eq(fresh,["synthetic log line 1000"]);t.ok(calls<10,"old log lines must reuse their transient fingerprint");
+});
+
 t.test("records survive system ring rotation and expire after 24 hours", () => {
     let log = journal.create({ max_age: 86400, max_bytes: 1024 });
     log.ingest([ "first", "second" ], 100);

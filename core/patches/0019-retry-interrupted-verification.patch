@@ -1,0 +1,38 @@
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -406,7 +406,11 @@
+ 		if e.Source == q.Source && e.Domain == q.Domain && e.SourceIP == q.SourceIP && e.Port == q.Port && e.Inbound == q.Inbound && (e.IP == q.IP || e.IP == "") {
+ 			e.Status = status
+ 			e.Reason = reason
+-			e.attempted = true
++            e.attempted = reason != "cancelled_generation"
++            if reason == "cancelled_generation" {
++                e.lastJob = time.Time{}
++                delete(m.cooldown, m.probeKey(q))
++            }
+ 			e.Updated = time.Now()
+ 		}
+ 	}
+@@ -794,7 +798,9 @@
+ 	if err != nil {
+ 		m.mu.Lock()
+ 		if e := m.events[next.ID]; e != nil && (err.Error() == "busy" || err.Error() == "cooldown" || err.Error() == "hourly_budget") {
+-			e.attempted = false
++            e.attempted = false
++            if err.Error() == "busy" { e.lastJob = time.Time{} }
++            if err.Error() == "cooldown" { e.lastJob = m.cooldown[m.probeKey(e.Query)] }
+ 		}
+ 		m.mu.Unlock()
+ 	}
+diff --git a/common/autoroute/failure.go b/common/autoroute/failure.go
+--- a/common/autoroute/failure.go
++++ b/common/autoroute/failure.go
+@@ -70,6 +70,7 @@
+ 	}
+ 	scope := m.key(q)
+ 	m.registryAdvance(scope)
++	delete(m.cooldown, m.probeKey(q))
+ 	for key, event := range m.events {
+ 		if sameIPScope(q, event.Query) {
+ 			delete(m.events, key)

@@ -1,0 +1,41 @@
+diff --git a/route/route.go b/route/route.go
+--- a/route/route.go
++++ b/route/route.go
+@@ -825,6 +825,9 @@
+ 			if newErr != nil {
+ 				fatalErr = newErr
+ 				return
++			}
++			if metadata.SniffError == nil {
++				kabanmaxReconcileFakeIPIdentity(metadata)
+ 			}
+ 			if missingFakeIP && M.IsDomainName(metadata.Domain) {
+ 				missingFakeIP = false
+diff --git a/route/kabanmax_fakeip.go b/route/kabanmax_fakeip.go
+new file mode 100644
+--- /dev/null
++++ b/route/kabanmax_fakeip.go
+@@ -0,0 +1,23 @@
++package route
++
++import (
++	"github.com/sagernet/sing-box/adapter"
++	M "github.com/sagernet/sing/common/metadata"
++	"strings"
++)
++
++// A client can retain a FakeIP after the store has reassigned it. A
++// successfully sniffed name belongs to this connection; the stale mapping
++// must not choose another service's real addresses. Never change real-IP
++// destinations or the global FakeIP store on the strength of sniffing.
++func kabanmaxReconcileFakeIPIdentity(metadata *adapter.InboundContext) {
++	if !metadata.FakeIP || !M.IsDomainName(metadata.Domain) || strings.EqualFold(strings.TrimSuffix(metadata.Domain, "."), strings.TrimSuffix(metadata.Destination.Fqdn, ".")) {
++		return
++	}
++	metadata.Destination = M.Socksaddr{Fqdn: metadata.Domain, Port: metadata.Destination.Port}
++	metadata.DestinationAddresses = nil
++	metadata.DNSResponse = nil
++	metadata.NamedDNSResponses = nil
++	metadata.DestinationAddressMatchFromResponse = false
++	metadata.ResetRuleCache()
++}

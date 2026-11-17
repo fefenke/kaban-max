@@ -464,4 +464,12 @@ t.test("the state carries what the installed core was built with", () => {
     t.eq(reply.capabilities.core.features.wireguard.available, false);
 });
 
+t.test("a registry read failure stays a read error and the same resident method remains usable",()=>{
+ let records=require("diagnostics.auto_records");let previous=records.page;let methods=fresh_service().object_methods();
+ records.page=()=>die("synthetic corrupt registry");
+ t.eq(methods.auto_records.call({args:{source_section:"zap"}}),{error:"synthetic corrupt registry"});
+ records.page=()=>({rows:[],total:0});
+ t.eq(methods.auto_records.call({args:{source_section:"zap"}}),{rows:[],total:0});
+ records.page=previous;
+});
 t.done();

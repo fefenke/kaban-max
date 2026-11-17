@@ -6,6 +6,7 @@ let generator = require("singbox.generator");
 let registry = require("config.auto_registry");
 registry.paths.budget = require("stub").tmpdir() + "/auto-routing-write-budget.json";
 registry.paths.applied = require("stub").tmpdir() + "/auto-routing-applied.json";
+registry.paths.pending = null;
 model.paths.suppression = require("stub").tmpdir() + "/auto-routing-initial-suppression.json";
 
 t.test("IP-first logs retain IPv4 IPv6 and unknown attribution without hostname", () => {
@@ -96,6 +97,8 @@ t.test("bounded registry pages cover all 64 records and exclude foreign sources"
     let page=view.select(snapshot,[],{source_section:"zap",status:"pending",page:2,page_size:25});
     t.eq(length(page.rows),25);t.eq(page.total,64);t.eq(length(page.selection),64);t.eq(page.rows[0].id,"c00025");
     t.eq(view.select(snapshot,[],{source_section:"zap",status:"pending",search:"last.test",page:1,page_size:25}).total,1);
+    snapshot.registry_overflow=1;t.eq(view.select(snapshot,[],{source_section:"zap"}).registry_overflow,1);
+    snapshot.candidates=slice(snapshot.candidates,0,63);t.eq(view.select(snapshot,[],{source_section:"zap"}).registry_overflow,0);
     t.throws(()=>view.select(snapshot,[],{source_section:"zap",page_size:5000}));
 });
 t.test("WARP UI toggle preserves its stored profile and leaves baseline policy intact", () => {
@@ -125,6 +128,26 @@ t.test("selected alternative is a section output, including its configured fallb
  t.eq(target.destinations,"unrelated.example");
  config.outbounds[0].outbounds=["WARP/one","not-warp"];
  t.throws(()=>model.sources(config,[source,target],(id)=>id=="warp" ? "WARP" : id));
+});
+
+t.test("WARP registration detour is independent of its traffic transport",()=>{
+ let config={outbounds:[{tag:"WARP",type:"selector",outbounds:["WARP/one"]},{tag:"infrastructure-direct-out",type:"direct"}],endpoints:[{tag:"WARP/one",type:"warp",profile:{detour:"registration-vpn"}}]};
+ t.eq(model.warp_output(config,"WARP"),true,"profile registration does not carry user traffic");
+ config.endpoints[0].detour="registration-vpn";
+ t.eq(model.warp_output(config,"WARP"),false,"actual VPN transport remains forbidden");
+ config.endpoints[0].detour="infrastructure-direct-out";
+ t.eq(model.warp_output(config,"WARP"),true,"managed direct bootstrap transport is direct");
+ config.outbounds[1].detour="registration-vpn";
+ t.eq(model.warp_output(config,"WARP"),false,"direct wrapper cannot hide a VPN detour");
+});
+
+t.test("column IP sorting applies to the entire filtered registry in both directions",()=>{
+ let records=require("diagnostics.auto_records");
+ let snapshot={sources:[{id:"zap",outbound:"META"}],candidates:map(["2001:db8::10","203.0.113.10","2001:db8::2","203.0.113.2"],(ip)=>({id:ip,ip,source:"META",source_id:"zap",status:"detected",failure:{id:ip,source_id:"zap",message:"synthetic timeout"}}))};
+ let query={source_section:"zap",status:"pending",sort:"ip",page:1,page_size:25};
+ t.eq(map(records.select(snapshot,[],query).rows,(row)=>row.ip),["203.0.113.2","203.0.113.10","2001:db8::2","2001:db8::10"]);
+ query.sort="ip_desc";
+ t.eq(map(records.select(snapshot,[],query).rows,(row)=>row.ip),["2001:db8::10","2001:db8::2","203.0.113.10","203.0.113.2"]);
 });
 
 t.done();

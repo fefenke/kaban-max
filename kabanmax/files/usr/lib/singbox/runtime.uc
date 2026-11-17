@@ -95,7 +95,26 @@ function check(text) {
     die("sing-box refused the generated configuration: " + failure_reason(result));
 }
 
-// The file is written only once the core accepted it. Returns whether it changed; a start
+// Bootstrap snapshots do not alter a live core's routing or permissions.
+function active_signature(text) {
+    let value=common.parse_json(text);
+    if(type(value)!="object" || type(value.route)!="object" || type(value.route.kabanmax_auto)!="array")return text;
+    let config={...value,route:{...value.route}};
+    config.route.kabanmax_auto=map(value.route.kabanmax_auto,(source)=>{
+        if(type(source)!="object")return source;
+        let copy={...source};delete copy.pending;
+        if(type(copy.saved)=="array")copy.saved=map(copy.saved,(saved)=>{
+            if(type(saved)!="object")return saved;
+            let row={...saved};delete row.domains;delete row.new_error;
+            if(row.failure!=null)row.failure={source_id:row.failure.source_id};else delete row.failure;
+            return row;
+        });
+        return copy;
+    });
+    return sprintf("%J",config);
+}
+
+// The file is written only once the core accepted it. Returns whether active config changed; a start
 // checks it regardless, since the core may have been replaced.
 function write_config(checked) {
     let values = settings();
@@ -121,15 +140,17 @@ function write_config(checked) {
     catch (e) {
         die("Failed to generate the sing-box configuration: " + e.message);
     }
-    let unchanged = fs.readfile(path) == text;
-    if (checked || !unchanged)
+    let previous=fs.readfile(path);
+    let unchanged = previous == text;
+    let same_active=unchanged || active_signature(previous)==active_signature(text);
+    if (checked || !same_active)
         check(text);
 
     if (unchanged)
         return false;
     if (!common.write_file_atomic(path, text))
         die("Failed to write the sing-box configuration to " + path);
-    return true;
+    return !same_active;
 }
 
 // The devices the running configuration binds the core's own sockets to.

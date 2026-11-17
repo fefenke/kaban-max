@@ -1,0 +1,47 @@
+diff --git a/common/autoroute/failure.go b/common/autoroute/failure.go
+--- a/common/autoroute/failure.go
++++ b/common/autoroute/failure.go
+@@ -21,6 +21,11 @@
+ 
+ func connectionFailure(err error) bool {
+ 	if errors.Is(err, context.DeadlineExceeded) {
++		return true
++	}
++	// Network i/o timeouts are failures, not intentional connection closure.
++	var timeout net.Error
++	if errors.As(err, &timeout) && timeout.Timeout() {
+ 		return true
+ 	}
+ 	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || E.IsClosedOrCanceled(err) {
+diff --git a/common/autoroute/ip_failure.go b/common/autoroute/ip_failure.go
+--- a/common/autoroute/ip_failure.go
++++ b/common/autoroute/ip_failure.go
+@@ -60,7 +60,14 @@
+ 		return false
+ 	}
+ 	if out.Type() == "warp" {
+-		for _, dep := range out.Dependencies() {
++		dependencies := out.Dependencies()
++		if transport, ok := out.(interface{ KabanmaxWARPTransportDetour() string }); ok {
++			dependencies = nil
++			if detour := transport.KabanmaxWARPTransportDetour(); detour != "" {
++				dependencies = []string{detour}
++			}
++		}
++		for _, dep := range dependencies {
+ 			d, ok := m.Outbound(dep)
+ 			if !ok || d.Type() != "direct" || len(d.Dependencies()) != 0 {
+ 				return false
+diff --git a/protocol/warp/endpoint.go b/protocol/warp/endpoint.go
+--- a/protocol/warp/endpoint.go
++++ b/protocol/warp/endpoint.go
+@@ -54,6 +54,9 @@
+ 	awaitOnce sync.Once
+ 	done      chan struct{}
+ }
++
++// KabanmaxWARPTransportDetour excludes profile registration API routing.
++func (w *Endpoint) KabanmaxWARPTransportDetour() string { return w.options.Detour }
+ 
+ func NewEndpoint(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.WARPEndpointOptions) (adapter.Endpoint, error) {
+ 	profileFields := 0

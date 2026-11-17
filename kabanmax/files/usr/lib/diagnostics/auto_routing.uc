@@ -2,19 +2,39 @@ let common = require("core.common");
 let uci = require("core.uci");
 let lock = require("service.lock");
 let model = require("config.auto_routing");
-let paths = { lock: "/var/run/kabanmax.reload.lock" };
+let paths = { lock: "/var/run/kabanmax.reload.lock",pending:"/var/run/kabanmax/auto-routing-events.json" };
 let capture_error = "";
 
 function request(op, payload) {
     let api = require("singbox.clash_api");
     let reply = api.exchange(api.controller(), op == "state" ? "GET" : "POST", "/kabanmax/auto",
-        { seconds: op == "probe" ? 65 : op == "state" ? 2 : 10, body: op == "state" ? "" : sprintf("%J", { op, ...payload }) });
+        { seconds: op == "probe" ? 65 : index(["state","checkpoint"],op)>=0 ? 2 : 10, body: op == "state" ? "" : sprintf("%J", { op, ...payload }) });
     if (reply?.status != 200) die("Auto-routing API unavailable or rejected request: " + common.as_string(common.parse_json(reply?.body)?.reason));
     let value = common.parse_json(reply.body);
-    if (type(value) != "object") die("Invalid auto-routing API reply");
+    if (type(value) != (op=="checkpoint" ? "array" : "object")) die("Invalid auto-routing API reply");
     return value;
 }
 let io = { request };
+function checkpoint(leases) {
+    if(leases==null)leases=io.request("state",{}).leases ?? [];
+    require("config.auto_registry").remember(leases);
+    let rows;
+    try { rows=io.request("checkpoint",{}); }
+    catch(e) {
+        // A timeout or transient API error must not replace private connection
+        // metadata with the reduced public State representation.
+        if(index(e.message,"unknown operation")<0)die(e.message);
+        // Upgrade from r15: its public events remain usable where the current
+        // matcher can prove scope without the new private metadata extension.
+        let old=io.request("state",{});if(old.registry_version!=3)die(e.message);
+        rows=old.candidates ?? [];
+    }
+    if(type(rows)!="array" || length(rows)>64)die("Invalid private registry checkpoint");
+    let text=sprintf("%J",rows);if(length(text)>2097152)die("Private registry checkpoint exceeds RAM limit");
+    if(!common.write_file_atomic(paths.pending,text))die("Cannot save pending registry in RAM");
+    require("fs").chmod(paths.pending,0600);
+    return true;
+}
 
 function state() {
     let answer;
@@ -26,7 +46,7 @@ function state() {
     answer.registry_error = capture_error;
     let settings = uci.get_all("kabanmax", "settings") ?? {};
     let config = common.read_json_file(require("singbox.constants").config_path(settings));
-    answer.sources = map(config?.route?.kabanmax_auto ?? [], (s) => ({ id: s.id, outbound: s.outbound, domain: s.domain, auto_apply: s.auto_apply, warp: s.warp }));
+    answer.sources = map(config?.route?.kabanmax_auto ?? [], (s) => ({ id: s.id, outbound: s.outbound, domain: s.domain, auto_apply: s.auto_apply, direct: s.direct, warp: s.warp, warp_section: s.warp_section }));
     answer.warp_profiles = map(filter(config?.endpoints ?? [], (e) => e.type == "warp" && (e.detour == null || e.detour == "direct-out")), (e) => e.tag);
     answer.warp_sections=model.warp_sections(config ?? {},uci.section_objects("kabanmax","section"),(id)=>require("singbox.constants").outbound_tag(require("config.connections").section_display_name(id)));
     answer.suppressed_counts = {};
@@ -85,7 +105,8 @@ function capture() {
     let answer;
     try {
         answer=io.request("state",{});
-        if(answer.registry_version==2 || answer.registry_version==3)require("config.auto_registry").remember(answer.leases);
+        if(answer.registry_version==2)require("config.auto_registry").remember(answer.leases);
+        if(answer.registry_version==3)checkpoint(answer.leases ?? []);
         capture_error="";
     } catch(e) {
         capture_error=e.message;
@@ -101,4 +122,4 @@ function capture() {
     }
     require("diagnostics.auto_records").invalidate();lock.release(paths.lock,owner);return true;
 }
-return { state, action, persist, capture, paths, io };
+return { state, action, persist, capture, checkpoint, paths, io };

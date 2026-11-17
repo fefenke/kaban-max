@@ -1,8 +1,10 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-const calls = vi.hoisted(() => ({ ubus: vi.fn() }));
+const calls = vi.hoisted(() => ({ ubus: vi.fn(), toast: vi.fn() }));
 vi.mock('../../../../helpers/callUbus', () => ({ callUbus: calls.ubus }));
+vi.mock('../../../../helpers/showToast', () => ({ showToast: calls.toast }));
 import {
   autoAction,
+  attachAutoRouting,
   routeText,
   recordStateText,
   canApply,
@@ -15,12 +17,99 @@ import { autoRecords, registryAction, registryNotice } from '../autoRecords';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('automatic routing lists', () => {
-  it('omits the unavailable automation banner while preserving other failures', () => {
+  it('uses alternative results for pending records and reports only new applied failures', () => {
+    vi.stubGlobal('_', (text: string) => text);
+    for (const status of ['inconclusive', 'unchanged'])
+      expect(recordStateText({ ip: '203.0.113.7', status })).toBe(
+        'No working alternative found',
+      );
+    for (const status of ['detected', 'observing'])
+      expect(recordStateText({ ip: '203.0.113.7', status })).toBe(
+        'Queued for automatic checking',
+      );
+    expect(recordStateText({ ip: '203.0.113.7', status: 'checking' })).toBe(
+      'Searching for a working alternative…',
+    );
+    expect(
+      recordStateText({
+        ip: '203.0.113.7',
+        status: 'proposed',
+        target: 'direct-out',
+      }),
+    ).toBe('Working alternative found: Direct');
+    expect(recordStateText({ ip: '203.0.113.7', status: 'applied' })).toBe(
+      'No new errors',
+    );
+    expect(
+      recordStateText({
+        ip: '203.0.113.7',
+        status: 'applied',
+        new_error: true,
+      }),
+    ).toBe('New connection error detected');
+  });
+  it('blocks enabling without an API key, honours unsaved key edits and always permits disabling', () => {
+    vi.stubGlobal('_', (text: string) => text);
+    vi.stubGlobal('form', {
+      Flag: 'flag',
+      TextValue: 'text',
+      ListValue: 'list',
+      DummyValue: 'dummy',
+    });
+    let savedKey = '';
+    let editedKey: string | undefined;
+    vi.stubGlobal('uci', { get: () => savedKey });
+    const reset = vi.fn();
+    const options: Record<string, CBIOption> = {};
+    const map = {
+      config: 'kabanmax',
+      data: { get: () => savedKey },
+      lookupOption: () =>
+        editedKey === undefined
+          ? null
+          : [{ formvalue: () => editedKey }, 'settings'],
+    };
+    const section = {
+      tab: vi.fn(),
+      taboption: (_tab: string, _type: unknown, key: string) => {
+        const option = {
+          map,
+          depends: vi.fn(),
+          value: vi.fn(),
+          getUIElement: () => ({ setValue: reset }),
+        } as unknown as CBIOption;
+        options[key] = option;
+        return option;
+      },
+    };
+    attachAutoRouting(section as unknown as CBISection);
+    const enabled = options.auto_routing_enabled;
+    expect(typeof enabled.validate).toBe('function');
+    expect(enabled.validate('meta', '1')).not.toBe(true);
+    expect(enabled.validate('meta', '0')).toBe(true);
+    enabled.onchange!.call(enabled, {} as Event, 'meta', '1');
+    expect(reset).toHaveBeenCalledWith('0');
+    expect(calls.toast).toHaveBeenCalledWith(
+      expect.stringContaining('Clash API key'),
+      'error',
+      8000,
+    );
+    savedKey = 'synthetic-key';
+    expect(enabled.validate('meta', '1')).toBe(true);
+    editedKey = '';
+    expect(enabled.validate('meta', '1')).not.toBe(true);
+    editedKey = 'new-synthetic-key';
+    expect(enabled.validate('meta', '1')).toBe(true);
+  });
+  it('explains unavailable automation instead of presenting it as an empty registry', () => {
+    vi.stubGlobal('_', (text: string) => text);
     expect(
       registryNotice(
         'Auto-routing API unavailable or rejected request: automatic_routing_unavailable',
       ),
-    ).toBe('');
+    ).toBe(
+      'Automatic routing is not active in the running configuration. Save & Apply the section settings and check the application log if activation fails.',
+    );
     expect(registryNotice('Storage write failed')).toBe('Storage write failed');
   });
   it('shows the concrete proposed section and actionable check reasons', () => {
@@ -52,7 +141,7 @@ describe('automatic routing lists', () => {
         status: 'inconclusive',
         reason: 'actual_destination_ip_unknown',
       }),
-    ).toBe('Connection error has no concrete destination IP');
+    ).toBe('No working alternative found');
     expect(
       recordStateText({
         ip: '203.0.113.7',
@@ -106,6 +195,42 @@ describe('automatic routing lists', () => {
         (request) => JSON.parse(request.params.id).source_section === 's1',
       ),
     ).toBe(true);
+  });
+  it('freezes manual targets and query across bounded batches', async () => {
+    const query = {
+      source_section: 'zap',
+      status: 'pending',
+      search: 'api.example',
+      sort: 'newest',
+      page: 1,
+      page_size: 25,
+    };
+    const ids = Array.from({ length: 9 }, (_, i) => `manual${i}`);
+    const targets = Object.fromEntries(ids.map((id) => [id, 'warp-out']));
+    calls.ubus
+      .mockImplementationOnce(async () => {
+        query.search = 'changed';
+        targets.manual8 = 'direct-out';
+        return {
+          success: true,
+          data: { success: true, done: 8, skipped: 0, failed: 0, results: [] },
+        };
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { success: true, done: 1, skipped: 0, failed: 0, results: [] },
+      });
+    expect((await registryAction(query, 'apply', ids, targets)).done).toBe(9);
+    const requests = calls.ubus.mock.calls
+      .slice(-2)
+      .map(([request]) => JSON.parse(request.params.id));
+    expect(
+      requests.map((request) => Object.keys(request.targets).length),
+    ).toEqual([8, 1]);
+    expect(requests[1]).toMatchObject({
+      search: 'api.example',
+      targets: { manual8: 'warp-out' },
+    });
   });
   it('requests one bounded source page without downloading the full state', async () => {
     calls.ubus.mockResolvedValue({

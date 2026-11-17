@@ -1,6 +1,7 @@
 let t=require("t");let fs=require("fs");let stub=require("stub");let model=require("config.auto_routing");
 let registry=require("config.auto_registry");
 registry.paths.applied=stub.tmpdir()+"/applied.json";registry.paths.budget=stub.tmpdir()+"/write-budget.json";model.paths.suppression=stub.tmpdir()+"/excluded.json";
+registry.paths.pending=null;
 let now=1000;registry.io.now=()=>now;
 function record(i) {return {id:"l"+i,owner:"auto-routing",source_id:"zap",source:"zap",ip:"203.0.113."+i,domain:"one.test",domain_known:true,source_ip:"192.0.2.8",inbound:"tproxy-in",port:443,target:"direct-out",created:"2026-11-16T00:00:00Z",expires:"2026-11-16T00:01:00Z",status:"applied",failure:{id:"error"+i,source_id:"zap",message:"synthetic dial timeout"}};}
 t.test("saved leases reload as intents, never as active runtime state; limit preserves existing entries",()=>{
@@ -29,8 +30,9 @@ t.test("bulk is source-scoped, eligible-only and idempotent; exact exclusion rem
  t.eq(batch("apply","pending",["l1"]).skipped,1);
  t.eq(batch("exclude","applied",["l1"]).done,1);t.eq(length(registry.load().entries),0);t.eq(length(model.suppression().entries),1);
  let other=registry.key({...record(3),source_ip:"192.0.2.9",port:8443});registry.save("excluded",[...model.suppression().entries,{owner:"auto-routing",scope:other,created:now}]);
- t.eq(batch("remove","excluded",[registry.key(record(1))]).done,1);t.eq(model.suppression().entries[0].scope,other);
- t.ok(length(filter(calls,(c)=>c.op=="registry_reset" && c.scope==registry.key(record(1))))==1);
+ let excluded_ip=registry.key({...record(1),domain:""});
+ t.eq(batch("remove","excluded",[excluded_ip]).done,1);t.eq(model.suppression().entries[0].scope,other);
+ t.ok(length(filter(calls,(c)=>c.op=="registry_reset" && c.scope==excluded_ip))==1);
 });
 t.test("failed durable approval withdraws the runtime grant instead of leaving an unrecorded active route",()=>{
  fs.unlink(registry.paths.applied);fs.writefile(registry.paths.budget,sprintf("%J",{start:now,count:12}));

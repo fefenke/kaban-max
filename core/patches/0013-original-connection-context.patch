@@ -1,0 +1,179 @@
+diff --git a/common/autoroute/lease.go b/common/autoroute/lease.go
+index 572fbd6..c687897 100644
+--- a/common/autoroute/lease.go
++++ b/common/autoroute/lease.go
+@@ -8,6 +8,7 @@ import (
+ )
+ 
+ type Lease struct {
++	ObservedDomain   string       `json:"observed_domain,omitempty"`
+ 	Failure          *Failure     `json:"failure,omitempty"`
+ 	IPOnly           bool         `json:"ip_only,omitempty"`
+ 	Evidence         string       `json:"evidence,omitempty"`
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+index 6d5a636..e91d1bf 100644
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -30,6 +30,7 @@ type Query struct {
+ 	Source     string `json:"source"`
+ }
+ type Event struct {
++	originalMetadata *adapter.InboundContext
+ 	Query
+ 	ObservedDomain string    `json:"observed_domain,omitempty"`
+ 	Failure        *Failure  `json:"failure,omitempty"`
+@@ -227,8 +228,9 @@ func (m *Manager) guard(ctx context.Context, q Query) (option.KabanmaxAutoSource
+ 	if !m.isZapret(s) {
+ 		return s, errors.New("source_mark_unattributed")
+ 	}
++	observedDomain := m.observedDomain(q)
+ 	for _, endpoint := range s.Protected {
+-		if endpoint == q.Domain || endpoint == q.IP {
++		if endpoint == q.Domain || endpoint == observedDomain || endpoint == q.IP {
+ 			return s, errors.New("protected_infrastructure_endpoint")
+ 		}
+ 		if a, e := netip.ParseAddr(endpoint); e == nil {
+@@ -261,7 +263,12 @@ func (m *Manager) guard(ctx context.Context, q Query) (option.KabanmaxAutoSource
+ 		return s, errors.New("source_mark_unattributed")
+ 	}
+ 	meta := metadata(q)
+-	if q.Domain == "" {
++	if original := m.originalForQuery(q); original != nil {
++		meta = *original
++		meta.DestinationAddresses = []netip.Addr{netip.MustParseAddr(q.IP)}
++		meta.ResetRuleCache()
++		ctx = context.WithValue(ctx, originalMetadataKey{}, true)
++	} else if q.Domain == "" {
+ 		meta.Protocol = ""
+ 		m.mu.Lock()
+ 		for _, event := range m.events {
+@@ -346,6 +353,8 @@ func (m *Manager) Observe(meta *adapter.InboundContext, source string) *Event {
+ 	now := time.Now()
+ 	repeats := 1
+ 	e := &Event{Query: q, ID: id(), Network: meta.Network, Status: "observing", Count: repeats, Created: now, Updated: now, progress: now}
++	e.originalMetadata = snapshotOriginalMetadata(meta)
++	e.ObservedDomain = q.Domain
+ 	e.DomainKnown = q.Domain != ""
+ 	e.SourceID = s.ID
+ 	e.RoutingMark = s.Mark
+diff --git a/common/autoroute/manual.go b/common/autoroute/manual.go
+index 64e5451..9247bcc 100644
+--- a/common/autoroute/manual.go
++++ b/common/autoroute/manual.go
+@@ -45,6 +45,7 @@ func (m *Manager) ManualApply(ctx context.Context, sourceID, recordID, target st
+ 	now := time.Now()
+ 	deadline := now.Add(time.Duration(ttl) * time.Second)
+ 	d := Decision{Lease: Lease{ID: id(), Owner: "auto-routing", Source: q.Source, SourceID: sourceID, IP: q.IP, Domain: q.Domain, SourceIP: q.SourceIP, OriginSourcePort: q.SourcePort, Inbound: q.Inbound, Port: q.Port, Target: target, Created: now, Expires: deadline, Deadline: deadline, DNSSet: addresses, Status: "applied", Reason: "manual_user_choice", Evidence: "manual_user_choice", DomainKnown: q.Domain != "", IPOnly: q.Domain == "", Failure: &failure}, Generation: generation, Scope: m.key(q), DNS: addresses}
++	d.ObservedDomain = m.observedDomain(q)
+ 	d.Decision = d.ID
+ 	if target == "direct-out" {
+ 		d.TargetSection = s.DirectSection
+diff --git a/common/autoroute/original_context.go b/common/autoroute/original_context.go
+new file mode 100644
+index 0000000..b5fc3be
+--- /dev/null
++++ b/common/autoroute/original_context.go
+@@ -0,0 +1,69 @@
++package autoroute
++
++import (
++	"context"
++	"slices"
++	"time"
++
++	"github.com/miekg/dns"
++	"github.com/sagernet/sing-box/adapter"
++)
++
++type originalMetadataKey struct{}
++
++// HasOriginalMetadata is set only by guard after resolving a core-owned logged
++// event. A JSON/API query cannot assert that missing metadata is known absent.
++func HasOriginalMetadata(ctx context.Context) bool { return ctx.Value(originalMetadataKey{}) == true }
++
++func snapshotOriginalMetadata(meta *adapter.InboundContext) *adapter.InboundContext {
++	copy := *meta
++	copy.DestinationAddresses = slices.Clone(meta.DestinationAddresses)
++	copy.NetworkType = slices.Clone(meta.NetworkType)
++	copy.FallbackNetworkType = slices.Clone(meta.FallbackNetworkType)
++	copy.SnifferNames = slices.Clone(meta.SnifferNames)
++	copy.SourceMACAddress = slices.Clone(meta.SourceMACAddress)
++	copy.OutboundChain = slices.Clone(meta.OutboundChain)
++	if meta.ProcessInfo != nil {
++		owner := *meta.ProcessInfo
++		owner.AndroidPackageNames = slices.Clone(meta.ProcessInfo.AndroidPackageNames)
++		copy.ProcessInfo = &owner
++	}
++	if meta.DNSResponse != nil {
++		copy.DNSResponse = meta.DNSResponse.Copy()
++	}
++	if meta.NamedDNSResponses != nil {
++		copy.NamedDNSResponses = make(map[string]*dns.Msg, len(meta.NamedDNSResponses))
++		for name, response := range meta.NamedDNSResponses {
++			if response != nil {
++				copy.NamedDNSResponses[name] = response.Copy()
++			}
++		}
++	}
++	copy.ResetRuleCache()
++	return &copy
++}
++
++func (m *Manager) originalForQuery(q Query) *adapter.InboundContext {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	for _, event := range m.events {
++		if event.Query == q && event.Failure != nil && time.Since(event.Failure.At) <= time.Hour && event.originalMetadata != nil {
++			return snapshotOriginalMetadata(event.originalMetadata)
++		}
++	}
++	return nil
++}
++
++func (m *Manager) observedDomain(q Query) string {
++	if q.Domain != "" {
++		return q.Domain
++	}
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	for _, event := range m.events {
++		if event.Query == q && event.Failure != nil {
++			return event.ObservedDomain
++		}
++	}
++	return ""
++}
+diff --git a/common/autoroute/probe.go b/common/autoroute/probe.go
+index 476ff52..651328a 100644
+--- a/common/autoroute/probe.go
++++ b/common/autoroute/probe.go
+@@ -268,6 +268,7 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 	}
+ 	d := Decision{Lease: Lease{ID: id(), Owner: "auto-routing", Source: q.Source, SourceID: s.ID, IP: q.IP, Domain: q.Domain, SourceIP: q.SourceIP, Inbound: q.Inbound, Port: q.Port, Created: now, Status: "inconclusive"}, DNS: initial, Scope: key}
+ 	d.Failure = m.loggedFailure(q)
++	d.ObservedDomain = m.observedDomain(q)
+ 	d.IPOnly = q.Domain == ""
+ 	d.Generation = generation
+ 	d.DomainKnown = q.Domain != ""
+diff --git a/route/kabanmax_auto.go b/route/kabanmax_auto.go
+index 6224663..c83dc9c 100755
+--- a/route/kabanmax_auto.go
++++ b/route/kabanmax_auto.go
+@@ -41,9 +41,14 @@ func (r *Router) initKabanmaxAuto() {
+ 			if selected == nil {
+ 				count = len(r.ruleOptions)
+ 			}
+-			for i := 0; i < count; i++ {
+-				if i >= len(r.ruleOptions) || !r.probeContextKnown(r.ruleOptions[i], metadata.Source.Port, metadata.Protocol != "", 0) {
+-					return "", errors.New("probe_scope_requires_connection_metadata")
++			// A replay of a recorded connection has its original process/client,
++			// protocol, DNS and source metadata. Reconstructed API queries do not.
++			// Both still go through the current real matcher above.
++			if !autoroute.HasOriginalMetadata(ctx) {
++				for i := 0; i < count; i++ {
++					if i >= len(r.ruleOptions) || !r.probeContextKnown(r.ruleOptions[i], metadata.Source.Port, metadata.Protocol != "", 0) {
++						return "", errors.New("probe_scope_requires_connection_metadata")
++					}
+ 				}
+ 			}
+ 			if selected == nil {

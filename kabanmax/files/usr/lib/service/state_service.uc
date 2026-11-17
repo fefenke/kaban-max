@@ -390,7 +390,12 @@ function object_methods() {
             args: { ubus_rpc_session: "" }
         },
         auto_records: {
-            call: (request) => require("diagnostics.auto_records").page(request.args),
+            call: function(request) {
+                // A corrupt/unavailable registry is a failed read, never a
+                // reason to terminate the resident ubus object.
+                try { return require("diagnostics.auto_records").page(request.args); }
+                catch(e) { return { error: e.message }; }
+            },
             args: { source_section: "", status: "", search: "", sort: "", page: 0, page_size: 0, ubus_rpc_session: "" }
         },
         auto_action: {
@@ -586,8 +591,12 @@ function run() {
         log_tick();
     });
 
-    // Coalesce automatic lease capture: at most one background flash update per minute.
-    uloop.interval(60000, function() { require("diagnostics.auto_routing").capture(); });
+    // Capture in RAM every minute; flush only changed routing intent every 15 minutes.
+    uloop.interval(60000, function() {
+        require("diagnostics.auto_routing").capture();
+        try { require("config.auto_registry").flush(); }
+        catch(e) { exec.log("warning",e.message); }
+    });
 
     // Enforced here, inside what the transport in front of a parked request will wait for.
     uloop.interval(MAX_WAIT_MS, function() {

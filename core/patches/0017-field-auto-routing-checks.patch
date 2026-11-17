@@ -1,0 +1,345 @@
+diff --git a/common/autoroute/checkpoint.go b/common/autoroute/checkpoint.go
+--- a/common/autoroute/checkpoint.go
++++ b/common/autoroute/checkpoint.go
+@@ -4,6 +4,7 @@
+ 	"encoding/json"
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/option"
++	"strings"
+ 	"time"
+ )
+ 
+@@ -39,7 +40,12 @@
+ 			continue
+ 		}
+ 		e := saved.Event
+-		if e.Source != source.Outbound || e.SourceID != source.ID || e.Network != "tcp" || e.ID == "" || e.Failure == nil || e.Failure.ID != e.ID || e.Failure.SourceID != source.ID || e.Failure.At.After(time.Now()) || !registryScope(e.Query) || sourceContext(source, e.Query) != nil || m.protected(e.Query) || m.deniedScope(e.Query) {
++		if e.Source != source.Outbound || e.SourceID != source.ID || (e.Network != "tcp" && e.Network != "udp") || e.ID == "" || e.Failure == nil || e.Failure.ID != e.ID || e.Failure.SourceID != source.ID || e.Failure.At.After(time.Now()) || !registryScope(e.Query) || sourceContext(source, e.Query) != nil || m.protected(e.Query) || m.deniedScope(e.Query) {
++			continue
++		}
++		// A conflicting legacy FakeIP record names a different service's IP.
++		// It is not valid failure evidence; wait for an actual corrected flow.
++		if saved.Metadata != nil && saved.Metadata.FakeIP && saved.Metadata.Domain != "" && saved.Metadata.Destination.IsDomain() && !strings.EqualFold(strings.TrimSuffix(saved.Metadata.Domain, "."), strings.TrimSuffix(saved.Metadata.Destination.Fqdn, ".")) {
+ 			continue
+ 		}
+ 		e.originalMetadata = saved.Metadata
+diff --git a/common/autoroute/failure.go b/common/autoroute/failure.go
+--- a/common/autoroute/failure.go
++++ b/common/autoroute/failure.go
+@@ -43,7 +43,7 @@
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+ 	for _, event := range m.events {
+-		if event.Network == "tcp" && event.Query == q && event.Failure != nil && time.Since(event.Failure.At) <= time.Hour {
++		if (event.Network == "tcp" || event.Network == "udp") && event.Query == q && event.Failure != nil && time.Since(event.Failure.At) <= time.Hour {
+ 			copy := *event.Failure
+ 			return &copy
+ 		}
+diff --git a/common/autoroute/lease.go b/common/autoroute/lease.go
+--- a/common/autoroute/lease.go
++++ b/common/autoroute/lease.go
+@@ -43,7 +43,7 @@
+ 	if !l.IPOnly && !l.PersistentIP && len(m.DestinationAddresses) != 1 {
+ 		return false
+ 	}
+-	if (!l.PersistentIP && !now.Before(l.Deadline)) || source != l.Source || m.Network != "tcp" || m.Inbound != l.Inbound || m.Source.Addr.Unmap().String() != l.SourceIP || m.Destination.Port != l.Port {
++	if (!l.PersistentIP && !now.Before(l.Deadline)) || source != l.Source || (m.Network != "tcp" && !(m.Network == "udp" && l.PersistentIP)) || m.Inbound != l.Inbound || m.Source.Addr.Unmap().String() != l.SourceIP || m.Destination.Port != l.Port {
+ 		return false
+ 	}
+ 	if l.IPOnly {
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -276,6 +276,11 @@
+ 	if !m.isZapret(s) {
+ 		return s, errors.New("source_mark_unattributed")
+ 	}
++    // Old public checkpoints contain core-owned failures but no replay metadata.
++    // An explicit IP choice may remain dormant until this source actually wins
++    // again; SelectForEvent enforces that at runtime. Automated probes may never
++    // use this exception or reconstruct missing process/protocol evidence.
++    if manualOwned && manual.originalMetadata == nil && ctx.Value(explicitManualIntentKey{}) == true { return s, nil }
+ 	meta := metadata(q)
+ 	original := m.originalForQuery(q)
+ 	if manualOwned && manual.originalMetadata != nil {
+@@ -499,7 +504,7 @@
+ 	return m.SelectForEvent(ctx, original, meta, nil)
+ }
+ func (m *Manager) SelectForEvent(ctx context.Context, original string, meta *adapter.InboundContext, event *Event) string {
+-	if s, ok := m.source(original); !ok || !m.isZapret(s) || meta.Network != "tcp" || (!meta.Destination.IsDomain() && !meta.Destination.IsIP()) {
++	if s, ok := m.source(original); !ok || !m.isZapret(s) || (meta.Network != "tcp" && meta.Network != "udp") || (!meta.Destination.IsDomain() && !meta.Destination.IsIP()) {
+ 		return original
+ 	}
+ 	policy, _ := m.source(original)
+@@ -741,7 +746,7 @@
+ 	var next *Event
+ 	if previous == nil {
+ 		for _, e := range m.events {
+-			if !m.sources[e.Source].CollectDisabled && e.Network == "tcp" && e.Failure != nil && !e.attempted && now.Sub(e.lastJob) >= 5*time.Minute && (next == nil || e.lastJob.Before(next.lastJob)) {
++			if !m.sources[e.Source].CollectDisabled && (e.Network == "tcp" || (e.Network == "udp" && m.sources[e.Source].Mode == "web")) && e.Failure != nil && !e.attempted && now.Sub(e.lastJob) >= 5*time.Minute && (next == nil || e.lastJob.Before(next.lastJob)) {
+ 				copy := *e
+ 				next = &copy
+ 			}
+diff --git a/common/autoroute/manual.go b/common/autoroute/manual.go
+--- a/common/autoroute/manual.go
++++ b/common/autoroute/manual.go
+@@ -8,6 +8,7 @@
+ )
+ 
+ type manualChoiceKey struct{}
++type explicitManualIntentKey struct{}
+ 
+ // ManualApply grants only an explicit user's direction for a fresh logged flow.
+ // Application verification remains a separate operation and permission.
+@@ -18,7 +19,7 @@
+ 		eventID = d.Failure.ID
+ 	}
+ 	event, ok := m.events[eventID]
+-	if !ok || event.SourceID != sourceID || event.Failure == nil || event.Failure.ID != event.ID || event.Failure.SourceID != sourceID || event.Network != "tcp" || event.Failure.At.After(time.Now()) || m.sources[event.Source].ID != sourceID || !registryScope(event.Query) {
++	if !ok || event.SourceID != sourceID || event.Failure == nil || event.Failure.ID != event.ID || event.Failure.SourceID != sourceID || (event.Network != "tcp" && event.Network != "udp") || event.Failure.At.After(time.Now()) || m.sources[event.Source].ID != sourceID || !registryScope(event.Query) {
+ 		m.mu.Unlock()
+ 		return nil, errors.New("source_or_record_not_found")
+ 	}
+@@ -30,6 +31,7 @@
+ 	}
+ 	m.mu.Unlock()
+ 	ctx = context.WithValue(ctx, manualChoiceKey{}, &frozen)
++ ctx = context.WithValue(ctx, explicitManualIntentKey{}, true)
+ 	s, err := m.guard(ctx, q)
+ 	if err != nil {
+ 		return nil, err
+diff --git a/common/autoroute/probe.go b/common/autoroute/probe.go
+--- a/common/autoroute/probe.go
++++ b/common/autoroute/probe.go
+@@ -162,7 +162,29 @@
+ 	m.mu.Unlock()
+ 	defer func() { m.mu.Lock(); m.batchCancel = nil; m.mu.Unlock() }()
+ 	if q.IP != "" {
++		// Keep the core-owned failure and routing metadata stable while newer
++		// connections update the same IP record. Generation/suppression checks
++		// still run before committing any route.
++		m.mu.Lock()
++		var frozen *Event
++		for _, event := range m.events {
++			if event.Query == q && event.Failure != nil {
++				copy := *event
++				failure := *event.Failure
++				copy.Failure = &failure
++				if event.originalMetadata != nil {
++					copy.originalMetadata = snapshotOriginalMetadata(event.originalMetadata)
++				}
++				frozen = &copy
++				break
++			}
++		}
++		m.mu.Unlock()
+ 		q = m.bindDomain(ctx, q)
++		if frozen != nil {
++			frozen.Query = q
++			ctx = context.WithValue(ctx, manualChoiceKey{}, frozen)
++		}
+ 		return m.probeSingle(ctx, q)
+ 	}
+ 	source, ok := m.source(q.Source)
+@@ -260,16 +282,22 @@
+ 	m.mu.Unlock()
+ 	m.stage(q, "checking", "application_contract")
+ 	initial, ttl := []netip.Addr{}, uint32(60)
+-	if q.Domain != "" {
++	if q.Domain != "" && s.Mode != "web" {
+ 		initial, ttl, e = m.Lookup(ctx, q.Domain)
+ 	}
+-	if e != nil || ttl == 0 || len(initial) > 4 || (q.Domain != "" && !containsIP(initial, q.IP)) {
++	if e != nil || ttl == 0 || len(initial) > 4 || (s.Mode != "web" && q.Domain != "" && !containsIP(initial, q.IP)) {
+ 		m.stage(q, "inconclusive", "dns_unstable_or_negative")
+ 		return map[string]any{"status": "inconclusive", "reason": "dns_unstable_or_negative"}, nil
+ 	}
+ 	d := Decision{Lease: Lease{ID: id(), Owner: "auto-routing", Source: q.Source, SourceID: s.ID, IP: q.IP, Domain: q.Domain, SourceIP: q.SourceIP, Inbound: q.Inbound, Port: q.Port, Created: now, Status: "inconclusive"}, DNS: initial, Scope: key}
+ 	d.Failure = m.loggedFailure(q)
++	if frozen, ok := ctx.Value(manualChoiceKey{}).(*Event); ok && frozen.Query == q {
++		d.Failure = frozen.Failure
++	}
+ 	d.ObservedDomain = m.observedDomain(q)
++	if frozen, ok := ctx.Value(manualChoiceKey{}).(*Event); ok && frozen.Query == q {
++		d.ObservedDomain = frozen.ObservedDomain
++	}
+ 	d.IPOnly = q.Domain == ""
+ 	d.Generation = generation
+ 	d.DomainKnown = q.Domain != ""
+@@ -348,7 +376,7 @@
+ 		}
+ 	}
+ 	final, finalTTL := initial, ttl
+-	if q.Domain != "" {
++	if q.Domain != "" && s.Mode != "web" {
+ 		final, finalTTL, e = m.Lookup(ctx, q.Domain)
+ 	}
+ 	if e != nil || finalTTL == 0 || !dnsEqual(initial, final) {
+@@ -422,7 +450,7 @@
+ 		return nil, e
+ 	}
+ 	a, ttl := []netip.Addr{}, uint32(60)
+-	if q.Domain != "" {
++	if q.Domain != "" && s.Mode != "web" {
+ 		a, ttl, e = m.Lookup(ctx, q.Domain)
+ 	}
+ 	if e != nil || ttl == 0 || !dnsEqual(a, d.DNS) {
+diff --git a/common/autoroute/web.go b/common/autoroute/web.go
+--- a/common/autoroute/web.go
++++ b/common/autoroute/web.go
+@@ -4,6 +4,7 @@
+ 	"context"
+ 	"crypto/tls"
+ 	"crypto/x509"
++	"encoding/json"
+ 	"errors"
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/option"
+@@ -50,6 +51,9 @@
+ 	identity := q.Domain
+ 	if identity == "" {
+ 		identity = m.observedDomain(q)
++		if frozen, ok := ctx.Value(manualChoiceKey{}).(*Event); ok && frozen.Query == q && frozen.ObservedDomain != "" {
++			identity = frozen.ObservedDomain
++		}
+ 	}
+ 	if identity == "" {
+ 		identity = q.IP
+@@ -63,8 +67,13 @@
+ 	query.Set("__kabanmax_probe", id())
+ 	target.RawQuery = query.Encode()
+ 	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, DisableCompression: true, MaxResponseHeaderBytes: 8192, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: identity, RootCAs: adapter.RootPoolFromContext(m.ctx)}, DialContext: dial}
+-	defer transport.CloseIdleConnections()
+-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
++	var roundTripper http.RoundTripper = transport
++	closeTransport := transport.CloseIdleConnections
++	if frozen, ok := ctx.Value(manualChoiceKey{}).(*Event); ok && frozen.Network == "udp" {
++		roundTripper, closeTransport = newWebQUICTransport(outbound, M.Socksaddr{Addr: netip.MustParseAddr(q.IP), Port: q.Port}, transport.TLSClientConfig)
++	}
++	defer closeTransport()
++	client := &http.Client{Transport: roundTripper, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+ 	req, err := http.NewRequestWithContext(ctx, "GET", target.String(), nil)
+ 	if err != nil {
+ 		a.Reason = "invalid_contract"
+@@ -99,7 +108,12 @@
+ 		a.Reason = "tls_verification_failed"
+ 		return a
+ 	}
++	// Root requests to authenticated APIs legitimately return JSON 4xx.
++	// This proves application transport, not successful authentication. Keep
++	// regional/access blocks (403), throttling and server failures rejected.
++	apiResponse := s.Status == http.StatusOK && s.Prefix == "" && a.ContentType == "application/json" && (a.HTTPStatus == 400 || a.HTTPStatus == 401 || a.HTTPStatus == 404 || a.HTTPStatus == 405)
+ 	switch {
++	case apiResponse:
+ 	case a.HTTPStatus >= 300 && a.HTTPStatus < 400:
+ 		a.Reason = "redirect"
+ 	case a.HTTPStatus == 401:
+@@ -112,7 +126,7 @@
+ 		a.Reason = "method_unsupported"
+ 	case a.HTTPStatus >= 500:
+ 		a.Reason = "server_error"
+-	case a.HTTPStatus != s.Status:
++	case a.HTTPStatus != s.Status && !(a.HTTPStatus == http.StatusNoContent && s.Status == http.StatusOK && s.Prefix == ""):
+ 		a.Reason = "unexpected_http_status"
+ 	}
+ 	if a.Reason != "" {
+@@ -142,6 +156,15 @@
+ 	}
+ 	if response.Header.Get("Content-Encoding") != "" && response.Header.Get("Content-Encoding") != "identity" {
+ 		a.Reason = "encoded_body_unconfirmed"
++		return a
++	}
++	if a.HTTPStatus == http.StatusNoContent && s.Prefix == "" {
++		a.Status = "verified"
++		a.Reason = "verified_https_no_content"
++		return a
++	}
++	if apiResponse && !json.Valid(body) {
++		a.Reason = "invalid_api_response"
+ 		return a
+ 	}
+ 	if len(strings.TrimSpace(string(body))) < 32 || (a.ContentType != "text/html" && a.ContentType != "application/json" && a.ContentType != "text/plain") || (s.Prefix != "" && !strings.HasPrefix(string(body), s.Prefix)) {
+diff --git a/common/autoroute/web_quic.go b/common/autoroute/web_quic.go
+new file mode 100644
+--- /dev/null
++++ b/common/autoroute/web_quic.go
+@@ -0,0 +1,40 @@
++//go:build with_quic
++
++package autoroute
++
++import (
++	"context"
++	"crypto/tls"
++	"github.com/sagernet/quic-go"
++	"github.com/sagernet/quic-go/http3"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	"net"
++	"net/http"
++	"time"
++)
++
++// UDP/QUIC failures require real HTTP/3 data over the selected outbound.
++// A TCP HTTPS response must never claim that a UDP alternative works.
++func newWebQUICTransport(outbound N.Dialer, destination M.Socksaddr, config *tls.Config) (http.RoundTripper, func()) {
++	transport := &http3.Transport{
++		DisableCompression:     true,
++		TLSClientConfig:        config,
++		MaxResponseHeaderBytes: 8192,
++		Dial: func(ctx context.Context, _ string, tlsConfig *tls.Config, _ *quic.Config) (*quic.Conn, error) {
++			socket, err := outbound.ListenPacket(ctx, destination)
++			if err != nil {
++				return nil, err
++			}
++			peer := &net.UDPAddr{IP: net.IP(destination.Addr.AsSlice()), Port: int(destination.Port)}
++			conn, err := quic.DialEarly(ctx, socket, peer, tlsConfig, &quic.Config{HandshakeIdleTimeout: 5 * time.Second, MaxIdleTimeout: 5 * time.Second})
++			if err != nil {
++				socket.Close()
++				return nil, err
++			}
++			context.AfterFunc(conn.Context(), func() { socket.Close() })
++			return conn, nil
++		},
++	}
++	return transport, func() { transport.Close() }
++}
+diff --git a/common/autoroute/web_quic_stub.go b/common/autoroute/web_quic_stub.go
+new file mode 100644
+--- /dev/null
++++ b/common/autoroute/web_quic_stub.go
+@@ -0,0 +1,20 @@
++//go:build !with_quic
++
++package autoroute
++
++import (
++	"crypto/tls"
++	"errors"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	"net/http"
++)
++
++type unsupportedQUICTransport struct{}
++
++func (unsupportedQUICTransport) RoundTrip(*http.Request) (*http.Response, error) {
++	return nil, errors.New("quic_verification_unavailable")
++}
++func newWebQUICTransport(N.Dialer, M.Socksaddr, *tls.Config) (http.RoundTripper, func()) {
++	return unsupportedQUICTransport{}, func() {}
++}
+diff --git a/route/route.go b/route/route.go
+--- a/route/route.go
++++ b/route/route.go
+@@ -352,6 +352,10 @@
+ 	if r.autoRouting != nil {
+ 		r.initKabanmaxAuto()
+ 		event := r.autoRouting.Observe(&metadata, selectedOutbound.Tag())
++        target := r.autoRouting.SelectForEvent(ctx, selectedOutbound.Tag(), &metadata, event)
++        if target != selectedOutbound.Tag() {
++            if alternative, ok := r.outbound.Outbound(target); ok { selectedOutbound = alternative }
++        }
+ 		onClose = N.AppendClose(onClose, func(err error) { r.autoRouting.Failed(event, err) })
+ 	}
+ 	chain, err := resolveOutbound(selectedOutbound, N.NetworkUDP)

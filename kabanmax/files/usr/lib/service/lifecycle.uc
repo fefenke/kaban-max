@@ -545,6 +545,11 @@ function reload_runtime(reason) {
         return reload_failed(false);
 
     // The running core reads the file only when it is reloaded below.
+    // Keep pending/manual actions in RAM when collection is switched off.
+    // No flash writes and no dependency on the system log ring.
+    let old_auto=common.read_json_file(require("singbox.constants").config_path(uci.get_all("kabanmax","settings") ?? {}))?.route?.kabanmax_auto;
+    if(length(old_auto ?? [])>0)try { require("diagnostics.auto_routing").checkpoint(); }
+    catch(e) { return abort_reload("Cannot preserve pending IP records: "+e.message,false); }
     let config_changed;
     try {
         runtime.configure_service();

@@ -55,10 +55,10 @@ func TestDomainMismatchBecomesIPScopeWithoutLosingFailure(t *testing.T) {
 		t.Fatal(e)
 	}
 	d, ok := result.(Decision)
-	if !ok || d.Status != "proposed" || !d.IPOnly || d.Domain != "" || d.Target != "direct-out" || d.Failure == nil {
+	if !ok || d.ApplyAllowed || !d.IPOnly || d.Domain != "" || d.Failure == nil || d.Attempts[0].Reason!="tls_verification_failed" {
 		t.Fatalf("IP scope was discarded: %+v", result)
 	}
-	if _, e = m.Apply(context.Background(), d.ID); e != nil {
+	if _, e = manualAPI(m,"s1",d.ID,"direct-out"); e != nil {
 		t.Fatal(e)
 	}
 }
@@ -199,7 +199,7 @@ func TestRepeatedLoggedSourceErrorsCanConfirmAnInconclusiveRecheck(t *testing.T)
 	}
 }
 
-func TestOldOrDifferentFailureDoesNotConfirmTheNewError(t *testing.T) {
+func TestNewLoggedErrorDoesNotRequireRepeatingOldFailureMessage(t *testing.T) {
 	for _, expired := range []bool{false, true} {
 		t.Run(map[bool]string{false: "different", true: "expired"}[expired], func(t *testing.T) {
 			m, q, z, direct := webManager(t, 200, normalPage)
@@ -223,8 +223,8 @@ func TestOldOrDifferentFailureDoesNotConfirmTheNewError(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			if result.(Decision).ApplyAllowed || direct.calls.Load() != 0 || current.Count != 1 {
-				t.Fatal("old or different logged failure authorized a new proposal", result)
+			if !result.(Decision).ApplyAllowed || direct.calls.Load() != 2 || current.Count != 1 {
+				t.Fatal("new logged failure did not check the alternative independently", result)
 			}
 		})
 	}

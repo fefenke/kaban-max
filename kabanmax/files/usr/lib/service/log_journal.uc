@@ -18,6 +18,7 @@ function create(options, saved) {
     let hash = options.fingerprint ?? fingerprint;
     // Transient snapshot only; never persisted in archive/dedup metadata.
     let last_dump = null;
+    let recent_hashes = {};
     let max_age = options.max_age ?? 86400;
     let max_bytes = options.max_bytes ?? 2097152;
     let max_storage_bytes = options.max_storage_bytes ?? 2097152;
@@ -63,7 +64,16 @@ function create(options, saved) {
         }
         // Compare the prior dump and then its bounded suffix window. Fingerprints
         // survive clear/expiry so an unchanged system dump is never reimported.
-        let hashes = map(lines, hash);
+        let next_hashes = {};
+        let hashes = [];
+        for(let i=0;i<length(lines);i++) {
+            let line=lines[i];let value=recent_hashes[line] ?? hash(line);
+            push(hashes,value);
+            // RAM only, bounded by the collected tail; never serialize plaintext
+            // into persisted dedup metadata after clear/expiry.
+            if(i>=length(lines)-1024)next_hashes[line]=value;
+        }
+        recent_hashes=next_hashes;
         let digest = hash(join("\n", hashes));
         let overlap = length(previous) < length(lines) ? length(previous) : length(lines);
         let end = 0;

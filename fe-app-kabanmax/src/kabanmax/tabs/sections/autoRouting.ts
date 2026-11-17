@@ -1,14 +1,20 @@
 import { renderAutoRecords } from './autoRecords';
 import { callUbus } from '../../../helpers/callUbus';
 import { KABANMAX_UCI_PACKAGE } from '../../../constants';
+import { showToast } from '../../../helpers/showToast';
+import { currentOptionValue } from './subscriptions/model';
 
 export interface AutoEntry {
+  domains?: string[];
+  new_error?: boolean;
+  persistent_ip?: boolean;
   failure?: { id: string; source_id: string; message: string; at: string };
   ip_only?: boolean;
   attempts?: { outbound: string; status: string; reason?: string }[];
   id?: string;
   ip: string;
   domain?: string;
+  observed_domain?: string;
   domain_known?: boolean;
   evidence?: string;
   apply_allowed?: boolean;
@@ -63,28 +69,6 @@ export function canApply(row: AutoEntry, now = Date.now()): boolean {
   );
 }
 
-export function statusText(status: string): string {
-  const labels: Record<string, string> = {
-    observing: _('Needs verification'),
-    detected: _('Needs verification'),
-    checking: _('Checking'),
-    inconclusive: _('Insufficient evidence'),
-    identity_unknown: _('Needs verification'),
-    unattributed: _('Source section not established'),
-    proposed: _('Proposed'),
-    applied: _('Applied'),
-    unchanged: _('Zapret2 verified; no change'),
-    expired: _('Expired'),
-    removed: _('Removed'),
-    rolled_back: _('Rolled back'),
-    rechecked: _('Rechecked'),
-    replaced: _('Replaced'),
-    closed: _('Connection closed'),
-    blocked_by_policy: _('Forbidden by policy'),
-  };
-  return labels[status] || _('See diagnostic details');
-}
-
 export function routeText(row: AutoEntry): string {
   const target = row.target || row.source;
   if (target === 'direct-out') return 'Direct';
@@ -92,27 +76,36 @@ export function routeText(row: AutoEntry): string {
 }
 
 export function recordStateText(row: AutoEntry): string {
+  if (row.status === 'applied')
+    return row.new_error
+      ? _('New connection error detected')
+      : _('No new errors');
+  if (row.status === 'saved') return _('Saved route is not active');
+  if (row.status === 'proposed')
+    return `${_('Working alternative found')}: ${routeText(row)}`;
   if (row.reason?.startsWith('checking:')) {
     const target = row.reason.slice('checking:'.length);
     return `${_('Checking')}: ${target === 'direct-out' ? 'Direct' : target}`;
   }
-  const reasons: Record<string, string> = {
-    actual_destination_ip_unknown: _(
-      'Connection error has no concrete destination IP',
-    ),
-    no_working_alternative: _('No working alternative found'),
-    original_https_inconclusive: _('Original route check failed; see results'),
-    original_failure_unproven: _('Original route failure was not confirmed'),
-    dns_changed: _('DNS changed; verification must be repeated'),
-    dns_unstable_or_negative: _('Domain and IP could not be confirmed'),
-    hourly_budget: _('Verification limit reached; try again later.'),
-    cooldown: _('Waiting before the next check.'),
-  };
-  if (row.status === 'saved') return _('Saved; fresh verification required');
-  return reasons[row.reason || ''] || statusText(row.status);
+  if (row.status === 'checking')
+    return _('Searching for a working alternative…');
+  if (
+    row.reason === 'cancelled_generation' ||
+    ['detected', 'observing'].includes(row.status || '')
+  )
+    return _('Queued for automatic checking');
+  if (row.status === 'excluded') return _('Excluded');
+  if (row.status === 'removed') return _('Removed');
+  return _('No working alternative found');
 }
 
-export async function autoState(): Promise<AutoState> {
+let stateReading: Promise<AutoState> | undefined;
+export function autoState(): Promise<AutoState> {
+  return (stateReading ||= readAutoState().finally(() => {
+    stateReading = undefined;
+  }));
+}
+async function readAutoState(): Promise<AutoState> {
   const reply = await callUbus<Partial<AutoState>>({
     object: 'kabanmax',
     method: 'auto_state',
@@ -192,6 +185,24 @@ export function attachAutoRouting(section: CBISection) {
     option.depends('action', 'zapret2');
     option.default = defaultValue;
     option.retain = true;
+    if (key === 'auto_routing_enabled') {
+      const prerequisite = () =>
+        String(
+          currentOptionValue(option, 'settings', 'yacd_secret_key') || '',
+        ).trim()
+          ? true
+          : _(
+              'Set a Clash API key in Settings before enabling automatic routing. YACD WAN access is not required.',
+            );
+      option.validate = (_id, value) => (value === '1' ? prerequisite() : true);
+      option.onchange = function (_event, id, value) {
+        if (value !== '1') return;
+        const result = prerequisite();
+        if (result === true) return;
+        this.getUIElement(id)?.setValue('0');
+        showToast(result, 'error', 8000);
+      };
+    }
     if (key === 'auto_routing_direct')
       option.description = _(
         'Check Direct as an alternative for failed connections in this section.',
@@ -293,7 +304,7 @@ export function attachAutoRouting(section: CBISection) {
   );
   list.modalonly = true;
   list.description = _(
-    'Up to 64 records per list. Saved approvals are inactive until fresh verification; bulk actions use the entire current filter.',
+    'One record per IP, with its observed domains. Disabling collection keeps manual actions available. Routing changes are saved to flash in batches every 15 minutes.',
   );
   list.depends('action', 'zapret2');
   list.write = () => undefined;

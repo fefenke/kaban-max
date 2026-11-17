@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: KABANMAX\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-16 22:10+0300\n"
-"PO-Revision-Date: 2026-11-16 22:10+0300\n"
+"POT-Creation-Date: 2026-11-17 20:05+0300\n"
+"PO-Revision-Date: 2026-11-17 20:05+0300\n"
 "Last-Translator: K.A.B.A.N.-MAX contributors\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -257,6 +257,9 @@ msgstr "Добавить заголовок"
 msgid "Add URLTest"
 msgstr "Добавить URLTest"
 
+msgid "Added"
+msgstr "Добавлено"
+
 msgid "Added after every server name"
 msgstr "Добавляется после имени каждого сервера"
 
@@ -344,9 +347,6 @@ msgstr "Любой на пути до сервера сможет выдать �
 msgid "AnyTLS requires TLS"
 msgstr "Для AnyTLS требуется TLS"
 
-msgid "Applied"
-msgstr "Применено"
-
 msgid "Applied records"
 msgstr "Применены"
 
@@ -370,6 +370,9 @@ msgstr "Применение..."
 
 msgid "Approved"
 msgstr "Одобрено"
+
+msgid "Ascending"
+msgstr "По возрастанию"
 
 msgid "At most %d KB, this is %d KB"
 msgstr "Не больше %d КБ, здесь %d КБ"
@@ -400,6 +403,9 @@ msgstr "Автоматическая маршрутизация"
 
 msgid "Automatic routing action failed"
 msgstr "Не удалось выполнить действие автомаршрутизации"
+
+msgid "Automatic routing is not active in the running configuration. Save & Apply the section settings and check the application log if activation fails."
+msgstr "Автомаршрутизация не активна в запущенной конфигурации. Сохраните и примените настройки секции; если включить её не удалось, проверьте журнал приложения."
 
 msgid "Automatically apply verified IP-only proposals too. Manual IP-only proposals do not require this preference."
 msgstr "Автоматически применять также проверенные предложения для IP без домена. Для ручного принятия эта галка не нужна."
@@ -457,9 +463,6 @@ msgstr "По умолчанию из набора правил применяю�
 
 msgid "By default the router's routes choose it"
 msgstr "По умолчанию его выбирают маршруты роутера"
-
-msgid "By IP"
-msgstr "По IP"
 
 msgid "CA certificate"
 msgstr "Сертификат центра сертификации"
@@ -629,9 +632,6 @@ msgstr "Имя CN (name)"
 msgid "comp-lzo: unsupported mode %s"
 msgstr "comp-lzo: режим %s не поддерживается"
 
-msgid "Completed"
-msgstr "Выполнено"
-
 msgid "Components"
 msgstr "Компоненты"
 
@@ -676,12 +676,6 @@ msgstr "Подключаться к серверу через другую се�
 
 msgid "Connect to the tunnel server through another section"
 msgstr "Подключаться к серверу туннеля через другую секцию"
-
-msgid "Connection closed"
-msgstr "Соединение закрыто"
-
-msgid "Connection error has no concrete destination IP"
-msgstr "В ошибке соединения не установлен конкретный IP"
 
 msgid "Connection errors"
 msgstr "Ошибки соединений"
@@ -833,6 +827,9 @@ msgstr "Задержка в миллисекундах перед перезап
 msgid "Delete"
 msgstr "Удалить"
 
+msgid "Descending"
+msgstr "По убыванию"
+
 msgid "Destination domain or IP"
 msgstr "Домен или IP назначения"
 
@@ -866,6 +863,9 @@ msgstr "Диагностика"
 msgid "Direct"
 msgstr "Напрямую"
 
+msgid "Direction"
+msgstr "Направление"
+
 msgid "Disable autostart"
 msgstr "Отключить автостарт"
 
@@ -880,9 +880,6 @@ msgstr "Выключено"
 
 msgid "Disables QUIC for compatibility and to fix video streaming"
 msgstr "Отключает QUIC для совместимости и исправления видеостриминга"
-
-msgid "DNS changed; verification must be repeated"
-msgstr "DNS изменился; требуется повторная проверка"
 
 msgid "DNS outside the rules"
 msgstr "DNS вне правил"
@@ -926,8 +923,8 @@ msgstr "не слушает %s"
 msgid "does not use the router's DNS"
 msgstr "не использует DNS роутера"
 
-msgid "Domain and IP could not be confirmed"
-msgstr "Связь домена с IP не подтверждена"
+msgid "Domain"
+msgstr "Домен"
 
 msgid "Domain Resolver"
 msgstr "Резолвер доменов"
@@ -1085,9 +1082,6 @@ msgstr "Предполагаемая секция"
 msgid "Expected status"
 msgstr "Ожидаемый статус"
 
-msgid "Expired"
-msgstr "Срок истёк"
-
 msgid "Expired %s"
 msgstr "Истёк %s"
 
@@ -1102,9 +1096,6 @@ msgstr "Экспорт конфига"
 
 msgid "failed"
 msgstr "ошибка"
-
-msgid "Failed"
-msgstr "Не удалось"
 
 msgid "Failed to clear logs"
 msgstr "Не удалось очистить журнал"
@@ -1219,9 +1210,6 @@ msgstr "Для сервера, который пускает только нек
 
 msgid "For example 30m, 12h or 1d"
 msgstr "Например: 30m, 12h или 1d"
-
-msgid "Forbidden by policy"
-msgstr "Запрещено политикой"
 
 msgid "form-entry: format FORM:NAME=VALUE"
 msgstr "form-entry: формат ФОРМА:ИМЯ=ЗНАЧЕНИЕ"
@@ -1447,9 +1435,6 @@ msgstr "Вывод установщика"
 
 msgid "installer running..."
 msgstr "работает установщик..."
-
-msgid "Insufficient evidence"
-msgstr "Недостаточно доказательств"
 
 msgid "interface is up, no internet through it"
 msgstr "интерфейс работает, выхода в интернет через него нет"
@@ -1685,9 +1670,6 @@ msgstr "Оставьте пустым для обычной HTTPS-проверк
 msgid "Legacy encryption"
 msgstr "Устаревшее шифрование"
 
-msgid "Legacy exclusions exceed 64 records. Remove entries explicitly or narrow the filter; no exclusions were discarded."
-msgstr "В старом реестре более 64 исключений. Удалите записи явно или уточните фильтр; исключения не удалялись автоматически."
-
 msgid "Level"
 msgstr "Уровень"
 
@@ -1850,9 +1832,6 @@ msgstr "Нужен ключ base64 длиной %d байт"
 msgid "Needs an IPv4 subnet"
 msgstr "Нужна подсеть IPv4"
 
-msgid "Needs verification"
-msgstr "Нужна проверка"
-
 msgid "Network"
 msgstr "Сеть"
 
@@ -1867,6 +1846,9 @@ msgstr "Настройки сетевого интерфейса"
 
 msgid "Network interface: %s"
 msgstr "Сетевой интерфейс: %s"
+
+msgid "New connection error detected"
+msgstr "Обнаружена новая ошибка соединения"
 
 msgid "Newest first"
 msgstr "Сначала новые"
@@ -1901,9 +1883,6 @@ msgstr "Нет сертификата CA (ca)"
 msgid "No closed connections"
 msgstr "Нет закрытых подключений"
 
-msgid "No connection errors"
-msgstr "Ошибок соединений пока нет"
-
 msgid "no connection to the coordination server"
 msgstr "нет связи с сервером координации"
 
@@ -1937,11 +1916,11 @@ msgstr "Логи отсутствуют"
 msgid "No logs match the current filters"
 msgstr "Нет логов, соответствующих текущим фильтрам"
 
-msgid "No matching IPs"
-msgstr "Нет IP по заданному фильтру"
-
 msgid "No network"
 msgstr "Нет сети"
+
+msgid "No new errors"
+msgstr "Новых ошибок нет"
 
 msgid "No other devices in the tailnet"
 msgstr "В сети нет других устройств"
@@ -2039,9 +2018,6 @@ msgstr "не запущен"
 msgid "Not supported by this protocol"
 msgstr "Не поддерживается этим протоколом"
 
-msgid "Not verified"
-msgstr "не подтверждён"
-
 msgid "Nothing after %s"
 msgstr "Пусто после %s"
 
@@ -2071,6 +2047,9 @@ msgstr "Токен доступа OIDC"
 
 msgid "Oldest first"
 msgstr "Сначала старые"
+
+msgid "One record per IP, with its observed domains. Disabling collection keeps manual actions available. Routing changes are saved to flash in batches every 15 minutes."
+msgstr "Одна запись на IP со списком обнаруженных доменов. При выключенном сборе ручные действия доступны. Изменения маршрутов записываются во флеш пакетами раз в 15 минут."
 
 msgid "One rule per line: pattern => replacement, applied in order. The pattern is a regular expression, $1 in the replacement keeps a captured group and ${1} keeps it in front of a letter. Example: ^HK-(.*)$ => Hong Kong $1"
 msgstr "По одному правилу в строке: шаблон => замена, применяются по порядку. Шаблон — регулярное выражение, $1 в замене сохраняет найденную группу, а ${1} сохраняет её перед буквой. Пример: ^HK-(.*)$ => Гонконг $1"
@@ -2149,12 +2128,6 @@ msgstr "Время ожидания истекло"
 
 msgid "Original connection URI"
 msgstr "Исходная ссылка подключения"
-
-msgid "Original route check failed; see results"
-msgstr "Проверка исходного маршрута не завершена; см. результаты"
-
-msgid "Original route failure was not confirmed"
-msgstr "Сбой исходного маршрута не подтвердился"
 
 msgid "Original URI"
 msgstr "Исходная ссылка"
@@ -2288,17 +2261,11 @@ msgstr "Приватный ключ"
 msgid "Probably a subscription URL: paste it into Subscription"
 msgstr "Возможно, это URL подписки: вставьте его в поле «Подписка»"
 
-msgid "Processing…"
-msgstr "Обработка…"
-
 msgid "Profile"
 msgstr "Профиль"
 
 msgid "Profile ID"
 msgstr "Идентификатор профиля"
-
-msgid "Proposed"
-msgstr "Предложено"
 
 msgid "Protocol"
 msgstr "Протокол"
@@ -2320,6 +2287,9 @@ msgstr "Публичный ключ"
 
 msgid "QR code"
 msgstr "QR-код"
+
+msgid "Queued for automatic checking"
+msgstr "В очереди автоматической проверки"
 
 msgid "Random selects Chrome, Firefox or Safari once per process. Randomized builds a seeded ClientHello with ALPN. Neither has a browser version. Android and 360 do not support REALITY; Edge, iOS and QQ require older REALITY servers."
 msgstr "Random выбирает Chrome, Firefox или Safari один раз при старте процесса. Randomized генерирует ClientHello с ALPN и постоянным seed на время процесса. У этих режимов нет версии браузера. Android и 360 не поддерживают REALITY; Edge, iOS и QQ совместимы со старыми серверами REALITY."
@@ -2356,9 +2326,6 @@ msgstr "Короткий ID REALITY"
 
 msgid "Recent events (up to 24 hours)"
 msgstr "События за последние 24 часа"
-
-msgid "Rechecked"
-msgstr "Проверено повторно"
 
 msgid "Reconnect after silence, seconds"
 msgstr "Переподключение после тишины, секунд"
@@ -2435,9 +2402,6 @@ msgstr "Повторная проверка"
 msgid "Repeated failure confirmation"
 msgstr "Повторное подтверждение сбоя"
 
-msgid "Replaced"
-msgstr "Заменено"
-
 msgid "Reported system"
 msgstr "Сообщаемая система"
 
@@ -2485,9 +2449,6 @@ msgstr "перезапускается..."
 
 msgid "Restarting..."
 msgstr "Перезапуск..."
-
-msgid "Rolled back"
-msgstr "Отменено"
 
 msgid "Route"
 msgstr "Маршрут"
@@ -2558,8 +2519,8 @@ msgstr "Тот же файл, что и сертификат"
 msgid "Save"
 msgstr "Сохранить"
 
-msgid "Saved; fresh verification required"
-msgstr "Сохранено; нужна новая проверка"
+msgid "Saved route is not active"
+msgstr "Сохранённый маршрут не активен"
 
 msgid "Scheduled check"
 msgstr "Плановая проверка"
@@ -2569,6 +2530,9 @@ msgstr "Поиск"
 
 msgid "Search IP or domain"
 msgstr "Поиск по IP или домену"
+
+msgid "Searching for a working alternative…"
+msgstr "Поиск рабочей альтернативы…"
 
 msgid "Seconds, or a range such as 25-35"
 msgstr "Секунды или диапазон, например 25-35"
@@ -2587,9 +2551,6 @@ msgstr "Секции"
 
 msgid "Security"
 msgstr "Защита"
-
-msgid "See diagnostic details"
-msgstr "См. подробности диагностики"
 
 msgid "Select a .ovpn, .conf, .xml or .nmconnection file"
 msgstr "Выберите файл .ovpn, .conf, .xml или .nmconnection"
@@ -2726,6 +2687,9 @@ msgstr "Список сервисов"
 msgid "Session cookie"
 msgstr "Cookie сессии"
 
+msgid "Set a Clash API key in Settings before enabling automatic routing. YACD WAN access is not required."
+msgstr "Перед включением автомаршрутизации задайте ключ Clash API в настройках. Доступ YACD из WAN не требуется."
+
 msgid "Set the public host and the port to get a link."
 msgstr "Укажите публичный адрес и порт, чтобы получить ссылку."
 
@@ -2801,9 +2765,6 @@ msgstr "sing-box-kabanmax %s устарел: нужен %s или новее"
 msgid "sing-box-kabanmax is not installed"
 msgstr "sing-box-kabanmax не установлен"
 
-msgid "Skipped"
-msgstr "Пропущено"
-
 msgid "Skipped: KabanMax is not running"
 msgstr "Пропущено: KabanMax не запущен"
 
@@ -2813,9 +2774,6 @@ msgstr "SNI"
 msgid "SOCKS5"
 msgstr "SOCKS5"
 
-msgid "Sort"
-msgstr "Сортировка"
-
 msgid "Sort by latency"
 msgstr "Сортировать по задержке"
 
@@ -2824,9 +2782,6 @@ msgstr "Источник"
 
 msgid "Source Network Interface"
 msgstr "Сетевой интерфейс источника"
-
-msgid "Source section not established"
-msgstr "Исходная секция не установлена"
 
 msgid "Spaces are not allowed"
 msgstr "Пробелы недопустимы"
@@ -3323,9 +3278,6 @@ msgstr "Неподдерживаемый режим flow VLESS"
 msgid "Up to %d characters"
 msgstr "Не длиннее %d символов"
 
-msgid "Up to 64 records per list. Saved approvals are inactive until fresh verification; bulk actions use the entire current filter."
-msgstr "До 64 записей в каждом списке. Сохранённые разрешения неактивны до новой проверки. Массовые действия охватывают весь текущий фильтр."
-
 msgid "Update"
 msgstr "Обновить"
 
@@ -3425,9 +3377,6 @@ msgstr "UUID"
 msgid "UUID / username / password"
 msgstr "UUID / имя пользователя / пароль"
 
-msgid "Verification limit reached; try again later."
-msgstr "Лимит проверок исчерпан. Повторите позже."
-
 msgid "Verified"
 msgstr "доступен"
 
@@ -3460,9 +3409,6 @@ msgstr "VPN-сервер"
 
 msgid "Wait after both checks fail before checking again. Range: 1s to 5m. Check time is additional."
 msgstr "Пауза после неудачи обеих проверок перед повторной попыткой. От 1s до 5m. Время выполнения самих проверок добавляется отдельно."
-
-msgid "Waiting before the next check."
-msgstr "Ожидание повторной проверки."
 
 msgid "Waiting for approval in the console"
 msgstr "Ждёт одобрения в консоли"
@@ -3530,6 +3476,9 @@ msgstr "Пир WireGuard: %s"
 msgid "With fingerprints the CA certificate is not needed (peer-fingerprint in the profile)"
 msgstr "С отпечатками сертификат CA не нужен (peer-fingerprint в профиле)"
 
+msgid "Working alternative found"
+msgstr "Найдена рабочая альтернатива"
+
 msgid "XHTTP extra (JSON)"
 msgstr "Дополнительные параметры XHTTP (JSON)"
 
@@ -3556,6 +3505,3 @@ msgstr "Ты кабан"
 
 msgid "Your own certificate"
 msgstr "Свой сертификат"
-
-msgid "Zapret2 verified; no change"
-msgstr "Zapret2 проверен; изменений нет"
