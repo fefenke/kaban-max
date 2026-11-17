@@ -1791,8 +1791,8 @@ function check_requirements() {
     if (!core_version.version_at_least(binary_version, ctx.sing_box_required_version))
         die("sing-box-kabanmax " + binary_version + " is older than the required minimum (" + ctx.sing_box_required_version + "). Update sing-box-kabanmax");
     for (let section in sections_by_type("section"))
-        if (option(section, "action", "") == "zapret2" && bool_option(section, "enabled", true) && bool_option(section, "auto_routing_enabled", false) && !core_version.version_at_least(binary_version, "1.14.4-r18"))
-            die("Automatic routing requires sing-box-kabanmax 1.14.4-r18; disabled automation without saved records remains compatible with r10");
+        if (option(section, "action", "") == "zapret2" && bool_option(section, "enabled", true) && bool_option(section, "auto_routing_enabled", false) && !core_version.version_at_least(binary_version, "1.14.4-r22"))
+            die("Automatic routing requires sing-box-kabanmax 1.14.4-r22; disabled automation without saved records remains compatible with r10");
 
     let problem = features.core_problem(ctx.core_tags);
     if (problem != "")

@@ -17,6 +17,31 @@ import { autoRecords, registryAction, registryNotice } from '../autoRecords';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('automatic routing lists', () => {
+  it('distinguishes unknown protocols and errors on other ports', () => {
+    vi.stubGlobal('_', (text: string) => text);
+    expect(
+      recordStateText({
+        ip: '203.0.113.7',
+        status: 'inconclusive',
+        reason: 'protocol_unconfirmed',
+      }),
+    ).toBe('Protocol operation is unconfirmed');
+    expect(
+      recordStateText({
+        ip: '203.0.113.7',
+        status: 'applied',
+        new_error: true,
+        error_port: 5222,
+      }),
+    ).toBe('New connection error on port: 5222');
+    expect(
+      recordStateText({
+        ip: '203.0.113.7',
+        status: 'applied',
+        uncovered_connections: 1,
+      }),
+    ).toBe('Some connections are not covered by this rule');
+  });
   it('uses alternative results for pending records and reports only new applied failures', () => {
     vi.stubGlobal('_', (text: string) => text);
     for (const status of ['inconclusive', 'unchanged'])

@@ -61,7 +61,7 @@ WORK='' LOCKED=0
 LEGACY_ROOT='' LEGACY_MIGRATED=0 LEGACY_RESTORED=0
 PM='' PM_DB='' EXT='' ARCH='' RELEASE='' FLASH_MOUNT=/ FLASH_FS=''
 KABANMAX_OLD='' APP_OLD='' I18N_OLD='' CORE_OLD='' CORE_OLD_VARIANT='' CONFIG_VERSION='' FORK_URL=''
-KABANMAX_ENABLED=0 KABANMAX_RUNNING=0 STARTED=0
+KABANMAX_ENABLED=0 KABANMAX_RUNNING=0 STARTED=0 EARLY_STOPPED=0
 FOREIGN_PKGS='' FOREIGN_WORLD='' FOREIGN_FILES='' LEFTOVERS=''
 F_VERSION='' F_TAG='' F_CORE_MIN='' C_VERSION='' C_TAG='' C_KABANMAX_MIN=''
 I18N=0 NEED_KABANMAX=0 NEED_APP=0 NEED_I18N=0
@@ -137,6 +137,7 @@ finish() { # finish EXIT [CODE]
 		[ -z "$BACKUP" ] || detail "$(t 'The old config is kept as %s' 'Прежний конфиг сохранён как %s' "$BACKUP")" >&2
 		detail "$(t 'Installer log: %s' 'Журнал установщика: %s' "$LOG")" >&2
 	fi
+	resume_for_ram
 	cleanup
 	exit "$1"
 }
@@ -567,7 +568,14 @@ fetch() { # fetch URL FILE [ACCEPT]: 0; 2 when the server answered with an HTTP 
 	# uclient-fetch exits 8 when the server answers with an error, which it names unless -q, 4 when it
 	# is not reached; GitHub's API answers 403 or 429 once an address spent its requests
 	if [ "$status" = 8 ]; then
-		grep -q -e 'HTTP error 403' -e 'HTTP error 429' -e 'ERROR 403' -e 'ERROR 429' "$WORK/fetch.log" && return 3
+        if grep -qi -e 'HTTP.*429' -e 'rate limit exceeded' -e 'rate-limit exceeded' "$WORK/fetch.log"; then return 3; fi
+        case "$1" in https://api.github.com/*)
+            if grep -qi 'HTTP.*403' "$WORK/fetch.log" &&
+                wget -T 10 -O "$WORK/rate-limit.json" https://api.github.com/rate_limit 2>>"$LOG"; then
+                [ "$(jsonfilter -i "$WORK/rate-limit.json" -e '@.resources.core.remaining' 2>/dev/null)" != 0 ] || return 3
+            fi
+        ;; esac
+        grep -qi 'HTTP.*403' "$WORK/fetch.log" && return 4
 		return 2
 	fi
 	[ "$status" = 0 ]
@@ -581,7 +589,7 @@ download() { # download URL FILE [ACCEPT], three tries: 0; 2 when the server has
 		fetch "$1" "$2" "${3:-}"
 		status=$?
 		[ "$status" != 0 ] || [ ! -s "$2" ] || return 0
-		case $status in 2 | 3) rm -f "$2"; return "$status" ;; esac
+		case $status in 2 | 3 | 4) rm -f "$2"; return "$status" ;; esac
 		if [ "$(mem_available_kb)" -lt 4096 ] 2>/dev/null || [ "$(free_kb /tmp)" -lt 1024 ] 2>/dev/null; then
 			rm -f "$2"
 			fail 1 no_memory "$(t 'Not enough RAM for the downloads' 'Не хватает оперативной памяти для загрузки')" \
@@ -612,6 +620,10 @@ asset_url() { # asset_url kabanmax|core FILE: where FILE of the release is, empt
 rate_limited() {
 	fail 1 rate_limit "$(t 'GitHub refuses more requests from this address for now: it takes 60 an hour without an account' 'GitHub пока не принимает запросы с этого адреса: без входа он даёт 60 запросов в час')" \
 		"$(t 'Run the installer again later: the limit is reset within the hour' 'Запустите установщик снова позже: лимит сбрасывается в течение часа')"
+}
+
+access_denied() {
+    fail 1 forbidden "$(t 'GitHub refused the request (HTTP403); rate limit was not confirmed' 'GitHub отклонил запрос (HTTP403); исчерпание лимита не подтверждено')"
 }
 
 checksum_of() { # checksum_of NAME SUMS
@@ -853,6 +865,7 @@ fetch_or_fail() { # fetch_or_fail URL FILE NAME RELEASE: a file of a release, or
 	0) return 0 ;;
 	2) fail 1 release "$(t 'Release %s has no %s' 'В релизе %s нет %s' "$4" "$3")" ;;
 	3) rate_limited ;;
+	4) access_denied ;;
 	esac
 	fail 1 network "$(t 'Cannot download %s' 'Не удалось скачать %s' "$3")" "$(network_hint)"
 }
@@ -880,6 +893,7 @@ fetch_release() { # fetch_release kabanmax|core: the latest release's manifest, 
 			"$(t 'Download the latest install.sh' 'Скачайте свежий install.sh')"
 		;;
 	3) rate_limited ;;
+	4) access_denied ;;
 	*) fail 1 network "$(t 'Cannot download the information on the %s release' 'Не удалось скачать сведения о релизе %s' "$name")" "$(network_hint)" ;;
 	esac
 	read_manifest "$manifest" "$package" >"$WORK/$1.fields" ||
@@ -1043,12 +1057,50 @@ need_ram_kb() { # what the run puts in RAM while KabanMax still runs: the downlo
 	echo "$kb"
 }
 
+# This marker/watchdog only lives in RAM. It restores the running service if
+# the installer is killed while temporarily stopped, without touching settings.
+arm_memory_recovery() {
+    local marker="$WORK/resume-service" owner=$$
+    : > "$marker"
+    (trap '' INT TERM HUP PIPE
+     while [ -f "$marker" ] && kill -0 "$owner" 2>/dev/null; do sleep 2; done
+     [ ! -f "$marker" ] || /etc/init.d/kabanmax start >>"$LOG" 2>&1
+    ) </dev/null >/dev/null 2>&1 &
+}
+
+pause_for_ram() {
+    [ "$KABANMAX_RUNNING" = 1 ] && [ "$EARLY_STOPPED" = 0 ] || return 1
+    EARLY_STOPPED=1
+    arm_memory_recovery
+    step stop "$(t 'Temporarily stopping KabanMax to free RAM' 'Временно останавливаем KabanMax для освобождения памяти')"
+    deadline 90 /etc/init.d/kabanmax stop >>"$LOG" 2>&1
+}
+
+resume_for_ram() {
+    [ "${EARLY_STOPPED:-0}" = 1 ] || return 0
+    if [ "${STARTED:-0}" != 1 ]; then
+        if ! deadline 150 /etc/init.d/kabanmax start >>"$LOG" 2>&1; then
+            log 'KabanMax recovery failed; RAM recovery marker retained'
+            # Keep the directory for the independent recovery watcher.
+            WORK=''
+            return 1
+        fi
+    fi
+    rm -f "$WORK/resume-service"
+    EARLY_STOPPED=0
+}
+
 enough_ram() { # enough_ram KB downloads|dependencies: the run stops here unless RAM and /tmp have KB
 	local free text
 	free=$(mem_available_kb)
 	[ "$(free_kb /tmp)" -ge "$free" ] 2>/dev/null || free=$(free_kb /tmp)
 	log "ram for the $2: $1 KB needed, $free KB free"
 	[ "$free" -lt "$1" ] 2>/dev/null || return 0
+    if pause_for_ram; then
+        free=$(mem_available_kb)
+        [ "$(free_kb /tmp)" -ge "$free" ] 2>/dev/null || free=$(free_kb /tmp)
+        [ "$free" -lt "$1" ] 2>/dev/null || return 0
+    fi
 	if [ "$2" = downloads ]; then
 		text=$(t 'Not enough RAM for the downloads: %s MB needed, %s MB free' 'Не хватает оперативной памяти для загрузки: нужно %s МБ, свободно %s МБ' "$(mb "$1")" "$(mb "$free")")
 	else

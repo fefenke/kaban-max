@@ -1,0 +1,172 @@
+diff --git a/common/autoroute/ip_registry.go b/common/autoroute/ip_registry.go
+--- a/common/autoroute/ip_registry.go
++++ b/common/autoroute/ip_registry.go
+@@ -1,5 +1,10 @@
+ package autoroute
+ 
++import "encoding/json"
++
++func sameIPDeviceScope(a,b Query) bool {
++ return a.Source==b.Source && a.IP==b.IP && a.SourceIP==b.SourceIP && a.Inbound==b.Inbound
++}
+ func sameIPScope(a, b Query) bool {
+ 	return a.Source == b.Source && a.IP == b.IP && a.SourceIP == b.SourceIP && a.Inbound == b.Inbound && a.Port == b.Port
+ }
+@@ -19,7 +24,14 @@
+ 		return true
+ 	}
+ 	q.Domain = ""
+-	return m.suppressed[m.key(q)]
++	if m.suppressed[m.key(q)] { return true }
++    if s:=m.sources[q.Source];s.Mode=="web" {
++        for key := range m.suppressed {
++            var parts []any
++            if json.Unmarshal([]byte(key),&parts)==nil && len(parts)==6 && parts[0]==s.ID && parts[1]==q.IP && parts[2]=="" && parts[3]==q.SourceIP && parts[4]==q.Inbound { return true }
++        }
++    }
++    return false
+ }
+ 
+ // Domains are labels collected from actual connections, never reverse DNS.
+@@ -40,6 +52,7 @@
+ 
+ func (m *Manager) persistentIP(d *Decision) {
+ 	d.PersistentIP = true
++ d.AllPorts = true
+ 	for _, event := range m.events {
+ 		if event.Source == d.Source && event.IP == d.IP {
+ 			for _, name := range event.Domains {
+@@ -50,8 +63,9 @@
+ 	}
+ 	// Exactly one grant for this IP and original device/inbound/port scope.
+ 	for key, old := range m.leases {
+-		if old.Source == d.Source && old.IP == d.IP && old.SourceIP == d.SourceIP && old.Inbound == d.Inbound && old.Port == d.Port {
++		if old.Source == d.Source && old.IP == d.IP && old.SourceIP == d.SourceIP && old.Inbound == d.Inbound {
+ 			delete(m.leases, key)
++            delete(m.reserved,m.key(leaseQuery(old)))
+ 		}
+ 	}
+ }
+diff --git a/common/autoroute/lease.go b/common/autoroute/lease.go
+--- a/common/autoroute/lease.go
++++ b/common/autoroute/lease.go
+@@ -8,6 +8,8 @@
+ )
+ 
+ type Lease struct {
++ AllPorts bool `json:"all_ports,omitempty"`
++ ErrorPort uint16 `json:"error_port,omitempty"`
+ 	NewError         bool         `json:"new_error,omitempty"`
+ 	PersistentIP     bool         `json:"persistent_ip,omitempty"`
+ 	Domains          []string     `json:"domains,omitempty"`
+@@ -43,7 +45,7 @@
+ 	if !l.IPOnly && !l.PersistentIP && len(m.DestinationAddresses) != 1 {
+ 		return false
+ 	}
+-	if (!l.PersistentIP && !now.Before(l.Deadline)) || source != l.Source || (m.Network != "tcp" && !(m.Network == "udp" && l.PersistentIP)) || m.Inbound != l.Inbound || m.Source.Addr.Unmap().String() != l.SourceIP || m.Destination.Port != l.Port {
++	if (!l.PersistentIP && !now.Before(l.Deadline)) || source != l.Source || (m.Network != "tcp" && !(m.Network == "udp" && l.PersistentIP)) || m.Inbound != l.Inbound || m.Source.Addr.Unmap().String() != l.SourceIP || (!l.AllPorts && m.Destination.Port != l.Port) {
+ 		return false
+ 	}
+ 	if l.IPOnly {
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -213,7 +213,7 @@
+ 	if q.Domain == "" && s.Mode != "web" {
+ 		return s, errors.New("identity_unknown")
+ 	}
+-	if (s.Domain != "" && q.Domain != s.Domain) || q.Port != s.Port || m.protected(q) {
++	if (s.Domain != "" && q.Domain != s.Domain) || (q.Port == 0 || (s.Mode != "web" && q.Port != s.Port)) || m.protected(q) {
+ 		return s, errors.New("blocked_by_policy")
+ 	}
+ 	if e := sourceContext(s, q); e != nil {
+@@ -453,6 +453,7 @@
+ 		if lease, ok := m.leases[e.routedLease]; ok {
+ 			if lease.PersistentIP {
+ 				lease.NewError = true
++                    lease.ErrorPort = e.Port
+ 				lease.Failure = &Failure{ID: e.ID, SourceID: lease.SourceID, Message: err.Error(), At: time.Now()}
+ 				m.leases[lease.ID] = lease
+ 				return
+@@ -463,7 +464,14 @@
+ 		}
+ 		return
+ 	}
+-	if m.sources[e.Source].CollectDisabled {
++	// A new original-route failure after a grant means this flow bypassed it.
++ for key,l := range m.leases {
++  if l.AllPorts && sameIPDeviceScope(leaseQuery(l),e.Query) && e.Created.After(l.Created) {
++   l.NewError=true;l.ErrorPort=e.Port;l.Reason="applied_route_bypassed"
++   l.Failure=&Failure{ID:e.ID,SourceID:l.SourceID,Message:err.Error(),At:time.Now()};m.leases[key]=l
++  }
++ }
++ if m.sources[e.Source].CollectDisabled {
+ 		return
+ 	}
+ 	if m.LogFailure == nil || !m.LogFailure(*e, err) {
+@@ -540,7 +548,7 @@
+ 			continue
+ 		}
+ 		concreteIP := (meta.Destination.IsIP() && meta.Destination.Addr.Unmap().String() == l.IP) || (len(meta.DestinationAddresses) == 1 && containsIP(meta.DestinationAddresses, l.IP))
+-		if ((l.PersistentIP && concreteIP) || (!l.IPOnly && l.Domain == strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".")) || (l.IPOnly && concreteIP)) && l.Source == original && (len(meta.DestinationAddresses) == 0 || containsIP(meta.DestinationAddresses, l.IP)) && l.SourceIP == meta.Source.Addr.Unmap().String() && l.Inbound == meta.Inbound && l.Port == meta.Destination.Port {
++		if ((l.PersistentIP && concreteIP) || (!l.IPOnly && l.Domain == strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".")) || (l.IPOnly && concreteIP)) && l.Source == original && (len(meta.DestinationAddresses) == 0 || containsIP(meta.DestinationAddresses, l.IP)) && l.SourceIP == meta.Source.Addr.Unmap().String() && l.Inbound == meta.Inbound && (l.AllPorts || l.Port == meta.Destination.Port) {
+ 			copy := l
+ 			candidate = &copy
+ 			break
+diff --git a/common/autoroute/probe.go b/common/autoroute/probe.go
+--- a/common/autoroute/probe.go
++++ b/common/autoroute/probe.go
+@@ -400,6 +400,7 @@
+ 	}
+ 	if d.Status == "inconclusive" && d.Reason == "" {
+ 		d.Reason = "no_working_alternative"
++        for _,attempt := range d.Attempts { if attempt.Reason=="protocol_unconfirmed" { d.Reason="protocol_unconfirmed";break } }
+ 	}
+ 	if d.Status != "proposed" {
+ 		d.ApplyAllowed = false
+diff --git a/common/autoroute/registry.go b/common/autoroute/registry.go
+--- a/common/autoroute/registry.go
++++ b/common/autoroute/registry.go
+@@ -17,6 +17,14 @@
+ 			if registryScope(q) && !m.protected(q) && sourceContext(s, q) == nil && len(m.leases) < 64 && (l.Target == "direct-out" && s.Direct || l.Target != "" && l.Target == s.WARP) {
+ 				l.Deadline = l.Expires
+ 				l.PersistentIP = true
++                l.AllPorts = true
++                keep := true
++                for key, old := range m.leases {
++                 if sameIPDeviceScope(leaseQuery(old),leaseQuery(l)) {
++                  if old.Created.After(l.Created) { keep=false;break };delete(m.leases,key);delete(m.reserved,m.key(leaseQuery(old)))
++                 }
++                }
++                if !keep { continue }
+ 				m.leases[l.ID] = l
+ 				m.reserved[m.key(q)] = true
+ 			}
+@@ -91,7 +99,7 @@
+ 	m.registryAdvance(key)
+ 	m.suppressed[key] = true
+ 	for keyID, l := range m.leases {
+-		if m.key(Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}) == key {
++		if m.key(Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}) == key || (l.AllPorts && sameIPDeviceScope(leaseQuery(l),q)) {
+ 			l.Status = "removed"
+ 			m.record(l)
+ 			delete(m.leases, keyID)
+diff --git a/common/autoroute/web.go b/common/autoroute/web.go
+--- a/common/autoroute/web.go
++++ b/common/autoroute/web.go
+@@ -29,7 +29,14 @@
+ 		a.Reason = e.Error()
+ 		return a
+ 	}
+-	outbound, e := m.target(s, tag)
++	if s.Status == http.StatusOK && s.Prefix == "" {
++  original := m.originalForQuery(q)
++  if frozen, ok := ctx.Value(manualChoiceKey{}).(*Event); ok && frozen.Query==q { original=frozen.originalMetadata }
++  if original==nil || (original.Protocol!="tls" && original.Protocol!="quic") {
++   a.Reason="protocol_unconfirmed";a.Method="";return a
++  }
++ }
++ outbound, e := m.target(s, tag)
+ 	if e != nil {
+ 		a.Status = "blocked_by_policy"
+ 		a.Reason = e.Error()

@@ -7,6 +7,9 @@ import { currentOptionValue } from './subscriptions/model';
 export interface AutoEntry {
   domains?: string[];
   new_error?: boolean;
+  all_ports?: boolean;
+  error_port?: number;
+  uncovered_connections?: number;
   persistent_ip?: boolean;
   failure?: { id: string; source_id: string; message: string; at: string };
   ip_only?: boolean;
@@ -76,11 +79,17 @@ export function routeText(row: AutoEntry): string {
 }
 
 export function recordStateText(row: AutoEntry): string {
+  if (row.status === 'applied' && row.uncovered_connections)
+    return _('Some connections are not covered by this rule');
+  if (row.status === 'applied' && row.new_error && row.error_port)
+    return `${_('New connection error on port')}: ${row.error_port}`;
   if (row.status === 'applied')
     return row.new_error
       ? _('New connection error detected')
       : _('No new errors');
   if (row.status === 'saved') return _('Saved route is not active');
+  if (row.reason === 'protocol_unconfirmed')
+    return _('Protocol operation is unconfirmed');
   if (row.status === 'proposed')
     return `${_('Working alternative found')}: ${routeText(row)}`;
   if (row.reason?.startsWith('checking:')) {

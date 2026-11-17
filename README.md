@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/kaban-max.png" width="300" alt="K.A.B.A.N.-MAX"></p>
 <h1 align="center">K.A.B.A.N.-MAX</h1>
 <p align="center"><b>When the network says no, the boar says go.</b><br>Keepalive-Assisted Backend Arbitration Node — MAX Edition</p>
-<p align="center"><a href="https://fefenke.github.io/kaban-max/">Документация</a> · <a href="https://github.com/fefenke/kaban-max/releases/tag/0.1.6">Скачать 0.1.6</a> · <a href="https://github.com/fefenke/kaban-max/issues">Обратная связь</a></p>
+<p align="center"><a href="https://fefenke.github.io/kaban-max/">Документация</a> · <a href="https://github.com/fefenke/kaban-max/releases/tag/0.2.2">Скачать 0.2.2</a> · <a href="https://github.com/fefenke/kaban-max/issues">Обратная связь</a></p>
 
 **K.A.B.A.N.-MAX** — управление маршрутами, VPN и Zapret2 на роутере OpenWrt через веб-интерфейс LuCI. Настройте, какие сайты, приложения и устройства используют VPN, Zapret2 или прямое подключение.
 
@@ -19,7 +19,7 @@
 
 ## Установка
 
-**0.1.6 · предварительная версия**
+**0.2.2 · предварительная версия**
 
 | Платформа | Пакеты | Архитектура |
 |---|---|---|
@@ -28,12 +28,12 @@
 Выполните в SSH роутера:
 
 ```sh
-wget -O /tmp/kabanmax-install.sh https://github.com/fefenke/kaban-max/releases/download/0.1.6/install.sh && KABANMAX_RELEASE=0.1.6 sh /tmp/kabanmax-install.sh --variant base --lang ru
+(wget -T 15 -O /tmp/kabanmax-install.sh https://github.com/fefenke/kaban-max/releases/download/0.2.2/install.sh || wget -T 15 -O /tmp/kabanmax-install.sh https://raw.githubusercontent.com/fefenke/kaban-max/0.2.2/install.sh) && KABANMAX_RELEASE=0.2.2 sh /tmp/kabanmax-install.sh --lang ru
 ```
 
 Установщик подбирает пакеты под роутер и проверяет контрольные суммы. После установки откройте **Службы → K.A.B.A.N.-MAX**.
 
-[Инструкция по установке](docs/guide/install.md) · [Быстрый старт](docs/guide/quick-start.md) · [Скачать пакеты](https://github.com/fefenke/kaban-max/releases/tag/0.1.6)
+[Инструкция по установке](docs/guide/install.md) · [Быстрый старт](docs/guide/quick-start.md) · [Скачать пакеты](https://github.com/fefenke/kaban-max/releases/tag/0.2.2)
 
 ## Как работает fallback
 

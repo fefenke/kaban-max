@@ -64,6 +64,7 @@ jobs:
         run: |
           bash tests/installer-release-pin.sh
           bash tests/installer-upgrade-017.sh
+          bash tests/installer-recovery-022.sh
 
       - name: Check installer language and release core minimum
         run: |

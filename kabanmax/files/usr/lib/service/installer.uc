@@ -269,6 +269,11 @@ function asset_url(listing, file) {
 }
 
 // GitHub's /rate_limit answer, which costs no request: whether the API refuses this address now.
+function raw_script_url(tag) {
+    if (tag != "" && !match(tag, /^[0-9]+\.[0-9]+\.[0-9]+$/)) return null;
+    return "https://raw.githubusercontent.com/" + constants.KABANMAX_RELEASE_REPO + "/" + (tag || "main") + "/install.sh";
+}
+
 function rate_limited(answer) {
     return common.parse_json(answer)?.resources?.core?.remaining === 0;
 }
@@ -646,10 +651,10 @@ function run(id) {
         fail_with([ mark_line("warn", text(state.lang, "command_only", found.version)), plain_line(found.command) ]);
     }
 
-    function fetch_url(url, path, accept, done) {
+    function fetch_url(url, path, accept, done, max_tries, timeout) {
         let tries = 0;
         let attempt = null;
-        let args = [ "-q", "-T", "" + DOWNLOAD_TIMEOUT_SECONDS, ...(accept ? [ "--header=Accept: " + accept ] : []), "-O", path, url ];
+        let args = [ "-q", "-T", "" + (timeout ?? DOWNLOAD_TIMEOUT_SECONDS), ...(accept ? [ "--header=Accept: " + accept ] : []), "-O", path, url ];
         attempt = () => {
             tries++;
             fs.unlink(path);
@@ -657,7 +662,7 @@ function run(id) {
                 download = null;
                 if (state.stop_requested === true)
                     return stopped();
-                if (code == 0 || code == FETCH_HTTP_ERROR || tries >= DOWNLOAD_TRIES)
+                if (code == 0 || code == FETCH_HTTP_ERROR || tries >= (max_tries ?? DOWNLOAD_TRIES))
                     return done(code);
                 retry = uloop.timer(DOWNLOAD_RETRY_MS, () => {
                     retry = null;
@@ -668,13 +673,22 @@ function run(id) {
         attempt();
     }
 
+    function fetch_raw_script(done) {
+        let tag = state.release || common.parse_json(fs.readfile(paths.listing))?.tag_name || "";
+        let url = raw_script_url(tag);
+        if (url == null) return done(FILE_MISSING);
+        fetch_url(url, paths.script, null, done, 1, 15);
+    }
+
     // A file of the latest release, from the mirror or at its address in the API's listing.
     function fetch(file, path, done) {
         if (mirror_url())
             return fetch_url(release_url(file, state.release), path, null, done);
         let url = asset_url(fs.readfile(paths.listing), file);
         if (url == null)
-            return done(FILE_MISSING);
+            return file == "install.sh" ? fetch_raw_script(done) : done(FILE_MISSING);
+        if (file == "install.sh")
+            return fetch_url(url, path, "application/octet-stream", (code) => code == 0 ? done(0) : fetch_raw_script(done), 1, 15);
         fetch_url(url, path, "application/octet-stream", done);
     }
 
@@ -763,7 +777,7 @@ function run(id) {
     if (mirror_url())
         fetch("install.sh", paths.script, on_script);
     else
-        fetch_url(listing_url(state.release), paths.listing, null, (code) => code == 0 ? fetch("install.sh", paths.script, on_script) : download_failed(code));
+        fetch_url(listing_url(state.release), paths.listing, null, (code) => code == 0 ? fetch("install.sh", paths.script, on_script) : fetch_raw_script(on_script), 1, 15);
     uloop.run();
     if (connection != null)
         connection.disconnect();
@@ -787,6 +801,7 @@ return {
     status,
     whole_characters,
     install_arguments,
+    raw_script_url,
     release_url,
     listing_url,
     asset_url,

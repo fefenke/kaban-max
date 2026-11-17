@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: KABANMAX\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-17 20:05+0300\n"
-"PO-Revision-Date: 2026-11-17 20:05+0300\n"
+"POT-Creation-Date: 2026-11-18 02:27+0300\n"
+"PO-Revision-Date: 2026-11-18 02:27+0300\n"
 "Last-Translator: K.A.B.A.N.-MAX contributors\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -1850,6 +1850,9 @@ msgstr "Сетевой интерфейс: %s"
 msgid "New connection error detected"
 msgstr "Обнаружена новая ошибка соединения"
 
+msgid "New connection error on port"
+msgstr "Новая ошибка соединения на порту"
+
 msgid "Newest first"
 msgstr "Сначала новые"
 
@@ -2272,6 +2275,9 @@ msgstr "Протокол"
 
 msgid "Protocol %s is not supported"
 msgstr "Протокол %s не поддерживается"
+
+msgid "Protocol operation is unconfirmed"
+msgstr "Работа протокола не подтверждена"
 
 msgid "Proxy link is unavailable"
 msgstr "Ссылка прокси недоступна"
@@ -2773,6 +2779,9 @@ msgstr "SNI"
 
 msgid "SOCKS5"
 msgstr "SOCKS5"
+
+msgid "Some connections are not covered by this rule"
+msgstr "Часть соединений не охвачена этим правилом"
 
 msgid "Sort by latency"
 msgstr "Сортировать по задержке"
