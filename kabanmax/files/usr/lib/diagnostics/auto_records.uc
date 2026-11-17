@@ -66,13 +66,27 @@ function select(snapshot, exclusions, query, saved) {
     }
     let applied=filter(snapshot.leases ?? [],owned);
     let active={};for(let row in applied)active[store.key(row)]=true;
-    for(let entry in saved ?? [])if(common.parse_json(entry.scope)[0]==source && !denied[entry.scope] && !active[entry.scope])push(applied,{...entry.record,id:"saved:"+entry.scope,status:"saved",apply_allowed:false});
+    for(let entry in saved ?? [])if(common.parse_json(entry.scope)[0]==source && !denied[entry.scope] && !active[entry.scope] && length(filter(applied,(lease)=>lease.all_ports==true && lease.ip==entry.record.ip && lease.source_ip==entry.record.source_ip && lease.inbound==entry.record.inbound))==0)push(applied,{...entry.record,id:"saved:"+entry.scope,status:"saved",apply_allowed:false});
     let applied_by_ip={};for(let row in applied) {
         let old=applied_by_ip[row.ip];let names=uniq([...(old?.domains ?? []),...domains(row),...(grouped[row.ip]?.domains ?? [])]);
         let members=[...(old?.members ?? []),row];
         if(old==null || (old.status=="saved" && row.status!="saved"))applied_by_ip[row.ip]={...row,domains:names,members,new_error:row.new_error==true || old?.new_error==true};else {old.domains=names;old.members=members;old.new_error=old.new_error==true || row.new_error==true;}
     }
     applied=values(applied_by_ip);
+    // One visible IP can contain several devices/inbounds. Never label an
+    // uncovered flow as healthy just because a different scope has a grant.
+    for(let row in applied) {
+        let uncovered=filter(grouped[row.ip]?.members ?? [],(event)=>
+            event.id==event.failure?.id && length(filter(row.members ?? [row],(lease)=>
+                lease.status=="applied" && lease.source_ip==event.source_ip && lease.inbound==event.inbound &&
+                (lease.all_ports==true || lease.port==event.port)))==0);
+        row.uncovered_connections=length(uncovered);
+        if(length(uncovered)>0)row.failure=uncovered[0].failure;
+        let errors=filter(row.members ?? [row],(lease)=>lease.new_error==true);
+        sort(errors,(a,b)=>common.as_string(a.failure?.at)>common.as_string(b.failure?.at) ? -1 : 1);
+        if(length(errors)>0){row.error_port=errors[0].error_port;row.failure=errors[0].failure;}
+        row.all_ports=length(filter(row.members ?? [row],(lease)=>lease.status=="applied" && lease.all_ports!=true))==0;
+    }
     let applied_ips={};for(let row in applied)applied_ips[row.ip]=true;
     pending=filter(pending,(row)=>!applied_ips[row.ip]);
     sort(pending,(a,b)=>{let left=common.as_string(a.updated ?? a.created);let right=common.as_string(b.updated ?? b.created);return left==right ? (common.as_string(a.id)<common.as_string(b.id) ? -1 : 1) : left>right ? -1 : 1;});

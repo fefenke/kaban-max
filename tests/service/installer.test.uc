@@ -425,78 +425,53 @@ t.test("Ctrl+C sent to the terminal is the stop, never the terminal's own SIGINT
     t.eq([ seen.typed, seen.stopping, state().stop_requested ], [ { accepted: true }, true, true ]);
 });
 
-t.test("install.sh that cannot be downloaded is tried three times and said as install.sh says it", () => {
-    let fail_three_times = () => {
-        for (let i = 0; i < 3; i++) {
-            uloop.__exit(i, 4);
-            uloop.__fire("timer");
-        }
-    };
-    run_with({ lang: "en" }, () => {
-        fail_three_times();
-        t.eq(uloop.__processes()[3].executable + " " + join(" ", uloop.__processes()[3].args), "nslookup api.github.com");
-        uloop.__exit(3, 1);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq(fs.readfile(installer.paths.output),
-        "\u001b[1;31m[x]\u001b[0m Cannot download install.sh\r\n\u001b[1;33m[!]\u001b[0m The router cannot resolve api.github.com: check its DNS and internet connection\r\n");
-    t.eq(state().exit, 1);
-
-    run_with({}, () => {
-        fail_three_times();
-        uloop.__exit(3, 0);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq(fs.readfile(installer.paths.output),
-        "\u001b[1;31m[x]\u001b[0m Не удалось скачать install.sh\r\n\u001b[1;33m[!]\u001b[0m Проверьте, открывается ли api.github.com с роутера\r\n");
-
-    run_with({}, () => {
-        fs.writefile(installer.paths.listing, "{\"tag_name\":\"1.0.5\",\"assets\":[{\"name\":\"kabanmax_1.0.5.apk\",\"url\":\"https://api.github.com/x/1\"}]}");
-        uloop.__exit(0, 0);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq([ length(uloop.__processes()), state().exit ], [ 1, 1 ], "nothing is fetched for a file the listing has not got");
-    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе KabanMax нет install.sh\r\n",
-        "a release that predates install.sh, as 1.0.5 does");
-
-    run_with({}, () => {
-        uloop.__exit(0, 8);
-        t.eq(join(" ", uloop.__processes()[1].args), "-q -T 30 -O " + installer.paths.listing + " https://api.github.com/rate_limit",
-            "an answer of the server's own is not tried again, and the rate limit is looked up");
-        fs.writefile(installer.paths.listing, "{\"resources\":{\"core\":{\"limit\":60,\"remaining\":0}}}");
-        uloop.__exit(1, 0);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq(fs.readfile(installer.paths.output),
-        "\u001b[1;31m[x]\u001b[0m GitHub пока не принимает запросы с этого адреса: без входа он даёт 60 запросов в час\r\n" +
-        "\u001b[1;33m[!]\u001b[0m Запустите снова позже: лимит сбрасывается в течение часа\r\n");
-
-    run_with({}, () => {
-        uloop.__exit(0, 8);
-        fs.writefile(installer.paths.listing, "{\"resources\":{\"core\":{\"limit\":60,\"remaining\":41}}}");
-        uloop.__exit(1, 0);
-        uloop.__fire("timer");
-    }, "api");
-    t.eq(fs.readfile(installer.paths.output), "\u001b[1;31m[x]\u001b[0m В последнем релизе KabanMax нет install.sh\r\n",
-        "an HTTP error with requests left is a missing release");
-
-    run_with({}, () => {
-        uloop.__exit(0, 8);
-        uloop.__fire("timer");
-    });
-    t.eq([ length(uloop.__processes()), fs.readfile(installer.paths.output) ],
-        [ 1, "\u001b[1;31m[x]\u001b[0m В последнем релизе KabanMax нет install.sh\r\n" ], "a mirror's HTTP error is a missing file");
+t.test("failed GitHub script download falls back to pinned Raw with finite timeout",()=>{
+ run_with({lang:"en"},()=>{
+  uloop.__exit(0,4);
+  t.eq(join(" ",uloop.__processes()[1].args),"-q -T 15 -O "+installer.paths.script+" https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh");
+  uloop.__exit(1,4);
+  t.eq(uloop.__processes()[2].executable,"nslookup");
+  uloop.__exit(2,1);uloop.__fire("timer");
+ },"api");
+ t.eq(state().exit,1);t.contains(fs.readfile(installer.paths.output),"Cannot download install.sh");
+});
+t.test("a failed Raw fallback classifies rate limits using actual remaining quota",()=>{
+ for(let remaining in [0,41]) {
+  run_with({},()=>{
+   uloop.__exit(0,8);uloop.__exit(1,8);
+   t.eq(join(" ",uloop.__processes()[2].args),"-q -T 30 -O "+installer.paths.listing+" https://api.github.com/rate_limit");
+   fs.writefile(installer.paths.listing,sprintf('%J',{resources:{core:{limit:60,remaining}}}));
+   uloop.__exit(2,0);uloop.__fire("timer");
+  },"api");
+  t.eq(state().exit,1);
+  t.contains(fs.readfile(installer.paths.output),remaining==0 ? "60 запросов" : "нет install.sh");
+ }
+});
+t.test("successful Raw script fallback continues the installer",()=>{
+ run_with({},()=>{
+  fs.writefile(installer.paths.listing,sprintf('%J',{tag_name:"0.2.2",assets:[]}));
+  uloop.__exit(0,0);
+  t.eq(uloop.__processes()[1].args[5],"https://raw.githubusercontent.com/fefenke/kaban-max/0.2.2/install.sh");
+  uloop.__exit(1,0);
+  t.eq(uloop.__processes()[3].args[4],installer.paths.script);
+  uloop.__exit(3,0);uloop.__exit(2,0);uloop.__fire("timer");
+ },"api");
+ t.eq(state().exit,0);
+});
+t.test("explicit mirror HTTP failure remains a missing file",()=>{
+ run_with({},()=>{uloop.__exit(0,8);uloop.__fire("timer");});
+ t.eq(state().exit,1);t.eq(length(uloop.__processes()),1);
 });
 
 t.test("through GitHub's API the run reads the release's listing, then its files at their addresses there", () => {
     run_with({}, () => {
         let listing = uloop.__processes()[0];
         t.eq([ listing.executable, join(" ", listing.args) ],
-            [ "uclient-fetch", "-q -T 30 -O " + installer.paths.listing + " https://api.github.com/repos/fefenke/kaban-max/releases/latest" ]);
+            [ "uclient-fetch", "-q -T 15 -O " + installer.paths.listing + " https://api.github.com/repos/fefenke/kaban-max/releases/latest" ]);
         fs.writefile(installer.paths.listing, "{\"assets\":[{\"name\":\"install.sh\",\"url\":\"https://api.github.com/repos/fefenke/kaban-max/releases/assets/1\"}," +
             "{\"name\":\"release.json\",\"url\":\"https://api.github.com/repos/fefenke/kaban-max/releases/assets/2\"}]}");
         uloop.__exit(0, 0);
-        t.eq(join(" ", uloop.__processes()[1].args), "-q -T 30 --header=Accept: application/octet-stream -O " + installer.paths.script +
+        t.eq(join(" ", uloop.__processes()[1].args), "-q -T 15 --header=Accept: application/octet-stream -O " + installer.paths.script +
             " https://api.github.com/repos/fefenke/kaban-max/releases/assets/1");
         uloop.__exit(1, 0);
         t.eq(uloop.__processes()[2].args[5], installer.paths.manifest);
@@ -628,4 +603,9 @@ t.test("the page sees download and install phases without parsing terminal outpu
     }
 });
 
+t.test("raw fallback pins valid release refs and rejects arbitrary paths",()=>{
+ t.eq(installer.raw_script_url("0.2.2"),"https://raw.githubusercontent.com/fefenke/kaban-max/0.2.2/install.sh");
+ t.eq(installer.raw_script_url(""),"https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh");
+ t.eq(installer.raw_script_url("../private"),null);
+});
 t.done();

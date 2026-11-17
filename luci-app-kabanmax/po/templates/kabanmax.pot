@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: KABANMAX\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-17 20:05+0300\n"
-"PO-Revision-Date: 2026-11-17 20:05+0300\n"
+"POT-Creation-Date: 2026-11-18 02:27+0300\n"
+"PO-Revision-Date: 2026-11-18 02:27+0300\n"
 "Last-Translator: K.A.B.A.N.-MAX contributors <contributors@example.invalid>\n"
 "Language-Team: LANGUAGE <contributors@example.invalid>\n"
 "Language: \n"
@@ -427,7 +427,7 @@ msgstr ""
 msgid "All traffic through the server"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:181
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:190
 msgid "Allow redirecting IPs without a domain"
 msgstr ""
 
@@ -443,7 +443,7 @@ msgstr ""
 msgid "Also deflate"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:259
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:268
 msgid "Alternative section"
 msgstr ""
 
@@ -493,7 +493,7 @@ msgstr ""
 msgid "Apply all"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:180
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:189
 msgid "Apply automatically"
 msgstr ""
 
@@ -547,11 +547,11 @@ msgstr ""
 msgid "Auto refresh"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:175
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:184
 msgid "Automatic routing"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:141
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:150
 msgid "Automatic routing action failed"
 msgstr ""
 
@@ -559,7 +559,7 @@ msgstr ""
 msgid "Automatic routing is not active in the running configuration. Save & Apply the section settings and check the application log if activation fails."
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:226
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:235
 msgid "Automatically apply verified IP-only proposals too. Manual IP-only proposals do not require this preference."
 msgstr ""
 
@@ -701,7 +701,7 @@ msgstr ""
 msgid "Check again"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:207
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:216
 msgid "Check Direct as an alternative for failed connections in this section."
 msgstr ""
 
@@ -751,7 +751,7 @@ msgstr ""
 msgid "Checked from top to bottom until the first working server"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:88
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:97
 msgid "Checking"
 msgstr ""
 
@@ -1420,7 +1420,7 @@ msgstr ""
 msgid "Enable"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:177
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:186
 msgid "Enable automatic routing"
 msgstr ""
 
@@ -1492,7 +1492,7 @@ msgid "Exclude types"
 msgstr ""
 
 #: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRecords.ts:568
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:97
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:106
 msgid "Excluded"
 msgstr ""
 
@@ -1526,8 +1526,8 @@ msgstr ""
 msgid "Expand section"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:250
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:252
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:259
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:261
 msgid "Expected a JSON object"
 msgstr ""
 
@@ -1794,7 +1794,7 @@ msgstr ""
 msgid "Forward secrecy only"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:303
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:312
 msgid "Found IPs"
 msgstr ""
 
@@ -1941,7 +1941,7 @@ msgstr ""
 msgid "HTTP status codes of a successful check. * is any response, or values and ranges: 204/200-299"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:235
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:244
 msgid "HTTPS verification settings"
 msgstr ""
 
@@ -2386,7 +2386,7 @@ msgstr ""
 msgid "Latency test URL"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:241
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:250
 msgid "Leave empty for standard HTTPS verification. Strict nonce contracts are preserved."
 msgstr ""
 
@@ -2638,8 +2638,12 @@ msgstr ""
 msgid "Network interface: %s"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:81
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:88
 msgid "New connection error detected"
+msgstr ""
+
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:85
+msgid "New connection error on port"
 msgstr ""
 
 #: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRecords.ts:693
@@ -2738,7 +2742,7 @@ msgstr ""
 msgid "No network"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:82
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:89
 msgid "No new errors"
 msgstr ""
 
@@ -2788,7 +2792,7 @@ msgstr ""
 msgid "No updates available"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:99
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:108
 msgid "No working alternative found"
 msgstr ""
 
@@ -2928,7 +2932,7 @@ msgstr ""
 msgid "Oldest first"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:306
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:315
 msgid "One record per IP, with its observed domains. Disabling collection keeps manual actions available. Routing changes are saved to flash in batches every 15 minutes."
 msgstr ""
 
@@ -3247,6 +3251,10 @@ msgstr ""
 msgid "Protocol %s is not supported"
 msgstr ""
 
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:92
+msgid "Protocol operation is unconfirmed"
+msgstr ""
+
 #: fe-app-kabanmax/src/kabanmax/tabs/dashboard/initController.ts:909
 msgid "Proxy link is unavailable"
 msgstr ""
@@ -3268,7 +3276,7 @@ msgstr ""
 msgid "QR code"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:96
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:105
 msgid "Queued for automatic checking"
 msgstr ""
 
@@ -3409,7 +3417,7 @@ msgstr ""
 msgid "Remove with settings"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:98
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:107
 msgid "Removed"
 msgstr ""
 
@@ -3592,7 +3600,7 @@ msgstr ""
 msgid "Save"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:83
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:90
 msgid "Saved route is not active"
 msgstr ""
 
@@ -3610,7 +3618,7 @@ msgstr ""
 msgid "Search IP or domain"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:91
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:100
 msgid "Searching for a working alternative…"
 msgstr ""
 
@@ -3651,8 +3659,8 @@ msgstr ""
 msgid "Select a device"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:264
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:279
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:273
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:288
 msgid "Select a section"
 msgstr ""
 
@@ -3838,7 +3846,7 @@ msgstr ""
 msgid "Session cookie"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:194
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:203
 msgid "Set a Clash API key in Settings before enabling automatic routing. YACD WAN access is not required."
 msgstr ""
 
@@ -3955,6 +3963,10 @@ msgstr ""
 
 #: fe-app-kabanmax/src/kabanmax/tabs/servers/links.ts:247
 msgid "SOCKS5"
+msgstr ""
+
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:83
+msgid "Some connections are not covered by this rule"
 msgstr ""
 
 #: fe-app-kabanmax/src/kabanmax/tabs/dashboard/partials/renderSections.ts:523
@@ -4773,7 +4785,7 @@ msgstr ""
 msgid "Use the original URI editor for this format."
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:211
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:220
 msgid "Use the selected section as configured, without matching its destination lists."
 msgstr ""
 
@@ -4810,7 +4822,7 @@ msgstr ""
 msgid "Verified"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:222
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:231
 msgid "Verify logged failures in this section and automatically apply a working permitted route. Save & Apply activates changes."
 msgstr ""
 
@@ -4868,7 +4880,7 @@ msgstr ""
 msgid "Warnings"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:179
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:188
 msgid "WARP"
 msgstr ""
 
@@ -4942,7 +4954,7 @@ msgstr ""
 msgid "With fingerprints the CA certificate is not needed (peer-fingerprint in the profile)"
 msgstr ""
 
-#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:85
+#: fe-app-kabanmax/src/kabanmax/tabs/sections/autoRouting.ts:94
 msgid "Working alternative found"
 msgstr ""
 

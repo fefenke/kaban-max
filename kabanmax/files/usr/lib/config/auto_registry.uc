@@ -59,8 +59,8 @@ function remember(leases) {
   for(let i=0;i<length(entries);i++)if(entries[i].scope==scope)index=i;
   // Error timestamps, counters and newly seen domain labels belong in RAM.
   // Only routing intent changes need another flash checkpoint.
-  if(index>=0 && entries[index].record.persistent_ip==true && row.persistent_ip==true && entries[index].record.target==row.target && entries[index].record.id==row.id) {
-   entries[index]={...entries[index],record:{...entries[index].record,domains:uniq([...(entries[index].record.domains ?? []),...(row.domains ?? [])]),new_error:row.new_error==true,...(row.new_error==true ? {failure:row.failure} : {})}};
+  if(index>=0 && entries[index].record.persistent_ip==true && row.persistent_ip==true && entries[index].record.all_ports==row.all_ports && entries[index].record.target==row.target && entries[index].record.id==row.id) {
+   entries[index]={...entries[index],record:{...entries[index].record,domains:uniq([...(entries[index].record.domains ?? []),...(row.domains ?? [])]),new_error:row.new_error==true,...(row.new_error==true ? {failure:row.failure,error_port:row.error_port} : {})}};
    continue;
   }
   let entry={owner:"auto-routing",scope,record:row};
@@ -72,7 +72,8 @@ function intent(kind,entries) {
  return map(entries,(entry)=>{
   let copy={...entry};delete copy.domains;
   if(kind=="applied") {
-   let record={...copy.record};delete record.domains;delete record.new_error;
+   let record={...copy.record};delete record.domains;delete record.new_error;delete record.error_port;
+   if(record.persistent_ip==true)delete record.reason;
    if(record.failure!=null)record.failure={source_id:record.failure.source_id};else delete record.failure;copy.record=record;
   }
   return copy;
