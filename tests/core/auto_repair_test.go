@@ -37,7 +37,7 @@ func TestWebAutomaticApplyNeedsLoggedMemberFailureAndExplicitPreference(t *testi
  result,err:=m.Probe(context.Background(),q)
  if err!=nil{t.Fatal(err)}
  decision:=result.(Decision)
- if decision.Status!="applied" || decision.Failure==nil || z.calls.Load()!=2 || d.calls.Load()!=2 || len(m.leases)!=1 {t.Fatal(decision)}
+ if decision.Status!="applied" || decision.Failure==nil || z.calls.Load()!=0 || d.calls.Load()!=2 || len(m.leases)!=1 {t.Fatal(decision)}
  meta:=metadata(q)
  if m.Select(context.Background(),"warp",&meta)!="warp" {t.Fatal("lease stole WARP-owned traffic")}
  missing,q2,z2,d2:=webManager(t,200,normalPage)

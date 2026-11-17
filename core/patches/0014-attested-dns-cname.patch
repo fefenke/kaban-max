@@ -1,0 +1,129 @@
+diff --git a/route/kabanmax_auto.go b/route/kabanmax_auto.go
+--- a/route/kabanmax_auto.go
++++ b/route/kabanmax_auto.go
+@@ -72,27 +72,13 @@
+ 				if e != nil || reply == nil || reply.Rcode != dns.RcodeSuccess {
+ 					return nil, 0, errors.New("dns_unconfirmed")
+ 				}
+-				for _, rr := range reply.Answer {
+-					if (rr.Header().Rrtype == dns.TypeA || rr.Header().Rrtype == dns.TypeAAAA) && (!strings.EqualFold(dns.Fqdn(rr.Header().Name), dns.Fqdn(name)) || rr.Header().Rrtype != qtype || rr.Header().Class != dns.ClassINET) {
+-						return nil, 0, errors.New("dns_answer_identity_unconfirmed")
+-					}
+-					if rr.Header().Ttl < ttl {
+-						ttl = rr.Header().Ttl
+-					}
+-					switch v := rr.(type) {
+-					case *dns.A:
+-						a, ok := netip.AddrFromSlice(v.A)
+-						if ok {
+-							addresses = append(addresses, a.Unmap())
+-						}
+-					case *dns.AAAA:
+-						a, ok := netip.AddrFromSlice(v.AAAA)
+-						if ok {
+-							addresses = append(addresses, a.Unmap())
+-						}
+-					case *dns.CNAME:
+-						return nil, 0, errors.New("cname_chain_requires_identity_evidence")
+-					}
++				found, answerTTL, e := kabanmaxDNSIdentity(reply, name, qtype)
++				if e != nil {
++					return nil, 0, e
++				}
++				addresses = append(addresses, found...)
++				if answerTTL < ttl {
++					ttl = answerTTL
+ 				}
+ 			}
+ 			return addresses, ttl, nil
+@@ -160,3 +146,90 @@
+ 	r.initKabanmaxAuto()
+ 	return r.autoRouting.API(ctx, request)
+ }
++
++// DNS identity is attested only by one bounded CNAME path rooted at the
++// requested name. Never import addresses or aliases from another answer owner.
++func kabanmaxDNSIdentity(reply *dns.Msg, name string, qtype uint16) ([]netip.Addr, uint32, error) {
++	reject := errors.New("dns_answer_identity_unconfirmed")
++	if reply == nil || reply.Rcode != dns.RcodeSuccess || (qtype != dns.TypeA && qtype != dns.TypeAAAA) {
++		return nil, 0, reject
++	}
++	canonical := func(name string) string { return strings.ToLower(dns.Fqdn(name)) }
++	aliases := make(map[string]string)
++	ttl := uint32(900)
++	for _, rr := range reply.Answer {
++		header := rr.Header()
++		if header.Rrtype != dns.TypeA && header.Rrtype != dns.TypeAAAA && header.Rrtype != dns.TypeCNAME {
++			continue
++		}
++		if header.Class != dns.ClassINET {
++			return nil, 0, reject
++		}
++		if header.Ttl < ttl {
++			ttl = header.Ttl
++		}
++		if alias, ok := rr.(*dns.CNAME); ok {
++			owner, target := canonical(header.Name), canonical(alias.Target)
++			if _, valid := dns.IsDomainName(owner); !valid {
++				return nil, 0, reject
++			}
++			if _, valid := dns.IsDomainName(target); !valid {
++				return nil, 0, reject
++			}
++			if previous, exists := aliases[owner]; exists && previous != target {
++				return nil, 0, reject
++			}
++			aliases[owner] = target
++		}
++	}
++	terminal := canonical(name)
++	visited := make(map[string]bool)
++	hops := 0
++	for {
++		if visited[terminal] {
++			return nil, 0, reject
++		}
++		visited[terminal] = true
++		target, exists := aliases[terminal]
++		if !exists {
++			break
++		}
++		hops++
++		if hops > 8 {
++			return nil, 0, reject
++		}
++		terminal = target
++	}
++	// Every alias in this answer must belong to the attested path.
++	if hops != len(aliases) {
++		return nil, 0, reject
++	}
++	addresses := []netip.Addr{}
++	for _, rr := range reply.Answer {
++		header := rr.Header()
++		if header.Rrtype != dns.TypeA && header.Rrtype != dns.TypeAAAA {
++			continue
++		}
++		if header.Rrtype != qtype || canonical(header.Name) != terminal {
++			return nil, 0, reject
++		}
++		var address netip.Addr
++		var ok bool
++		switch value := rr.(type) {
++		case *dns.A:
++			address, ok = netip.AddrFromSlice(value.A)
++			if !ok || !address.Unmap().Is4() {
++				return nil, 0, reject
++			}
++		case *dns.AAAA:
++			address, ok = netip.AddrFromSlice(value.AAAA)
++			if !ok || !address.Is6() {
++				return nil, 0, reject
++			}
++		default:
++			return nil, 0, reject
++		}
++		addresses = append(addresses, address.Unmap())
++	}
++	return addresses, ttl, nil
++}

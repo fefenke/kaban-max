@@ -102,7 +102,7 @@ func TestWebInvalidTLSIsNotTransportFailureProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	decision := result.(Decision)
-	if decision.ApplyAllowed || d.calls.Load() != 0 || decision.Attempts[0].Reason != "tls_verification_failed" {
+	if decision.ApplyAllowed || d.calls.Load() != 2 || decision.Attempts[0].Reason != "tls_verification_failed" {
 		t.Fatal(decision)
 	}
 }
@@ -114,7 +114,7 @@ func TestWebOrdinaryResourceStaysManualWithoutAutoApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	decision := result.(Decision)
-	if decision.Status != "proposed" || decision.Evidence != "alternative_reachable" || !decision.ApplyAllowed || decision.AutoApplyEligible || len(m.leases) != 0 || z.calls.Load() != 2 || d.calls.Load() != 2 {
+	if decision.Status != "proposed" || decision.Evidence != "alternative_reachable" || !decision.ApplyAllowed || decision.AutoApplyEligible || len(m.leases) != 0 || z.calls.Load() != 0 || d.calls.Load() != 2 {
 		t.Fatalf("ordinary evidence incorrectly classified: %+v", decision)
 	}
 	if _, err = m.Apply(context.Background(), decision.ID); err != nil {
@@ -125,12 +125,12 @@ func TestWebOrdinaryResourceStaysManualWithoutAutoApply(t *testing.T) {
 		t.Fatal("scoped manual Apply failed")
 	}
 	meta.Destination.Fqdn = "other.example.com"
-	if m.Select(context.Background(), q.Source, &meta) != q.Source {
-		t.Fatal("CDN scope expanded")
+	if m.Select(context.Background(), q.Source, &meta) != "direct-out" {
+		t.Fatal("applied IP did not cover its other domain")
 	}
 }
 
-func TestWebRecheckDoesNotSilentlyApplyANewProposal(t *testing.T) {
+func TestWebAppliedIPDoesNotExpireWithoutNewError(t *testing.T) {
 	m, q, _, _ := webManager(t, 200, normalPage)
 	result, err := m.Probe(context.Background(), q)
 	if err != nil {
@@ -143,14 +143,14 @@ func TestWebRecheckDoesNotSilentlyApplyANewProposal(t *testing.T) {
 	lease := m.leases[d.ID]
 	lease.Created = time.Now().Add(-6 * time.Minute)
 	m.leases[d.ID] = lease
-	m.cooldown[m.key(q)] = time.Now().Add(-6 * time.Minute)
+	m.cooldown[m.probeKey(q)] = time.Now().Add(-6 * time.Minute)
 	m.Sweep(context.Background())
-	if len(m.leases) != 0 {
-		t.Fatal("web recheck auto-applied a new decision")
+	if len(m.leases) != 1 || m.leases[d.ID].ID!=d.ID {
+		t.Fatal("applied IP was removed or rechecked without a new error")
 	}
 }
 
-func TestWebHTTPOutcomesDoNotAuthorizeApply(t *testing.T) {
+func TestWebExplicitContentContractRejectsHTTPOutcomes(t *testing.T) {
 	for _, item := range []struct {
 		status       int
 		body, reason string
@@ -160,6 +160,7 @@ func TestWebHTTPOutcomesDoNotAuthorizeApply(t *testing.T) {
 	} {
 		t.Run(item.reason, func(t *testing.T) {
 			m, q, _, _ := webManager(t, item.status, item.body)
+            source:=m.sources[q.Source];source.Prefix=normalPage;m.sources[q.Source]=source
 			result, err := m.Probe(context.Background(), q)
 			if err != nil {
 				t.Fatal(err)
@@ -168,7 +169,7 @@ func TestWebHTTPOutcomesDoNotAuthorizeApply(t *testing.T) {
 			if d.ApplyAllowed || d.Status == "proposed" || len(m.leases) != 0 {
 				t.Fatal(d)
 			}
-			if len(d.Attempts) < 4 || d.Attempts[2].Reason != item.reason {
+			if len(d.Attempts) != 2 || d.Attempts[0].Reason != item.reason {
 				t.Fatalf("wrong outcome %+v", d)
 			}
 		})
@@ -178,6 +179,7 @@ func TestWebHTTPOutcomesDoNotAuthorizeApply(t *testing.T) {
 func TestWebCacheAndContentRestrictions(t *testing.T) {
 	for _, headers := range []map[string]string{{"Age": "100"}, {"Content-Type": "application/octet-stream"}, {"Content-Encoding": "gzip"}} {
 		m, q, _, _ := webManager(t, 200, normalPage, headers)
+        source:=m.sources[q.Source];source.Prefix=normalPage;m.sources[q.Source]=source
 		result, err := m.Probe(context.Background(), q)
 		if err != nil {
 			t.Fatal(err)
@@ -215,9 +217,9 @@ func TestWebOneFailureAndGlobalFailureCannotApply(t *testing.T){
   intermittent:=httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){if calls.Add(1)==1{conn,_,_:=w.(http.Hijacker).Hijack();conn.Close();return};w.Header().Set("Content-Type","text/html");_,_=w.Write([]byte(normalPage))}));t.Cleanup(intermittent.Close)
   adapter.RootPoolFromContext(m.ctx).AddCert(intermittent.Certificate());z.address=intermittent.Listener.Addr().String()
   result,err:=m.Probe(context.Background(),q);if err!=nil{t.Fatal(err)};decision:=result.(Decision)
-  if decision.ApplyAllowed||d.calls.Load()!=0||len(m.leases)!=0{t.Fatal(decision)}
+  if !decision.ApplyAllowed||d.calls.Load()!=2||len(m.leases)!=0{t.Fatal(decision)}
  })
- t.Run("all_unreachable",func(t *testing.T){m,q,_,d:=webManager(t,200,normalPage);d.address="127.0.0.1:1";result,err:=m.Probe(context.Background(),q);if err!=nil{t.Fatal(err)};decision:=result.(Decision);if decision.ApplyAllowed||decision.Evidence!="suspected_failure"||len(m.leases)!=0{t.Fatal(decision)}})
+ t.Run("all_unreachable",func(t *testing.T){m,q,_,d:=webManager(t,200,normalPage);d.address="127.0.0.1:1";result,err:=m.Probe(context.Background(),q);if err!=nil{t.Fatal(err)};decision:=result.(Decision);if decision.ApplyAllowed||decision.Evidence!="logged_source_failure"||len(m.leases)!=0{t.Fatal(decision)}})
 }
 
 func TestWebWARPIsIndependentAndNeverASelector(t *testing.T) {
@@ -231,6 +233,7 @@ func TestWebWARPIsIndependentAndNeverASelector(t *testing.T) {
 		adapter.RootPoolFromContext(m.ctx).AddCert(server.Certificate())
 		source := m.sources[q.Source]
 		source.WARP = "warp/profile"
+        source.Prefix=normalPage
 		source.Direct = directAllowed
 		m.sources[q.Source] = source
 		warp := &testOutbound{tag: source.WARP, kind: "warp", address: server.Listener.Addr().String()}
@@ -246,7 +249,7 @@ func TestWebWARPIsIndependentAndNeverASelector(t *testing.T) {
 			t.Fatal(err)
 		}
 		decision := result.(Decision)
-		if decision.Target != source.WARP || decision.Evidence != "alternative_reachable" || warp.calls.Load() != 2 || z.calls.Load() != 2 || decision.AutoApplyEligible || len(m.leases) != 0 {
+		if decision.Target != source.WARP || decision.Evidence != "alternative_reachable" || warp.calls.Load() != 2 || z.calls.Load() != 0 || decision.AutoApplyEligible || len(m.leases) != 0 {
 			t.Fatal(decision)
 		}
 		if !directAllowed && d.calls.Load() != 0 {
@@ -270,7 +273,7 @@ func TestStrictAutoApplyStillRequiresVerifiedContract(t *testing.T) {
 	}
 }
 
-func TestWebHealthyOriginalIsUnchanged(t *testing.T) {
+func TestWebLoggedFailureChecksAlternativeEvenWhenOriginalIsHealthy(t *testing.T) {
 	m, q, z, d := webManager(t, 200, normalPage)
 	z.address = d.address
 	result, err := m.Probe(context.Background(), q)
@@ -278,7 +281,7 @@ func TestWebHealthyOriginalIsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	decision := result.(Decision)
-	if decision.Evidence != "healthy" || d.calls.Load() != 0 || decision.ApplyAllowed {
+	if decision.Evidence != "alternative_reachable" || d.calls.Load() != 2 || !decision.ApplyAllowed {
 		t.Fatal(decision)
 	}
 }
@@ -293,7 +296,7 @@ func TestWebIPOnlyRequiresTLSContentAndUnattributedCannotDial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.(Decision).ApplyAllowed || len(m.leases)!=0 || z.calls.Load()!=2 || d.calls.Load()!=2 {t.Fatal("invalid IP certificate authorized a route",result)}
+	if result.(Decision).ApplyAllowed || len(m.leases)!=0 || z.calls.Load()!=0 || d.calls.Load()!=2 {t.Fatal("invalid IP certificate authorized a route",result)}
 	zBefore,dBefore:=z.calls.Load(),d.calls.Load()
 	q.SourceIP = "192.0.2.99"
 	_, _ = m.Probe(context.Background(), q)

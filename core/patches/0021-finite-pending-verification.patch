@@ -1,0 +1,141 @@
+diff --git a/common/autoroute/checkpoint.go b/common/autoroute/checkpoint.go
+--- a/common/autoroute/checkpoint.go
++++ b/common/autoroute/checkpoint.go
+@@ -49,9 +49,15 @@
+ 			continue
+ 		}
+ 		e.originalMetadata = saved.Metadata
+-        if e.ObservedDomain == "" && saved.Metadata != nil && saved.Metadata.SniffError == nil && (saved.Metadata.Protocol == "tls" || saved.Metadata.Protocol == "quic") { e.ObservedDomain = strings.TrimSuffix(strings.ToLower(saved.Metadata.Domain), ".") }
++		if e.ObservedDomain == "" && saved.Metadata != nil && saved.Metadata.SniffError == nil && (saved.Metadata.Protocol == "tls" || saved.Metadata.Protocol == "quic") {
++			e.ObservedDomain = strings.TrimSuffix(strings.ToLower(saved.Metadata.Domain), ".")
++		}
+ 		e.active = 0
+ 		e.attempted = false
++        // No job survives a process restart. Never restore an active spinner.
++        if e.Status == "checking" || e.Status == "proposed" || e.Reason == "cancelled_generation" {
++            e.Status, e.Reason = "detected", "queued"
++        }
+ 		m.events[e.ID] = &e
+ 	}
+ }
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -276,11 +276,13 @@
+ 	if !m.isZapret(s) {
+ 		return s, errors.New("source_mark_unattributed")
+ 	}
+-    // Old public checkpoints contain core-owned failures but no replay metadata.
+-    // An explicit IP choice may remain dormant until this source actually wins
+-    // again; SelectForEvent enforces that at runtime. Automated probes may never
+-    // use this exception or reconstruct missing process/protocol evidence.
+-    if manualOwned && manual.originalMetadata == nil && ctx.Value(explicitManualIntentKey{}) == true { return s, nil }
++	// Old public checkpoints contain core-owned failures but no replay metadata.
++	// An explicit IP choice may remain dormant until this source actually wins
++	// again; SelectForEvent enforces that at runtime. Automated probes may never
++	// use this exception or reconstruct missing process/protocol evidence.
++	if manualOwned && manual.originalMetadata == nil && ctx.Value(explicitManualIntentKey{}) == true {
++		return s, nil
++	}
+ 	meta := metadata(q)
+ 	original := m.originalForQuery(q)
+ 	if manualOwned && manual.originalMetadata != nil {
+@@ -310,8 +312,10 @@
+ 	if selected != q.Source {
+ 		return s, errors.New("first_match_changed")
+ 	}
+-	if original != nil && meta.Destination != original.Destination { return s, errors.New("route_override_requires_identity_evidence") }
+-    if (q.Domain != "" && (!meta.Destination.IsDomain() || strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".") != q.Domain)) || meta.Destination.Port != q.Port {
++	if original != nil && meta.Destination != original.Destination {
++		return s, errors.New("route_override_requires_identity_evidence")
++	}
++	if (q.Domain != "" && (!meta.Destination.IsDomain() || strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".") != q.Domain)) || meta.Destination.Port != q.Port {
+ 		return s, errors.New("route_override_requires_identity_evidence")
+ 	}
+ 	a, _ := netip.ParseAddr(q.IP)
+@@ -381,9 +385,11 @@
+ 		e.originalMetadata = snapshotOriginalMetadata(meta)
+ 	}
+ 	e.ObservedDomain = q.Domain
+-    // Only names actually sniffed from this TLS/QUIC flow may supply Host/SNI.
+-    // A domain from a global reverse mapping without protocol evidence may not.
+-    if e.ObservedDomain == "" && meta.SniffError == nil && (meta.Protocol == "tls" || meta.Protocol == "quic") { e.ObservedDomain = strings.TrimSuffix(strings.ToLower(meta.Domain), ".") }
++	// Only names actually sniffed from this TLS/QUIC flow may supply Host/SNI.
++	// A domain from a global reverse mapping without protocol evidence may not.
++	if e.ObservedDomain == "" && meta.SniffError == nil && (meta.Protocol == "tls" || meta.Protocol == "quic") {
++		e.ObservedDomain = strings.TrimSuffix(strings.ToLower(meta.Domain), ".")
++	}
+ 	e.DomainKnown = q.Domain != ""
+ 	e.SourceID = s.ID
+ 	e.RoutingMark = s.Mark
+@@ -403,14 +409,14 @@
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+ 	for _, e := range m.events {
+-		if e.Source == q.Source && e.Domain == q.Domain && e.SourceIP == q.SourceIP && e.Port == q.Port && e.Inbound == q.Inbound && (e.IP == q.IP || e.IP == "") {
++		if e.Source == q.Source && (e.Domain == q.Domain || (m.sources[q.Source].Mode == "web" && q.IP != "" && e.IP == q.IP)) && e.SourceIP == q.SourceIP && e.Port == q.Port && e.Inbound == q.Inbound && (e.IP == q.IP || e.IP == "") {
+ 			e.Status = status
+ 			e.Reason = reason
+-            e.attempted = reason != "cancelled_generation"
+-            if reason == "cancelled_generation" {
+-                e.lastJob = time.Time{}
+-                delete(m.cooldown, m.probeKey(q))
+-            }
++			e.attempted = reason != "cancelled_generation"
++			if reason == "cancelled_generation" {
++				e.lastJob = time.Time{}
++				delete(m.cooldown, m.probeKey(q))
++			}
+ 			e.Updated = time.Now()
+ 		}
+ 	}
+@@ -469,6 +475,11 @@
+ 	for _, old := range m.events {
+ 		if e.IP != "" && old.Source == e.Source && old.IP == e.IP && old.SourceIP == e.SourceIP && old.Inbound == e.Inbound && old.Port == e.Port {
+ 			e.ID, e.Created = old.ID, old.Created
++            // A new failure of the original route does not invalidate a
++            // completed alternative, or interrupt the job for this IP.
++            if m.sources[e.Source].Mode == "web" && (old.Status == "proposed" || old.Status == "checking") {
++                e.Status, e.Reason, e.attempted = old.Status, old.Reason, old.attempted
++            }
+ 			e.lastJob = old.lastJob
+ 			e.Domains = append([]string(nil), old.Domains...)
+ 			if old.ObservedDomain != "" {
+@@ -495,9 +506,11 @@
+ 	}
+ 	m.events[e.ID] = e
+ 	e.Failure = &Failure{ID: e.ID, SourceID: e.SourceID, Message: err.Error(), At: time.Now()}
+-	e.Status = "detected"
+-	e.attempted = false
+-	e.Reason = "connection_error"
++	if e.Status != "proposed" && e.Status != "checking" {
++        e.Status = "detected"
++        e.attempted = false
++        e.Reason = "connection_error"
++    }
+ 	if e.Network != "tcp" && !(e.Network == "udp" && m.sources[e.Source].Mode == "web") {
+ 		e.Status = "inconclusive"
+ 		e.Reason = "udp_not_supported"
+@@ -798,10 +811,18 @@
+ 	if err != nil {
+ 		m.mu.Lock()
+ 		if e := m.events[next.ID]; e != nil && (err.Error() == "busy" || err.Error() == "cooldown" || err.Error() == "hourly_budget") {
+-            e.attempted = false
+-            if err.Error() == "busy" { e.lastJob = time.Time{} }
+-            if err.Error() == "cooldown" { e.lastJob = m.cooldown[m.probeKey(e.Query)] }
+-		}
++			e.attempted = false
++			if err.Error() == "busy" {
++				e.lastJob = time.Time{}
++			}
++			if err.Error() == "cooldown" {
++				e.lastJob = m.cooldown[m.probeKey(e.Query)]
++			}
++		}
++        if e := m.events[next.ID]; e != nil && err.Error() != "busy" && err.Error() != "cooldown" && err.Error() != "hourly_budget" {
++            e.Status, e.Reason, e.attempted = "inconclusive", err.Error(), true
++            e.Updated = time.Now()
++        }
+ 		m.mu.Unlock()
+ 	}
+ }

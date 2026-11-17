@@ -1,0 +1,65 @@
+diff --git a/route/route.go b/route/route.go
+--- a/route/route.go
++++ b/route/route.go
+@@ -844,6 +844,9 @@
+ 				r.logger.InfoContext(ctx, "missing fakeip record, sniffed domain used: ", metadata.Domain)
+ 			}
+ 		case *R.RuleActionResolve:
++            // A guard replays one actual failed dial, not a new DNS choice.
++            // Match IP rules against that pinned address even if CDN DNS rotated.
++            if autoroute.HasOriginalMetadata(ctx) && len(metadata.DestinationAddresses) == 1 { continue match }
+ 			fatalErr = r.actionResolve(ctx, metadata, action)
+ 			if fatalErr != nil {
+ 				return
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -310,7 +310,8 @@
+ 	if selected != q.Source {
+ 		return s, errors.New("first_match_changed")
+ 	}
+-	if (q.Domain != "" && (!meta.Destination.IsDomain() || strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".") != q.Domain)) || meta.Destination.Port != q.Port {
++	if original != nil && meta.Destination != original.Destination { return s, errors.New("route_override_requires_identity_evidence") }
++    if (q.Domain != "" && (!meta.Destination.IsDomain() || strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".") != q.Domain)) || meta.Destination.Port != q.Port {
+ 		return s, errors.New("route_override_requires_identity_evidence")
+ 	}
+ 	a, _ := netip.ParseAddr(q.IP)
+@@ -380,6 +381,9 @@
+ 		e.originalMetadata = snapshotOriginalMetadata(meta)
+ 	}
+ 	e.ObservedDomain = q.Domain
++    // Only names actually sniffed from this TLS/QUIC flow may supply Host/SNI.
++    // A domain from a global reverse mapping without protocol evidence may not.
++    if e.ObservedDomain == "" && meta.SniffError == nil && (meta.Protocol == "tls" || meta.Protocol == "quic") { e.ObservedDomain = strings.TrimSuffix(strings.ToLower(meta.Domain), ".") }
+ 	e.DomainKnown = q.Domain != ""
+ 	e.SourceID = s.ID
+ 	e.RoutingMark = s.Mark
+@@ -388,7 +392,7 @@
+ 		e.Status = "identity_unknown"
+ 		e.Reason = "no_connection_identity"
+ 	}
+-	if meta.Network != "tcp" {
++	if meta.Network != "tcp" && !(meta.Network == "udp" && s.Mode == "web") {
+ 		e.Status = "inconclusive"
+ 		e.Reason = "udp_not_supported"
+ 	}
+@@ -490,7 +494,7 @@
+ 	e.Status = "detected"
+ 	e.attempted = false
+ 	e.Reason = "connection_error"
+-	if e.Network != "tcp" {
++	if e.Network != "tcp" && !(e.Network == "udp" && m.sources[e.Source].Mode == "web") {
+ 		e.Status = "inconclusive"
+ 		e.Reason = "udp_not_supported"
+ 	}
+diff --git a/common/autoroute/checkpoint.go b/common/autoroute/checkpoint.go
+--- a/common/autoroute/checkpoint.go
++++ b/common/autoroute/checkpoint.go
+@@ -49,6 +49,7 @@
+ 			continue
+ 		}
+ 		e.originalMetadata = saved.Metadata
++        if e.ObservedDomain == "" && saved.Metadata != nil && saved.Metadata.SniffError == nil && (saved.Metadata.Protocol == "tls" || saved.Metadata.Protocol == "quic") { e.ObservedDomain = strings.TrimSuffix(strings.ToLower(saved.Metadata.Domain), ".") }
+ 		e.active = 0
+ 		e.attempted = false
+ 		m.events[e.ID] = &e

@@ -1,0 +1,450 @@
+diff --git a/adapter/inbound.go b/adapter/inbound.go
+--- a/adapter/inbound.go
++++ b/adapter/inbound.go
+@@ -69,6 +69,8 @@
+ 	Domain       string
+ 	Client       string
+ 	SniffContext any
++	SniffedALPN  []string
++	QUICVersion  uint32
+ 	SnifferNames []string
+ 	SniffError   error
+ 
+diff --git a/common/autoroute/original_context.go b/common/autoroute/original_context.go
+--- a/common/autoroute/original_context.go
++++ b/common/autoroute/original_context.go
+@@ -20,6 +20,7 @@
+ 	copy.NetworkType = slices.Clone(meta.NetworkType)
+ 	copy.FallbackNetworkType = slices.Clone(meta.FallbackNetworkType)
+ 	copy.SnifferNames = slices.Clone(meta.SnifferNames)
++	copy.SniffedALPN = slices.Clone(meta.SniffedALPN)
+ 	copy.SourceMACAddress = slices.Clone(meta.SourceMACAddress)
+ 	copy.OutboundChain = slices.Clone(meta.OutboundChain)
+ 	if meta.ProcessInfo != nil {
+diff --git a/common/autoroute/probe.go b/common/autoroute/probe.go
+--- a/common/autoroute/probe.go
++++ b/common/autoroute/probe.go
+@@ -19,22 +19,24 @@
+ )
+ 
+ type Attempt struct {
+-	RoutingMark uint32    `json:"routing_mark,omitempty"`
+-	Hostname    string    `json:"hostname,omitempty"`
+-	Port        uint16    `json:"port"`
+-	Path        string    `json:"path,omitempty"`
+-	Method      string    `json:"method"`
+-	BodyBytes   int       `json:"body_bytes,omitempty"`
+-	ContentType string    `json:"content_type,omitempty"`
+-	Outbound    string    `json:"outbound"`
+-	DialIP      string    `json:"dial_ip"`
+-	Peer        string    `json:"peer,omitempty"`
+-	Reachable   bool      `json:"reachable"`
+-	TLSVerified bool      `json:"tls_verified"`
+-	Status      string    `json:"status"`
+-	Reason      string    `json:"reason,omitempty"`
+-	HTTPStatus  int       `json:"http_status,omitempty"`
+-	At          time.Time `json:"at"`
++	TransportBytes     int       `json:"transport_bytes,omitempty"`
++	NegotiatedProtocol string    `json:"negotiated_protocol,omitempty"`
++	RoutingMark        uint32    `json:"routing_mark,omitempty"`
++	Hostname           string    `json:"hostname,omitempty"`
++	Port               uint16    `json:"port"`
++	Path               string    `json:"path,omitempty"`
++	Method             string    `json:"method"`
++	BodyBytes          int       `json:"body_bytes,omitempty"`
++	ContentType        string    `json:"content_type,omitempty"`
++	Outbound           string    `json:"outbound"`
++	DialIP             string    `json:"dial_ip"`
++	Peer               string    `json:"peer,omitempty"`
++	Reachable          bool      `json:"reachable"`
++	TLSVerified        bool      `json:"tls_verified"`
++	Status             string    `json:"status"`
++	Reason             string    `json:"reason,omitempty"`
++	HTTPStatus         int       `json:"http_status,omitempty"`
++	At                 time.Time `json:"at"`
+ }
+ 
+ func validContract(s option.KabanmaxAutoSource) bool {
+diff --git a/common/autoroute/quic_transport_probe.go b/common/autoroute/quic_transport_probe.go
+new file mode 100644
+--- /dev/null
++++ b/common/autoroute/quic_transport_probe.go
+@@ -0,0 +1,85 @@
++//go:build with_quic
++
++package autoroute
++
++import (
++	"context"
++	"crypto/tls"
++	"github.com/sagernet/quic-go"
++	"github.com/sagernet/quic-go/qlog"
++	"github.com/sagernet/quic-go/qlogwriter"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	"sync"
++	"sync/atomic"
++	"time"
++)
++
++// Observe only the type/length of decrypted 1-RTT packets. No frames or payloads
++// are retained or encoded. The transport itself authenticates these packets.
++type quicTransportWitness struct {
++	ready atomic.Bool
++	bytes atomic.Int64
++	done  chan struct{}
++	once  sync.Once
++}
++
++func (w *quicTransportWitness) AddProducer() qlogwriter.Recorder { return w }
++func (w *quicTransportWitness) SupportsSchemas(string) bool      { return true }
++func (w *quicTransportWitness) Close() error                     { return nil }
++func (w *quicTransportWitness) RecordEvent(event qlogwriter.Event) {
++	packet, ok := event.(qlog.PacketReceived)
++	if ok && w.ready.Load() && packet.Header.PacketType == qlog.PacketType1RTT && packet.Raw.Length > 0 {
++		w.bytes.Store(int64(packet.Raw.Length))
++		w.once.Do(func() { close(w.done) })
++	}
++}
++
++func quicTransportAttempt(ctx context.Context, outbound N.Dialer, destination M.Socksaddr, tlsConfig *tls.Config, protocols []string, version uint32, a Attempt) Attempt {
++	a.Method = "QUIC"
++	socket, err := dialPinnedQUICSocket(ctx, outbound, destination)
++	if err != nil {
++		a.Status = "transport_failure"
++		a.Reason = "udp_transport_failed"
++		return a
++	}
++	defer socket.Close()
++	witness := &quicTransportWitness{done: make(chan struct{})}
++	config := &quic.Config{HandshakeIdleTimeout: 5 * time.Second, MaxIdleTimeout: 5 * time.Second, KeepAlivePeriod: 100 * time.Millisecond, InitialPacketSize: 1200, DisablePathMTUDiscovery: true,
++		Tracer: func(context.Context, bool, quic.ConnectionID) qlogwriter.Trace { return witness }}
++	if version == uint32(quic.Version1) || version == uint32(quic.Version2) {
++		config.Versions = []quic.Version{quic.Version(version)}
++	}
++	tlsConfig = tlsConfig.Clone()
++	tlsConfig.NextProtos = append([]string(nil), protocols...)
++	conn, err := quic.Dial(ctx, socket, socket.peer, tlsConfig, config)
++	if err != nil {
++		a.Status = "transport_failure"
++		a.Reason = "quic_handshake_unconfirmed"
++		return a
++	}
++	defer conn.CloseWithError(0, "")
++	state := conn.ConnectionState().TLS
++	a.TLSVerified = len(state.VerifiedChains) > 0
++	a.NegotiatedProtocol = state.NegotiatedProtocol
++	if !a.TLSVerified || state.NegotiatedProtocol == "" {
++		a.Status = "inconclusive"
++		a.Reason = "quic_identity_unconfirmed"
++		return a
++	}
++	witness.ready.Store(true)
++	select {
++	case <-witness.done:
++		a.Reachable = true
++		a.TransportBytes = int(witness.bytes.Load())
++		a.Status = "verified"
++		a.Reason = "authenticated_quic_1rtt_exchange"
++	case <-ctx.Done():
++		a.Status = "transport_failure"
++		a.Reason = "quic_data_exchange_timeout"
++	case <-conn.Context().Done():
++		a.Status = "transport_failure"
++		a.Reason = "quic_closed_without_verified_exchange"
++	}
++	return a
++}
+diff --git a/common/autoroute/quic_transport_probe_stub.go b/common/autoroute/quic_transport_probe_stub.go
+new file mode 100644
+--- /dev/null
++++ b/common/autoroute/quic_transport_probe_stub.go
+@@ -0,0 +1,15 @@
++//go:build !with_quic
++
++package autoroute
++
++import (
++	"context"
++	"crypto/tls"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++)
++
++func quicTransportAttempt(_ context.Context, _ N.Dialer, _ M.Socksaddr, _ *tls.Config, _ []string, _ uint32, a Attempt) Attempt {
++	a.Reason = "quic_verification_unavailable"
++	return a
++}
+diff --git a/common/autoroute/tls_transport_probe.go b/common/autoroute/tls_transport_probe.go
+new file mode 100644
+--- /dev/null
++++ b/common/autoroute/tls_transport_probe.go
+@@ -0,0 +1,73 @@
++package autoroute
++
++import (
++	"context"
++	"crypto/tls"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	"net"
++	"sync/atomic"
++)
++
++func nonHTTPALPN(protocols []string) bool {
++	if len(protocols) == 0 {
++		return false
++	}
++	for _, p := range protocols {
++		if p == "h2" || p == "http/1.1" || p == "http/1.0" {
++			return false
++		}
++	}
++	return true
++}
++
++type tlsByteCounter struct {
++	net.Conn
++	received atomic.Int64
++	sent     atomic.Int64
++}
++
++func (c *tlsByteCounter) Read(p []byte) (int, error) {
++	n, e := c.Conn.Read(p)
++	c.received.Add(int64(n))
++	return n, e
++}
++func (c *tlsByteCounter) Write(p []byte) (int, error) {
++	n, e := c.Conn.Write(p)
++	c.sent.Add(int64(n))
++	return n, e
++}
++
++// Native TLS protocols cannot be tested with an unrelated HTTP request. Two
++// fresh authenticated handshakes attest server bytes on the recorded path;
++// no application payload or credentials are generated or retained.
++func tlsTransportAttempt(ctx context.Context, outbound N.Dialer, destination M.Socksaddr, config *tls.Config, protocols []string, a Attempt) Attempt {
++	a.Method = "TLS"
++	raw, err := outbound.DialContext(ctx, "tcp", destination)
++	if err != nil {
++		a.Status = "transport_failure"
++		a.Reason = "tcp_transport_failed"
++		return a
++	}
++	defer raw.Close()
++	counted := &tlsByteCounter{Conn: raw}
++	config = config.Clone()
++	config.NextProtos = append([]string(nil), protocols...)
++	conn := tls.Client(counted, config)
++	if err = conn.HandshakeContext(ctx); err != nil {
++		a.Reason = "tls_verification_or_protocol_failed"
++		return a
++	}
++	state := conn.ConnectionState()
++	a.TLSVerified = len(state.VerifiedChains) > 0
++	a.NegotiatedProtocol = state.NegotiatedProtocol
++	a.TransportBytes = int(counted.received.Load())
++	if !a.TLSVerified || a.TransportBytes == 0 || counted.sent.Load() == 0 {
++		a.Reason = "tls_identity_or_exchange_unconfirmed"
++		return a
++	}
++	a.Reachable = true
++	a.Status = "verified"
++	a.Reason = "authenticated_tls_transport"
++	return a
++}
+diff --git a/common/autoroute/web.go b/common/autoroute/web.go
+--- a/common/autoroute/web.go
++++ b/common/autoroute/web.go
+@@ -60,16 +60,24 @@
+ 		a.Hostname = identity
+ 	}
+ 	a.Hostname = identity
++	if s.Status == http.StatusOK && s.Prefix == "" {
++		if frozen, ok := ctx.Value(manualChoiceKey{}).(*Event); ok && frozen.Network == "tcp" && frozen.originalMetadata != nil && nonHTTPALPN(frozen.originalMetadata.SniffedALPN) {
++			return tlsTransportAttempt(ctx, outbound, M.Socksaddr{Addr: netip.MustParseAddr(q.IP), Port: q.Port}, &tls.Config{MinVersion: tls.VersionTLS12, ServerName: identity, RootCAs: adapter.RootPoolFromContext(m.ctx)}, frozen.originalMetadata.SniffedALPN, a)
++		}
++	}
+ 	target := url.URL{Scheme: "https", Host: net.JoinHostPort(identity, strconv.Itoa(int(q.Port)))}
+ 	path, _ := url.Parse(s.Path)
+ 	target.Path = path.Path
+ 	query := path.Query()
+ 	query.Set("__kabanmax_probe", id())
+ 	target.RawQuery = query.Encode()
+-	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, DisableCompression: true, MaxResponseHeaderBytes: 8192, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: identity, RootCAs: adapter.RootPoolFromContext(m.ctx)}, DialContext: dial}
++	transport := &http.Transport{ForceAttemptHTTP2: true, Proxy: nil, DisableKeepAlives: true, DisableCompression: true, MaxResponseHeaderBytes: 8192, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: identity, RootCAs: adapter.RootPoolFromContext(m.ctx)}, DialContext: dial}
+ 	var roundTripper http.RoundTripper = transport
+ 	closeTransport := transport.CloseIdleConnections
+ 	if frozen, ok := ctx.Value(manualChoiceKey{}).(*Event); ok && frozen.Network == "udp" {
++		if s.Prefix == "" && s.Status == http.StatusOK && frozen.originalMetadata != nil && len(frozen.originalMetadata.SniffedALPN) > 0 {
++			return quicTransportAttempt(ctx, outbound, M.Socksaddr{Addr: netip.MustParseAddr(q.IP), Port: q.Port}, transport.TLSClientConfig, frozen.originalMetadata.SniffedALPN, frozen.originalMetadata.QUICVersion, a)
++		}
+ 		roundTripper, closeTransport = newWebQUICTransport(outbound, M.Socksaddr{Addr: netip.MustParseAddr(q.IP), Port: q.Port}, transport.TLSClientConfig)
+ 	}
+ 	defer closeTransport()
+@@ -112,7 +120,9 @@
+ 	// This proves application transport, not successful authentication. Keep
+ 	// regional/access blocks (403), throttling and server failures rejected.
+ 	apiResponse := s.Status == http.StatusOK && s.Prefix == "" && a.ContentType == "application/json" && (a.HTTPStatus == 400 || a.HTTPStatus == 401 || a.HTTPStatus == 404 || a.HTTPStatus == 405)
++	ordinaryTransport := s.Status == http.StatusOK && s.Prefix == ""
+ 	switch {
++	case ordinaryTransport && a.HTTPStatus >= 200 && a.HTTPStatus <= 599:
+ 	case apiResponse:
+ 	case a.HTTPStatus >= 300 && a.HTTPStatus < 400:
+ 		a.Reason = "redirect"
+@@ -143,6 +153,15 @@
+ 		}
+ 		return a
+ 	}
++	if ordinaryTransport {
++		a.Status = "verified"
++		a.Reason = "authenticated_https_transport"
++		a.Reachable = true
++		if a.HTTPStatus == http.StatusNoContent {
++			a.Reason = "verified_https_no_content"
++		}
++		return a
++	}
+ 	lower := strings.ToLower(string(body))
+ 	for _, marker := range []string{"captcha", "cf-chl-", "verify you are human", "just a moment", "access denied", "bot verification"} {
+ 		if strings.Contains(lower, marker) {
+diff --git a/common/autoroute/web_quic.go b/common/autoroute/web_quic.go
+--- a/common/autoroute/web_quic.go
++++ b/common/autoroute/web_quic.go
+@@ -22,12 +22,12 @@
+ 		TLSClientConfig:        config,
+ 		MaxResponseHeaderBytes: 8192,
+ 		Dial: func(ctx context.Context, _ string, tlsConfig *tls.Config, _ *quic.Config) (*quic.Conn, error) {
+-			socket, err := outbound.ListenPacket(ctx, destination)
++			socket, err := dialPinnedQUICSocket(ctx, outbound, destination)
+ 			if err != nil {
+ 				return nil, err
+ 			}
+ 			peer := &net.UDPAddr{IP: net.IP(destination.Addr.AsSlice()), Port: int(destination.Port)}
+-			conn, err := quic.DialEarly(ctx, socket, peer, tlsConfig, &quic.Config{HandshakeIdleTimeout: 5 * time.Second, MaxIdleTimeout: 5 * time.Second})
++			conn, err := quic.DialEarly(ctx, socket, peer, tlsConfig, &quic.Config{HandshakeIdleTimeout: 5 * time.Second, MaxIdleTimeout: 5 * time.Second, InitialPacketSize: 1200, DisablePathMTUDiscovery: true})
+ 			if err != nil {
+ 				socket.Close()
+ 				return nil, err
+@@ -38,3 +38,29 @@
+ 	}
+ 	return transport, func() { transport.Close() }
+ }
++
++// Use the same connected UDP path as native QUIC transports. A tunnel's
++// ListenPacket wrapper need not expose the UDP address type quic-go requires.
++// Migration to a different destination is forbidden for an IP-scoped probe.
++type pinnedQUICSocket struct {
++	net.Conn
++	peer *net.UDPAddr
++}
++
++func (c *pinnedQUICSocket) ReadFrom(p []byte) (int, net.Addr, error) {
++	n, e := c.Read(p)
++	return n, c.peer, e
++}
++func (c *pinnedQUICSocket) WriteTo(p []byte, addr net.Addr) (int, error) {
++	if M.SocksaddrFromNet(addr) != M.SocksaddrFromNet(c.peer) {
++		return 0, net.ErrWriteToConnected
++	}
++	return c.Write(p)
++}
++func dialPinnedQUICSocket(ctx context.Context, outbound N.Dialer, destination M.Socksaddr) (*pinnedQUICSocket, error) {
++	conn, err := outbound.DialContext(ctx, "udp", destination)
++	if err != nil {
++		return nil, err
++	}
++	return &pinnedQUICSocket{Conn: conn, peer: &net.UDPAddr{IP: net.IP(destination.Addr.AsSlice()), Port: int(destination.Port)}}, nil
++}
+diff --git a/common/ja3/ja3.go b/common/ja3/ja3.go
+--- a/common/ja3/ja3.go
++++ b/common/ja3/ja3.go
+@@ -22,6 +22,7 @@
+ 	Versions            []uint16
+ 	SignatureAlgorithms []uint16
+ 	ServerName          string
++	ALPN                []string
+ 	ja3ByteString       []byte
+ 	ja3Hash             string
+ }
+diff --git a/common/ja3/parser.go b/common/ja3/parser.go
+--- a/common/ja3/parser.go
++++ b/common/ja3/parser.go
+@@ -195,6 +195,21 @@
+ 		sex := exs[extensionHeaderLen : extensionHeaderLen+int(exLen)]
+ 
+ 		switch exType {
++		case 16: // application_layer_protocol_negotiation
++			if len(sex) < 3 || int(binary.BigEndian.Uint16(sex[:2])) != len(sex)-2 {
++				return &ParseError{LengthErr, 12}
++			}
++			for offset := 2; offset < len(sex); {
++				size := int(sex[offset])
++				offset++
++				if size == 0 || offset+size > len(sex) {
++					return &ParseError{LengthErr, 12}
++				}
++				if len(j.ALPN) < 8 && size <= 64 {
++					j.ALPN = append(j.ALPN, string(sex[offset:offset+size]))
++				}
++				offset += size
++			}
+ 		case sniExtensionType: // Extensions: server_name
+ 
+ 			// Check if we can decode the next fields
+diff --git a/common/sniff/quic.go b/common/sniff/quic.go
+--- a/common/sniff/quic.go
++++ b/common/sniff/quic.go
+@@ -330,6 +330,8 @@
+ 		return E.Cause1(ErrNeedMoreData, err)
+ 	}
+ 	metadata.Domain = fingerprint.ServerName
++	metadata.SniffedALPN = boundedALPN(fingerprint.ALPN)
++	metadata.QUICVersion = versionNumber
+ 	for metadata.Client == "" {
+ 		if len(frameTypeList) == 1 {
+ 			metadata.Client = C.ClientFirefox
+diff --git a/common/sniff/sniff.go b/common/sniff/sniff.go
+--- a/common/sniff/sniff.go
++++ b/common/sniff/sniff.go
+@@ -50,9 +50,11 @@
+ // and returns a SnifferPanicError with the panic and its stack.
+ func recovered(metadata *adapter.InboundContext, sniff func() error) (err error) {
+ 	protocol, domain, client, sniffContext := metadata.Protocol, metadata.Domain, metadata.Client, metadata.SniffContext
++	alpn, version := metadata.SniffedALPN, metadata.QUICVersion
+ 	defer func() {
+ 		if panicked := recover(); panicked != nil {
+ 			metadata.Protocol, metadata.Domain, metadata.Client, metadata.SniffContext = protocol, domain, client, sniffContext
++			metadata.SniffedALPN, metadata.QUICVersion = alpn, version
+ 			err = &SnifferPanicError{Value: fmt.Sprint(panicked), Stack: debug.Stack()}
+ 		}
+ 	}()
+diff --git a/common/sniff/tls.go b/common/sniff/tls.go
+--- a/common/sniff/tls.go
++++ b/common/sniff/tls.go
+@@ -28,6 +28,8 @@
+ 		},
+ 	}).HandshakeContext(ctx)
+ 	if clientHello != nil {
++		metadata.SniffedALPN = boundedALPN(clientHello.SupportedProtos)
++		metadata.QUICVersion = 0
+ 		metadata.Protocol = C.ProtocolTLS
+ 		metadata.Domain = M.ParseSocksaddrHostPort(clientHello.ServerName, 0).Fqdn
+ 		return nil
+@@ -38,3 +40,16 @@
+ 		return err
+ 	}
+ }
++
++func boundedALPN(protocols []string) []string {
++	result := make([]string, 0, min(len(protocols), 8))
++	for _, protocol := range protocols {
++		if len(protocol) > 0 && len(protocol) <= 64 {
++			result = append(result, protocol)
++		}
++		if len(result) == 8 {
++			break
++		}
++	}
++	return result
++}

@@ -31,10 +31,7 @@ async function test() {
   const stop = installFormUx(root);
   const help = root.querySelector<HTMLButtonElement>('.km-help')!;
   const input = root.querySelector('input')!;
-  check(
-    help?.parentElement?.classList.contains('cbi-value-title'),
-    'help at title',
-  );
+  check(help?.closest('.cbi-value-title'), 'help at title');
   check(
     !root.querySelector('.cbi-value-description'),
     'no duplicate description',
@@ -52,7 +49,7 @@ async function test() {
     else document.body.click();
     check(!document.querySelector('.km-help-card'), 'outside/Escape closes');
   }
-  const labelRect = help.parentElement!.getBoundingClientRect();
+  const labelRect = help.closest('.cbi-value-title')!.getBoundingClientRect();
   const inputRect = input.getBoundingClientRect();
   check(
     Math.abs(
@@ -99,6 +96,7 @@ async function test() {
     action.remove();
   }
   let count = 64;
+  let registryReason = '';
   const requests: Record<string, unknown>[] = [];
   const batches: string[][] = [];
   const operations: Record<string, unknown>[] = [];
@@ -130,11 +128,21 @@ async function test() {
             limit = Number(params.page_size),
             start = (page - 1) * limit;
           return {
+            reason: registryReason,
+            manual_apply_supported: true,
+            available_targets: [
+              { tag: 'direct-out', name: 'Direct' },
+              { tag: 'warp-out', name: 'Configured WARP' },
+            ],
             rows: Array.from(
               { length: Math.min(limit, count - start) },
               (_, i) => ({
                 id: `c${start + i}`,
-                ip: `203.0.113.${start + i}`,
+                count: requests.length,
+                ip:
+                  start + i === 0
+                    ? '2001:db8:1234:5678:abcd:abcd:abcd:abcd'
+                    : `203.0.113.${start + i}`,
                 source_id: 'zap',
                 source: 'zap',
                 status:
@@ -144,8 +152,10 @@ async function test() {
                       : 'applied'
                     : params.status === 'excluded'
                       ? 'excluded'
-                      : 'identity_unknown',
+                      : 'inconclusive',
                 domain_known: false,
+                domain: '',
+                observed_domain: 'api.synthetic.example',
                 failure: {
                   id: `error-${start + i}`,
                   source_id: 'zap',
@@ -161,22 +171,47 @@ async function test() {
             bulk_supported: true,
             selection: Array.from({ length: count }, (_, i) => ({
               id: `c${i}`,
-              eligible: false,
+              eligible: true,
             })),
           };
         },
     },
   });
   const records = renderAutoRecords('zap');
+  check(
+    !records.textContent?.includes('Loading'),
+    'registry never renders a jumping loading label',
+  );
   root.append(records);
+  check(
+    records.querySelector('.km-records__toolbar input[type=search]') &&
+      records.querySelectorAll('.km-records__toolbar button').length === 3 &&
+      records.querySelectorAll('[role=tab]').length === 3 &&
+      records.querySelectorAll('th').length === 6,
+    'search and three bulk actions precede native tabs and persistent table headers',
+  );
   await new Promise((resolve) => setTimeout(resolve, 1200));
   check(records.querySelectorAll('tr').length === 26, '25 records per page');
+  check(
+    records.scrollWidth <= records.clientWidth + 1,
+    'records never require horizontal scrolling, including long IPv6',
+  );
+  const visibleAction = records.querySelector<HTMLButtonElement>(
+    'tr[data-id] td:last-child button',
+  )!;
+  const bounds = records.getBoundingClientRect();
+  check(
+    visibleAction.getBoundingClientRect().right <= bounds.right + 1,
+    'row actions stay inside the visible panel',
+  );
   const firstRow = records.querySelector('tr[data-id]')!;
   const firstDetails = firstRow.querySelector('details')!;
   firstDetails.open = true;
-  Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
-    .find((node) => node.textContent === '↻')!
-    .click();
+  const refreshRecords = () =>
+    records
+      .querySelector<HTMLElement>('[role=tab][aria-selected=true]')!
+      .click();
+  refreshRecords();
   await new Promise((resolve) => setTimeout(resolve, 0));
   check(
     records.querySelector('tr[data-id]') === firstRow && firstDetails.open,
@@ -212,6 +247,14 @@ async function test() {
       'dialog.km-record-confirm',
     );
     check(dialog?.open, 'styled confirmation dialog is open');
+    const rect = dialog!.getBoundingClientRect();
+    check(
+      Math.abs(
+        (rect.left + rect.right) / 2 - document.documentElement.clientWidth / 2,
+      ) < 2 &&
+        Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2) < 2,
+      `confirmation is centered in viewport: ${JSON.stringify({ x: rect.x, y: rect.y, width: rect.width, height: rect.height, vw: window.innerWidth, vh: window.innerHeight, position: getComputedStyle(dialog!).position, margin: getComputedStyle(dialog!).margin })}`,
+    );
     dialog!
       .querySelectorAll<HTMLButtonElement>('button')
       [accept ? 1 : 0].click();
@@ -226,13 +269,16 @@ async function test() {
     batches.flat().length === 64 && new Set(batches.flat()).size === 64,
     'all filtered records once across pages',
   );
-  check(records.textContent?.includes('Completed: 64'), 'bulk result');
+  check(
+    !records.textContent?.includes('Completed:'),
+    'no action banner above table',
+  );
   const search = records.querySelector<HTMLInputElement>('input[type=search]')!;
   search.value = '203.0.113.';
   search.dispatchEvent(new Event('input', { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 350));
   const selectTab = async (prefix: string) => {
-    Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
+    Array.from(records.querySelectorAll<HTMLElement>('[role=tab]'))
       .find((node) => node.textContent?.startsWith(prefix))!
       .click();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -309,13 +355,100 @@ async function test() {
     'pending remove is distinct from exclusion',
   );
   count = 3;
-  Array.from(records.querySelectorAll<HTMLButtonElement>('button'))
-    .find((node) => node.textContent === '↻')!
-    .click();
+  refreshRecords();
   await new Promise((resolve) => setTimeout(resolve, 0));
   check(
     records.querySelector('.km-records__pages')!.childElementCount === 0,
     'one page has no pagination block',
+  );
+  const pendingRow = records.querySelector<HTMLTableRowElement>('tr[data-id]')!;
+  check(
+    Array.from(pendingRow.querySelectorAll('button'))
+      .map((button) => button.textContent)
+      .join('|') === 'Apply|Remove|Exclude',
+    'inconclusive row has three consistent actions without Check',
+  );
+  check(
+    pendingRow.cells[1].textContent === 'api.synthetic.example',
+    'observed domain has its own column',
+  );
+  const direction = pendingRow.querySelector<HTMLSelectElement>('select')!;
+  check(
+    direction.value === 'warp-out' &&
+      direction.selectedOptions[0].textContent === 'Configured WARP',
+    'pending direction defaults to configured WARP',
+  );
+  const beforeManual = operations.length;
+  pendingRow.querySelector<HTMLButtonElement>('button')!.click();
+  check(
+    document
+      .querySelector('dialog h3')
+      ?.textContent?.includes('Configured WARP'),
+    'confirmation names chosen direction',
+  );
+  search.value = 'changed-during-confirmation';
+  search.dispatchEvent(new Event('input', { bubbles: true }));
+  direction.value = 'direct-out';
+  direction.dispatchEvent(new Event('change'));
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  confirmDialog();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check(
+    operations[beforeManual].search === '203.0.113.' &&
+      (operations[beforeManual].targets as Record<string, string>).c0 ===
+        'warp-out',
+    'manual apply freezes search and chosen direction before confirmation',
+  );
+  search.value = '203.0.113.';
+  search.dispatchEvent(new Event('input', { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  count = 0;
+  registryReason =
+    'Auto-routing API unavailable or rejected request: automatic_routing_unavailable';
+  for (let i = 0; i < 2; i++) {
+    refreshRecords();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    check(
+      !records.textContent?.includes('Automatic routing is not active') &&
+        !records.textContent?.includes('Auto-routing API unavailable') &&
+        !records.textContent?.includes('No connection errors'),
+      'no availability banner above records',
+    );
+  }
+  check(
+    records.querySelectorAll('th').length === 6,
+    'empty registry retains all column headers',
+  );
+  check(
+    !records.textContent?.includes('No connection errors'),
+    'empty registry has no redundant empty text',
+  );
+  check(
+    Array.from(records.querySelectorAll('[role=tab]'))
+      .map((tab) => tab.textContent)
+      .join('|') === 'Awaiting|Applied records|Excluded',
+    'native tab labels omit counts',
+  );
+  const ipSort = records.querySelector<HTMLDetailsElement>(
+    'th[data-sort=ip] details',
+  )!;
+  check(!ipSort.open, 'column sort menu is initially hidden');
+  ipSort.querySelector<HTMLElement>('summary')!.click();
+  check(ipSort.open, 'column title opens sort menu');
+  ipSort.querySelector<HTMLButtonElement>('[data-sort-value=ip_desc]')!.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check(
+    !ipSort.open && requests[requests.length - 1]?.sort === 'ip_desc',
+    'column menu selects server-side descending IP order and closes',
+  );
+  check(
+    records.querySelector('th[data-sort=ip]')?.getAttribute('aria-sort') ===
+      'descending',
+    'column shows selected sort direction',
+  );
+  check(
+    document.activeElement === ipSort.querySelector('summary'),
+    'sort selection restores focus to its column header',
   );
   window.confirm = confirm;
   records.remove();
@@ -327,7 +460,7 @@ async function test() {
           `<div class="cbi-value" data-name="auto_routing_${name}" data-widget="CBI.FlagValue"><label class="cbi-value-title">${name}</label><div class="cbi-value-field"><input type="checkbox"></div></div>`,
       )
       .join('') +
-    '<div class="cbi-value" data-name="auto_routing_contract"><label class="cbi-value-title">Contract</label><div class="cbi-value-field"><textarea rows="2"></textarea></div></div>';
+    '<div class="cbi-value" data-name="auto_routing_contract"><label class="cbi-value-title">Настройки проверки HTTPS</label><div class="cbi-value-field"><textarea rows="2"></textarea><div class="cbi-value-description">HTTPS help</div></div></div>';
   root.append(auto);
   await new Promise((resolve) => setTimeout(resolve, 0));
   const main = auto.querySelector<HTMLInputElement>(
@@ -383,8 +516,21 @@ async function test() {
   check(ipOnly.disabled, 'IP-only requires auto-apply preference');
   const childRow = ipOnly.closest<HTMLElement>('.cbi-value')!;
   check(
-    getComputedStyle(childRow).display === 'flex',
-    'nested checkbox uses one flowing row',
+    getComputedStyle(childRow).marginInlineStart === '24px',
+    'IP-only is visibly indented as a child preference',
+  );
+  const childTitle = childRow.querySelector<HTMLElement>('.cbi-value-title')!;
+  childTitle.textContent = 'Разрешать перенаправление IP без домена';
+  const childTitleRect = childTitle.getBoundingClientRect();
+  const childInputRect = ipOnly.getBoundingClientRect();
+  check(
+    childTitleRect.right <= childInputRect.left &&
+      childInputRect.left - childTitleRect.right < 25,
+    'IP-only label is before checkbox like other flags',
+  );
+  check(
+    getComputedStyle(childRow).display === 'grid',
+    'IP-only checkbox uses standard flag columns',
   );
   check(
     getComputedStyle(childRow.querySelector('.cbi-value-title')!, '::before')
@@ -392,6 +538,16 @@ async function test() {
     'nested checkbox has no arrow',
   );
   const advanced = auto.querySelector<HTMLElement>('.km-auto-advanced')!;
+  advanced.setAttribute('open', '');
+  const contractHelp = advanced.querySelector<HTMLElement>('.km-help')!;
+  const helpTail = contractHelp.parentElement!.getBoundingClientRect();
+  const helpRect = contractHelp.getBoundingClientRect();
+  check(
+    contractHelp.parentElement?.textContent?.startsWith('HTTPS') &&
+      helpRect.top >= helpTail.top - 2 &&
+      helpRect.bottom <= helpTail.bottom + 2,
+    'HTTPS help remains beside the final label word',
+  );
   check(
     parseFloat(getComputedStyle(advanced).marginBottom) >= 16,
     'advanced settings separated from records',

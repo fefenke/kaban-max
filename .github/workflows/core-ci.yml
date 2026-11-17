@@ -39,6 +39,11 @@ jobs:
           cp "$GITHUB_WORKSPACE/tests/core/auto_repair_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/auto_ip_failure_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/auto_dial_isolation_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_timeout_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_manual_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_original_context_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_ip_registry_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_dns_identity_test.go" route/
           go test -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./common/autoroute ./route ./experimental/clashapi ./experimental/cachefile
       - name: Check error-first routing with the actual executable
         working-directory: /tmp/kaban-core
@@ -48,4 +53,4 @@ jobs:
           mkdir -p /tmp/auto-fixtures
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=one.example.test -addext 'subjectAltName=DNS:one.example.test,DNS:two.example.test' -keyout /tmp/auto-fixtures/key.pem -out /tmp/auto-fixtures/cert.pem
           CGO_ENABLED=0 go build -trimpath -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn -o /tmp/auto-core ./cmd/sing-box
-          sudo unshare --net sh -c 'ip link set lo up; exec python3 "$1" /tmp/auto-core /tmp/auto-fixtures system' sh "$GITHUB_WORKSPACE/tests/core/auto_error_binary.py"
+          sudo unshare --net sh -c 'ip link set lo up; sysctl -w net.ipv4.tcp_syn_retries=1 >/dev/null; export KERNEL_TIMEOUT=1; exec python3 "$1" /tmp/auto-core /tmp/auto-fixtures system' sh "$GITHUB_WORKSPACE/tests/core/auto_error_binary.py"

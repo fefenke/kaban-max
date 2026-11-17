@@ -14,7 +14,8 @@ function valid_scope(text) {
         type(key[5]) == "int" && key[5] >= 1 && key[5] <= 65535;
 }
 function suppression() {
-    let raw = require("fs").readfile(paths.suppression);
+    let staged=require("config.auto_registry").pending("excluded");
+    let raw = staged!=null ? sprintf("%J",{version:1,entries:staged}) : require("fs").readfile(paths.suppression);
     if (raw == null) return { version: 1, entries: [] };
     let value = common.parse_json(raw);
     if (type(value) != "object" || value.version != 1 || type(value.entries) != "array") die("Automatic routing suppression store is corrupt");
@@ -84,7 +85,12 @@ function warp_output(config, tag, trail) {
     if(tag=="" || length(trail)>8 || index(trail,tag)>=0)return false;
     let node=filter([...(config.outbounds ?? []),...(config.endpoints ?? [])],(n)=>n.tag==tag)[0];
     if(node==null)return false;
-    if(node.type=="warp")return (node.detour==null || node.detour=="direct-out") && (node.profile?.detour==null || node.profile.detour=="direct-out");
+    if(node.type=="warp") {
+        // Registration API routing is independent of the WARP data transport.
+        if(node.detour==null || node.detour=="")return true;
+        let transport=filter(config.outbounds ?? [],(n)=>n.tag==node.detour)[0];
+        return transport?.type=="direct" && (transport.detour==null || transport.detour=="");
+    }
     if(index(["selector","fallback","urltest"],node.type)<0 || length(node.providers ?? [])>0 || node.use_all_providers==true)return false;
     let members=[...(node.outbounds ?? [])];
     for(let group in node.groups ?? [])members=[...members,...(group.outbounds ?? [])];
@@ -96,9 +102,14 @@ function warp_sections(config, sections, tag_for_section) {
     return map(filter(sections,(s)=>common.bool_option(s,"enabled",true) && warp_output(config,tag_for_section(s[".name"]))),(s)=>({id:s[".name"],name:connections.section_display_name(s[".name"]),outbound:tag_for_section(s[".name"])}));
 }
 function sources(config, sections, tag_for_section) {
-    let enabled = filter(sections, (s) => common.option(s, "action", "") == "zapret2" && common.bool_option(s, "auto_routing_enabled", false));
+    let pending=common.read_json_file(require("diagnostics.auto_routing").paths.pending) ?? [];
+    let saved=require("config.auto_registry").load().entries;
+    let enabled = filter(sections, (s) => common.option(s, "action", "") == "zapret2" && (common.bool_option(s, "auto_routing_enabled", false) || length(filter(saved,(e)=>common.parse_json(e.scope)[0]==s[".name"]))>0 || length(filter(pending,(e)=>e.source_id==s[".name"]))>0));
     if (length(enabled) == 0) return [];
-    if (common.as_string(config.experimental?.clash_api?.secret) == "") die("Automatic routing requires an authenticated Clash API (Dashboard secret key)");
+    if (common.as_string(config.experimental?.clash_api?.secret) == "") {
+        if(length(filter(enabled,(s)=>common.bool_option(s,"auto_routing_enabled",false)))==0)return [];
+        die("Automatic routing requires an authenticated Clash API (Dashboard secret key)");
+    }
     function safe_dns_egress(tag, depth) {
         if (depth > 8) return false;
         let candidates = [...(config.outbounds ?? []), ...(config.endpoints ?? [])];
@@ -154,8 +165,10 @@ function sources(config, sections, tag_for_section) {
             if(warp_section!="" && warp_output(config,tag_for_section(warp_section)))warp=tag_for_section(warp_section);
         }
         push(result, { ...contract(section), id: section[".name"], outbound: tag_for_section(section[".name"]),
-            saved: require("config.auto_registry").saved(section[".name"]),
-            registry_scopes: map(filter(require("config.auto_registry").load().entries,(e)=>common.parse_json(e.scope)[0]==section[".name"]),(e)=>e.scope),
+            collect_disabled: !common.bool_option(section,"auto_routing_enabled",false),
+            pending: filter(pending,(e)=>e.source_id==section[".name"]),
+            saved: map(filter(saved,(e)=>common.parse_json(e.scope)[0]==section[".name"] && index(suppressed,e.scope)<0 && index(suppressed,require("config.auto_registry").key({...e.record,domain:""}))<0),(e)=>e.record),
+            registry_scopes: map(filter(saved,(e)=>common.parse_json(e.scope)[0]==section[".name"]),(e)=>e.scope),
             direct_section: common.option(section, "auto_routing_direct_section", ""),
             warp_section,
             excluded_sources: excluded.addresses, excluded_system: excluded.router,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+ "net/netip"
 	"github.com/sagernet/sing-box/option"
 	"testing"
 	"time"
@@ -96,6 +97,7 @@ func TestRegistryReservedCapacityRejectsWithoutEviction(t *testing.T) {
 	for i := 0; i < 70; i++ {
 		meta := metadata(q)
 		meta.Source.Port = uint16(1000 + i)
+ meta.Source.Addr=netip.MustParseAddr(fmt.Sprintf("192.0.2.%d",i+10))
 		event:=m.Observe(&meta, q.Source)
 		m.Failed(event,fmt.Errorf("synthetic capacity-test connection failure"))
 	}

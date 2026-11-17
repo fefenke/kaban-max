@@ -1,0 +1,124 @@
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -576,7 +576,7 @@
+ 			disabled = append(disabled, source)
+ 		}
+ 	}
+-	return map[string]any{"registry_version": 3, "version": 1, "leases": leases, "candidates": events, "decisions": decisions, "history": history, "counts": counts, "disabled_sources": disabled, "probe_contract": "exact-prefix+fresh-nonce", "physical_egress_verified": false}
++	return map[string]any{"manual_apply_supported": true, "registry_version": 3, "version": 1, "leases": leases, "candidates": events, "decisions": decisions, "history": history, "counts": counts, "disabled_sources": disabled, "probe_contract": "exact-prefix+fresh-nonce", "physical_egress_verified": false}
+ }
+ func (m *Manager) Revoke(key string, clear bool) ([]string, error) {
+ 	m.mu.Lock()
+@@ -744,6 +744,7 @@
+ }
+ func (m *Manager) API(ctx context.Context, raw []byte) (any, error) {
+ 	var req struct {
++		Target   string `json:"target"`
+ 		SourceID string `json:"source_id"`
+ 		Scope    string `json:"scope"`
+ 		Op       string `json:"op"`
+@@ -770,6 +771,8 @@
+ 		}
+ 	}
+ 	switch req.Op {
++	case "manual_apply":
++		return m.ManualApply(ctx, req.SourceID, req.ID, req.Target)
+ 	case "registry_dismiss":
+ 		return m.registryDismiss(req.SourceID, req.ID)
+ 	case "registry_release":
+--- /dev/null
++++ b/common/autoroute/manual.go
+@@ -0,0 +1,93 @@
++package autoroute
++
++import (
++	"context"
++	"errors"
++	"net/netip"
++	"time"
++)
++
++// ManualApply grants only an explicit user's direction for a fresh logged flow.
++// Application verification remains a separate operation and permission.
++func (m *Manager) ManualApply(ctx context.Context, sourceID, recordID, target string) (any, error) {
++	m.mu.Lock()
++	eventID := recordID
++	if d, ok := m.decisions[recordID]; ok && d.SourceID == sourceID && d.Failure != nil {
++		eventID = d.Failure.ID
++	}
++	event, ok := m.events[eventID]
++	if !ok || event.SourceID != sourceID || event.Failure == nil || event.Failure.ID != event.ID || event.Failure.SourceID != sourceID || event.Network != "tcp" || event.Failure.At.After(time.Now()) || time.Since(event.Failure.At) > time.Hour || m.sources[event.Source].ID != sourceID || !registryScope(event.Query) {
++		m.mu.Unlock()
++		return nil, errors.New("source_or_record_not_found")
++	}
++	q, failure, generation := event.Query, *event.Failure, m.generation
++	m.mu.Unlock()
++	s, err := m.guard(ctx, q)
++	if err != nil {
++		return nil, err
++	}
++	if target != "direct-out" && (target == "" || target != s.WARP || target == s.Outbound) {
++		return nil, errors.New("manual_target_not_permitted")
++	}
++	if _, err = m.target(s, target); err != nil {
++		return nil, err
++	}
++	addresses, ttl := []netip.Addr{}, uint32(60)
++	if q.Domain != "" {
++		addresses, ttl, err = m.Lookup(ctx, q.Domain)
++		if err != nil || ttl == 0 || !containsIP(addresses, q.IP) {
++			return nil, errors.New("dns_changed")
++		}
++	}
++	if ttl > 60 {
++		ttl = 60
++	}
++	now := time.Now()
++	deadline := now.Add(time.Duration(ttl) * time.Second)
++	d := Decision{Lease: Lease{ID: id(), Owner: "auto-routing", Source: q.Source, SourceID: sourceID, IP: q.IP, Domain: q.Domain, SourceIP: q.SourceIP, OriginSourcePort: q.SourcePort, Inbound: q.Inbound, Port: q.Port, Target: target, Created: now, Expires: deadline, Deadline: deadline, DNSSet: addresses, Status: "applied", Reason: "manual_user_choice", Evidence: "manual_user_choice", DomainKnown: q.Domain != "", IPOnly: q.Domain == "", Failure: &failure}, Generation: generation, Scope: m.key(q), DNS: addresses}
++	d.Decision = d.ID
++	if target == "direct-out" {
++		d.TargetSection = s.DirectSection
++	} else {
++		d.TargetSection = s.WARPSection
++	}
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	current, exists := m.events[eventID]
++	if ctx.Err() != nil || m.closed || m.generation != generation || m.disabled[q.Source] || m.suppressed[d.Scope] || !exists || current.Query != q || current.Failure == nil || *current.Failure != failure || time.Since(failure.At) > time.Hour {
++		return nil, errors.New("cancelled_or_suppressed")
++	}
++	if !m.reserved[d.Scope] && len(m.reserved) >= 64 {
++		return nil, errors.New("persistent_registry_budget")
++	}
++	count := len(m.leases)
++	for _, old := range m.leases {
++		if m.key(Query{Source: old.Source, IP: old.IP, Domain: old.Domain, SourceIP: old.SourceIP, Inbound: old.Inbound, Port: old.Port}) == d.Scope {
++			count--
++		}
++	}
++	if count >= 64 {
++		return nil, errors.New("lease_budget")
++	}
++	m.registryAdvance(d.Scope)
++	for key, old := range m.leases {
++		if m.key(Query{Source: old.Source, IP: old.IP, Domain: old.Domain, SourceIP: old.SourceIP, Inbound: old.Inbound, Port: old.Port}) == d.Scope {
++			old.Status = "replaced"
++			m.record(old)
++			delete(m.leases, key)
++		}
++	}
++	for key, old := range m.decisions {
++		if old.Scope == d.Scope {
++			delete(m.decisions, key)
++		}
++	}
++	d.Generation = m.generation
++	m.reserved[d.Scope] = true
++	m.leases[d.ID] = d.Lease
++	m.record(d.Lease)
++	current.Status = "applied"
++	current.Reason = d.Reason
++	current.attempted = true
++	return d, nil
++}

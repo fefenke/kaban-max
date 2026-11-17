@@ -51,6 +51,20 @@ t.test("the running core is the service's sing-box run, not a one-shot command",
 
 const CHECK = /'sing-box' '--disable-color' '-c' .* 'check'/;
 
+t.test("volatile auto-routing checkpoints do not request a core reload on Save and Apply",()=>{
+ let generator=require("singbox.generator");let original=generator.build;let root=stub.tmpdir();fixture.seed(configuration(root));
+ let source={id:"zap",outbound:"zap-out",direct:true,pending:[{id:"event",count:1}],saved:[{id:"lease",target:"direct-out",domains:["one.example"],failure:{source_id:"zap",message:"old"}}]};
+ generator.build=()=>({route:{kabanmax_auto:[source]}});tools([[CHECK,{}]]);let failure=null;
+ try {
+  t.eq(runtime.write_config(false),true);
+  source.pending[0].count=100;source.saved[0].domains=["one.example","two.example"];source.saved[0].new_error=true;source.saved[0].failure.message="new";
+  t.eq(runtime.write_config(false),false,"metadata refresh must not restart a working core");
+  t.eq(json(fs.readfile(root+"/etc/sing-box/config.json")).route.kabanmax_auto[0].pending[0].count,100,"next start still receives the latest checkpoint");
+  source.direct=false;t.eq(runtime.write_config(false),true,"a real permission change still requests a check/reload");
+ }catch(e){failure=e;}
+ generator.build=original;stub.restore();if(failure!=null)die(failure.message);
+});
+
 t.test("missing and LuCI-omitted default paths still write, configure and re-read the same runtime", () => {
     let common = require("core.common");
     let real = { readfile: fs.readfile, ensure_dir: common.ensure_dir, write_file_atomic: common.write_file_atomic };

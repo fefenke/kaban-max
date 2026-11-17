@@ -6,10 +6,9 @@ export const formUxStyles = `
 .kabanmax-ui textarea { min-height:9em; resize:vertical; max-width:100%; box-sizing:border-box; white-space:pre-wrap; overflow-wrap:anywhere; overflow-x:hidden; }
 .kabanmax-ui .km-empty-auto-tab { display:none; }
 .kabanmax-ui .km-flag > .cbi-value-field { display:flex; align-items:center; justify-content:flex-start; }
+.kabanmax-ui .km-auto-child { margin-inline-start:24px; }
 .kabanmax-ui .km-flag input[type=checkbox] { margin:0; vertical-align:middle; }
 .kabanmax-ui .km-flag input[type=checkbox]:disabled { opacity:.55; }
-.kabanmax-ui .km-auto-child:not(.hidden) { display:flex; flex-direction:row-reverse; justify-content:flex-end; gap:.65em; margin-inline-start:224px; }
-.kabanmax-ui .km-auto-child > .cbi-value-title { text-align:left; }
 .kabanmax-ui .km-auto-advanced { margin:1.5em 0; padding:.85em 0; border-block:1px solid var(--border-color-low,#ddd); }
 .kabanmax-ui .km-auto-advanced > summary { cursor:pointer; padding:.25em 0; }
 .kabanmax-ui .km-auto-advanced[open] > summary { margin-bottom:1em; }
@@ -20,15 +19,38 @@ export const formUxStyles = `
 .km-help-card { position:fixed; z-index:10001; box-sizing:border-box; width:max-content; max-width:min(26em,calc(100vw - 16px)); max-height:min(22em,calc(100vh - 16px)); overflow:auto; padding:1em; border:1px solid currentColor; border-radius:.5em; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 3px 18px #0004; }
 @media(prefers-color-scheme:dark) { .km-help-card { background:var(--background-color-high,#242424); color:var(--text-color-high,#eee); } }
 @media(max-width:600px) { .kabanmax-ui .cbi-value:not(.hidden):not(.km-flag) { grid-template-columns:minmax(0,1fr); } .kabanmax-ui .km-flag:not(.hidden) { grid-template-columns:minmax(0,1fr) auto; } .kabanmax-ui .cbi-value > .cbi-value-title { text-align:left; } }
-@media(max-width:600px) { .kabanmax-ui .km-auto-child:not(.hidden) { margin-inline-start:1.5em; } }
-.km-record-confirm { width:min(28em,calc(100vw - 3em)); padding:1.5em; border:1px solid var(--border-color-low,#ccc); border-radius:4px; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 4px 24px #0004; }
+.km-record-confirm { position:fixed; inset:0; margin:auto; height:fit-content; box-sizing:border-box; max-height:calc(100vh - 2em); overflow:auto; width:min(28em,calc(100vw - 3em)); padding:1.5em; border:1px solid var(--border-color-low,#ccc); border-radius:4px; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 4px 24px #0004; }
 .km-record-confirm::backdrop { background:#0006; }
 .km-record-confirm__actions { display:flex; gap:.75em; justify-content:flex-end; margin-top:1.5em; }
 .km-forecast label { display:grid; gap:.35em; margin:.75em 0; }
 .km-forecast input,.km-forecast select { width:100%; box-sizing:border-box; }
-.km-records { overflow-x:auto; }
-.km-records table { width:100%; }
-.km-records td,.km-records th { padding:.5em; text-align:left; vertical-align:top; }
+.km-records { min-width:0; max-width:100%; }
+.km-records__toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:.65em 1em; margin:.75em 0 1em; }
+.km-records__toolbar > input { flex:1 1 16em; min-width:0; margin:0; }
+.km-records__actions { display:flex; flex-wrap:wrap; gap:.5em; margin-inline-start:auto; }
+.km-records__actions .cbi-button { margin:0; }
+.km-records .km-records__tabs { margin:0; }
+.km-records__panel { min-width:0; max-width:100%; min-height:9em; border:1px solid var(--border-color-medium,#ccc); border-radius:0 0 4px 4px; background:var(--background-color-high,#fff); }
+.km-records__panel thead { background:var(--background-color-low,#f2f4f6); }
+.km-records__panel th { border-bottom:1px solid var(--border-color-medium,#ccc); }
+.km-records__panel select { width:100%; min-width:0; max-width:100%; box-sizing:border-box; }
+.km-records__panel tbody td:last-child .cbi-button { display:block; width:100%; min-width:0; max-width:100%; box-sizing:border-box; margin:0 0 .35em; padding:.25em .35em; white-space:normal; overflow-wrap:anywhere; }
+.km-records__panel th:nth-child(1) { width:18%; }
+.km-records__panel th:nth-child(2) { width:24%; }
+.km-records__panel th:nth-child(3) { width:13%; }
+.km-records__panel th:nth-child(4),.km-records__panel th:nth-child(5),.km-records__panel th:nth-child(6) { width:15%; }
+.km-records__sort { position:relative; }
+.km-records__sort > summary { display:inline-block; list-style:none; cursor:pointer; }
+.km-records__sort > summary::-webkit-details-marker { display:none; }
+.km-records__sort > summary::after { content:' ▾'; opacity:.6; }
+.km-records th[aria-sort=ascending] summary::after { content:' ↑'; }
+.km-records th[aria-sort=descending] summary::after { content:' ↓'; }
+.km-records__sort-menu { position:absolute; top:100%; left:0; z-index:10; display:grid; gap:.25em; width:max-content; padding:.4em; border:1px solid var(--border-color-medium,#ccc); border-radius:4px; background:var(--background-color-high,#fff); color:var(--text-color-high,#222); box-shadow:0 3px 10px #0002; }
+.km-records__sort-menu > .cbi-button { margin:0; text-align:left; }
+.km-records__sort-menu > [aria-checked=true] { color:#1479c9; font-weight:bold; }
+.km-records table { width:100%; max-width:100%; table-layout:fixed; }
+.km-records td,.km-records th { box-sizing:border-box; min-width:0; padding:.5em; text-align:left; vertical-align:top; white-space:normal; overflow-wrap:anywhere; }
+.km-records td strong { white-space:normal; overflow-wrap:anywhere; }
 .km-records__tools { display:flex; gap:.5em; flex-wrap:wrap; align-items:center; margin:.75em 0; }
 .km-records__pages { display:flex; justify-content:flex-end; align-items:center; gap:.6em; margin:1em 0 0; }
 .km-records__pages > .cbi-button { display:inline-flex; align-items:center; justify-content:center; inline-size:1.8em !important; min-inline-size:1.8em !important; block-size:1.8em; min-block-size:0; padding:0 !important; margin:0 !important; line-height:1; flex:0 0 1.8em; }
@@ -73,7 +95,19 @@ export function installFormUx(root: HTMLElement): () => void {
       );
       button.setAttribute('aria-expanded', 'false');
       button.setAttribute('aria-controls', `km-help-${++nextId}`);
-      title.append(button);
+      // Keep the final word and icon together even inside a wrapping label.
+      const tail = document.createElement('span');
+      tail.className = 'km-help-tail';
+      tail.style.whiteSpace = 'nowrap';
+      const last = title.lastChild;
+      if (last?.nodeType === 3) {
+        const text = last.textContent || '';
+        const split = text.lastIndexOf(' ');
+        last.textContent = split < 0 ? '' : text.slice(0, split + 1);
+        tail.append(document.createTextNode(text.slice(split + 1)));
+      }
+      tail.append(button);
+      title.append(tail);
     }
     const contents = descriptions.get(button) || [];
     for (const node of help) {
@@ -248,7 +282,28 @@ export function installFormUx(root: HTMLElement): () => void {
   };
   const change = () => refresh();
   refresh();
-  const observer = new MutationObserver(refresh);
+  const observer = new MutationObserver((mutations) => {
+    // Log rows and periodic registry updates contain no CBI widgets. Walking
+    // every form for each log append causes avoidable main-thread stalls.
+    if (
+      mutations.some((mutation) =>
+        [
+          ...Array.from(mutation.addedNodes),
+          ...Array.from(mutation.removedNodes),
+        ].some(
+          (node) =>
+            node instanceof HTMLElement &&
+            (node.matches(
+              '.cbi-map,.cbi-value,.cbi-value-description,.cbi-tooltip',
+            ) ||
+              !!node.querySelector(
+                '.cbi-map,.cbi-value,.cbi-value-description,.cbi-tooltip',
+              )),
+        ),
+      )
+    )
+      refresh();
+  });
   observer.observe(document.body, { childList: true, subtree: true });
   document.addEventListener('click', click, true);
   document.addEventListener('keydown', key, true);
