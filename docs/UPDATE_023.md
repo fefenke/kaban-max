@@ -9,13 +9,14 @@ $routers = @('192.0.2.1', '198.51.100.1') # адреса ваших роутер
 $id = [Guid]::NewGuid().ToString('N')
 $file = Join-Path ([IO.Path]::GetTempPath()) "kabanmax-$id.sh"
 $prefix = "/tmp/kabanmax-pc-$id"
+$delay = 60 + 20 * $routers.Count
 Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh' -OutFile $file
-$launch = 'command -v setsid >/dev/null 2>&1 || exit 1; setsid sh -c ''KABANMAX_RELEASE=0.2.3 KABANMAX_REINSTALL=1 sh __P__.sh --lang ru --quiet >__P__.log 2>&1; result=$?; echo $result >__P__.exit; rm -f __P__.sh'' </dev/null >/dev/null 2>&1 &'
+$launch = 'command -v setsid >/dev/null 2>&1 || exit 1; setsid sh -c ''sleep __D__; KABANMAX_RELEASE=0.2.3 KABANMAX_REINSTALL=1 sh __P__.sh --lang ru --quiet >__P__.log 2>&1; result=$?; echo $result >__P__.exit; rm -f __P__.sh'' </dev/null >/dev/null 2>&1 &'
 try {
     foreach ($router in $routers) {
         scp -O -o ConnectTimeout=15 $file "root@${router}:$prefix.sh"
         if ($LASTEXITCODE -ne 0) { Write-Warning "Не загружен установщик: $router"; continue }
-        ssh -o ConnectTimeout=15 "root@$router" ($launch.Replace('__P__', $prefix))
+        ssh -o ConnectTimeout=15 "root@$router" ($launch.Replace('__P__', $prefix).Replace('__D__', [string]$delay))
         if ($LASTEXITCODE -ne 0) { Write-Warning "Проверьте запуск: $router" }
     }
 } finally {
@@ -23,12 +24,12 @@ try {
 }
 ```
 
-Через1–2минуты в **том же окне** проверить каждый роутер:
+Перед запуском предусмотрена задержка `$delay` секунд, чтобы успеть отправить команды остальным роутерам до restart шлюза. Через эту паузу плюс1–2минуты в **том же окне** проверить каждый роутер:
 
 ```powershell
 foreach ($router in $routers) {
     Write-Host "=== $router ==="
-    ssh -o ConnectTimeout=15 "root@$router" "if test -f $prefix.exit; then cat $prefix.exit; else echo RUNNING_OR_NOT_STARTED; fi; tail -n 15 $prefix.log"
+    ssh -o ConnectTimeout=15 "root@$router" "if test -f $prefix.exit; then cat $prefix.exit; else echo WAITING_OR_RUNNING; fi; if test -f $prefix.log; then tail -n 15 $prefix.log; fi"
 }
 ```
 
