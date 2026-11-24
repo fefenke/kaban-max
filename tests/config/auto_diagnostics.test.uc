@@ -33,4 +33,13 @@ t.test("one view snapshot reads diagnostics once instead of once per row",()=>{
  let enrich=diag.enricher();for(let i=0;i<1000;i++)enrich({...row,id:"replacement"});
  fs.readfile=original_read;t.eq(reads,1);
 });
+t.test("bypass attribution survives restore and a later target error replaces it",()=>{
+ diag.remember([{...row,failure:original,new_error:true,reason:"applied_route_bypassed"}]);
+ t.eq(diag.enrich(row).reason,"applied_route_bypassed");
+ let target={...original,id:"target",message:"target timeout"};
+ diag.remember([{...row,failure:target,new_error:true,reason:"applied_target_failed"}]);
+ t.eq(diag.enrich(row).reason,"applied_target_failed");
+ t.eq(diag.enrich(row).failure.id,"target");
+});
+
 t.done();

@@ -5053,3 +5053,9 @@ msgstr ""
 #: fe-app-kabanmax/src/kabanmax/tabs/servers/form/security.ts:142
 msgid "Your own certificate"
 msgstr ""
+
+msgid "Applied rule was bypassed; connection used the original route"
+msgstr ""
+
+msgid "New error on the original route"
+msgstr ""

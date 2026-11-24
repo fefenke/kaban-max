@@ -44,8 +44,30 @@ describe('retained route failure details', () => {
         original_failure: original,
         failure: latest,
         new_error: true,
+        reason: 'applied_target_failed',
       }).map((r) => r.title),
     ).toEqual(['Original route error', 'New error on the selected route']);
+    expect(
+      recordFailures({
+        ip: '203.0.113.8',
+        status: 'applied',
+        new_error: true,
+        failure: latest,
+      }).map((r) => r.title),
+    ).toEqual(['New connection error detected']);
+    const bypass = {
+      ip: '203.0.113.8',
+      status: 'applied',
+      new_error: true,
+      reason: 'applied_route_bypassed',
+      failure: latest,
+    };
+    expect(recordFailures(bypass).map((r) => r.title)).toEqual([
+      'New error on the original route',
+    ]);
+    expect(recordStateText(bypass)).toBe(
+      'Applied rule was bypassed; connection used the original route',
+    );
     expect(
       recordFailures({
         ip: '203.0.113.8',

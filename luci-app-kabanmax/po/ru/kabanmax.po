@@ -3556,3 +3556,9 @@ msgstr "Ты кабан"
 
 msgid "Your own certificate"
 msgstr "Свой сертификат"
+
+msgid "Applied rule was bypassed; connection used the original route"
+msgstr "Применённое правило не сработало; соединение использовало исходный маршрут"
+
+msgid "New error on the original route"
+msgstr "Новая ошибка исходного маршрута"

@@ -1,0 +1,81 @@
+diff --git a/common/dialer/resolve.go b/common/dialer/resolve.go
+--- a/common/dialer/resolve.go
++++ b/common/dialer/resolve.go
+@@ -92,12 +92,26 @@
+ }
+ 
+ func (d *resolveDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+-	err := d.initialize()
+-	if err != nil {
+-		return nil, err
+-	}
+-	if !destination.IsDomain() {
+-		return d.dialer.DialContext(ctx, network, destination)
++	return d.dialContext(ctx, network, destination, nil)
++}
++
++// DialContextWithWrapper decorates only concrete application dials. DNS keeps
++// this resolver's transport/options and is completed before the wrapper runs.
++func (d *resolveDialer) DialContextWithWrapper(ctx context.Context, network string, destination M.Socksaddr, wrap func(N.Dialer) N.Dialer) (net.Conn, error) {
++	return d.dialContext(ctx, network, destination, wrap)
++}
++
++func (d *resolveDialer) dialContext(ctx context.Context, network string, destination M.Socksaddr, wrap func(N.Dialer) N.Dialer) (net.Conn, error) {
++	err := d.initialize()
++	if err != nil {
++		return nil, err
++	}
++	inner := d.dialer
++	if wrap != nil {
++		inner = wrap(inner)
++	}
++	if !destination.IsDomain() {
++		return inner.DialContext(ctx, network, destination)
+ 	}
+ 	ctx = log.ContextWithOverrideLevel(ctx, log.LevelDebug)
+ 	addresses, err := d.router.Lookup(ctx, destination.Fqdn, d.queryOptions)
+@@ -105,9 +119,9 @@
+ 		return nil, err
+ 	}
+ 	if d.parallel {
+-		return N.DialParallel(ctx, d.dialer, network, destination, addresses, addresses[0].Is6(), d.fallbackDelay)
++		return N.DialParallel(ctx, inner, network, destination, addresses, addresses[0].Is6(), d.fallbackDelay)
+ 	} else {
+-		return N.DialSerial(ctx, d.dialer, network, destination, addresses)
++		return N.DialSerial(ctx, inner, network, destination, addresses)
+ 	}
+ }
+ 
+diff --git a/common/autoroute/ip_failure.go b/common/autoroute/ip_failure.go
+--- a/common/autoroute/ip_failure.go
++++ b/common/autoroute/ip_failure.go
+@@ -160,6 +160,18 @@
+ 
+ func (d *scopedDialer) dial(ctx context.Context, network string, destination M.Socksaddr, call func(context.Context, N.Dialer, bool) (net.Conn, error)) (net.Conn, error) {
+ 	m, event := d.item.manager, d.item.event
++	if network == "tcp" && destination.IsDomain() {
++		if resolver, ok := d.Dialer.(interface {
++			DialContextWithWrapper(context.Context, string, M.Socksaddr, func(N.Dialer) N.Dialer) (net.Conn, error)
++		}); ok {
++			// Resolver transport is not application traffic. Retain the observation
++			// explicitly on each concrete-IP wrapper, never on DNS's nested dials.
++			resolveCtx := context.WithValue(ctx, observationKey{}, nil)
++			return resolver.DialContextWithWrapper(resolveCtx, network, destination, func(inner N.Dialer) N.Dialer {
++				return &scopedDialer{Dialer: inner, item: d.item}
++			})
++		}
++	}
+ 	if network != "tcp" || !destination.IsIP() {
+ 		return call(ctx, d.Dialer, true)
+ 	}
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -489,6 +489,7 @@
+ 			if lease.PersistentIP {
+ 				lease.NewError = true
+ 				lease.ErrorPort = e.Port
++				lease.Reason = "applied_target_failed"
+ 				lease.Failure = &Failure{ID: e.ID, SourceID: lease.SourceID, Message: shortFailure(err), At: time.Now()}
+ 				m.leases[lease.ID] = lease
+ 				return

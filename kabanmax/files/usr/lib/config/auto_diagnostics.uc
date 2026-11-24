@@ -50,7 +50,8 @@ function remember(rows) {
    let names=by_ip[ip_binding(row)] ?? [];
    names=labels([...names,...(row.domains ?? []),row.domain ?? "",row.observed_domain ?? ""]);
    push(result,{owner:"auto-routing",id:row.id,source_id:row.source_id,ip:row.ip,target:row.target,
-    domains:names,original_failure:original,failure:latest,error_port:row.error_port ?? old?.error_port,new_error:row.new_error==true || old?.new_error==true});
+    domains:names,original_failure:original,failure:latest,error_port:row.error_port ?? old?.error_port,new_error:row.new_error==true || old?.new_error==true,
+    failure_reason:row.new_error ? (index(["applied_route_bypassed","applied_target_failed"],row.reason)>=0 ? row.reason : null) : old?.failure_reason});
   }
   let text=sprintf("%J",{version:1,entries:result});
   if(length(text)>io.limit())die("Applied diagnostics RAM budget is full; previous details retained");
@@ -71,7 +72,10 @@ function enrich(row,stored) {
   copy.new_error=row.new_error==true || found?.new_error==true;
   copy.error_port=row.error_port ?? found?.error_port;
   copy.failure=failure(row.failure,row.source_id) ?? (copy.new_error ? found?.failure : copy.original_failure);
-  if(copy.new_error && found?.failure && !row.new_error)copy.failure=found.failure;
+  if(copy.new_error && found?.failure && !row.new_error){
+   copy.failure=found.failure;
+   if(index(["applied_route_bypassed","applied_target_failed"],found.failure_reason)>=0)copy.reason=found.failure_reason;
+  }
  }catch(e){}
  if(!valid_failure(copy.failure,row.source_id))delete copy.failure;
  if(!valid_failure(copy.original_failure,row.source_id))delete copy.original_failure;

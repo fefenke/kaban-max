@@ -4,6 +4,8 @@
 
 ## Поток управления
 
+Applied late-DNS r41: Direct сохраняет исходный resolver, а `DialContextWithWrapper` добавляет IP hook только к application dials после DNS. Observation удаляется из DNS transport context и явно привязывается к concrete-IP wrapper. Соседние адреса и exclusions не перенаправляются. Persistent failures различают bypass исходного маршрута и applied_target_failed; RAM sidecar хранит attribution отдельно от routing intent. [Контракт и проверки](AUTO_ROUTING_LATE_DNS.md).
+
 Обновления при отказе GitHub API используют bounded/validated raw manifests из `release/` и тот же version/downgrade guard. UI bootstrap берётся из main с сохранением выбранного release pin; backend manifest для pin проверяется до запуска. Installer качает пакеты и SHA256SUMS по публичным pinned URLs, сохраняя проверку содержимого. [Транспорт и публикация](BUILD_AND_DEPLOY.md).
 
 Принятые транспортные ошибки авторутинга выводятся отдельным Warn исходного маршрута; обычный транспортный connection log остаётся Debug. Executable acceptance включает Warn. SOCKS ошибка до handshake не даёт TLS evidence: автоматическая HTTPS проверка требует подтверждённого протокола либо явно настроенного body prefix.

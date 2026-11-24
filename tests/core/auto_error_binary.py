@@ -118,13 +118,14 @@ rules += ('add chain ip kabanmax_auto_error_test dial_timeout { type filter hook
           f'add rule ip kabanmax_auto_error_test dial_timeout meta mark 0x02000004 ip daddr {IP} tcp dport {port} drop\n')
 subprocess.run(NFT+['-f','-'],input=rules.encode(),check=True)
 try:
-    def config(auto_apply=False,logging=True,healthy=False,ip_only=False,timeout=False,prefix=''):
+    def config(auto_apply=False,logging=True,healthy=False,ip_only=False,timeout=False,prefix='',pre_resolve=True):
         api_port,socks=free_port(),free_port();mark=0x02000004 if timeout else 0x02000003 if healthy else 0x02000001
         source={'id':'meta','outbound':'zap','mark':mark,'probe_zapret':True,'direct':True,'auto_apply':auto_apply,'allow_ip_only':ip_only,'mode':'web','path':'/','port':port,'status':200}
         source['prefix']=prefix
         rules=[{'protocol':['bittorrent'],'action':'reject'},{'action':'resolve','server':'dns-server'},
             {'domain':['two.example.test'],'action':'route','outbound':'warp'},
             {'domain':['one.example.test'],'action':'route','outbound':'zap'}]
+        if not pre_resolve:rules=[rule for rule in rules if rule['action']!='resolve']
         if ip_only:rules.append({'ip_cidr':[IP+'/32'],'action':'route','outbound':'zap'})
         # Admitted transport failures are promoted to Warn; Error filters them out.
         value={'log':{'disabled':not logging,'level':'warn','timestamp':False},
@@ -198,15 +199,17 @@ try:
     print('PASS executable: pre-connect SOCKS failure has no TLS evidence and cannot auto-apply an unconfigured web probe',flush=True)
     # SOCKS fails before the TLS handshake. Explicit HTTPS body evidence authorizes
     # this fixture probe without pretending that the original flow was sniffed.
-    value,api_port,socks=config(auto_apply=True,prefix='<html><body>Verified synthetic application content.')
-    with running(value):
-        fail_request(socks,'one.example.test',port)
-        state=wait_state(api_port,lambda s:len(s['leases'])==1)
-        assert state['leases'][0]['failure']['source_id']=='meta' and state['leases'][0]['target']=='direct-out'
-        assert b'Verified synthetic' in fetch(socks,'one.example.test',port),'automatic lease did not route application data'
-        fail_request(socks,'two.example.test',port)
-        assert all(row['domain']!='two.example.test' for row in api(api_port)['candidates'])
-    print('PASS executable: mixed A/AAAA logged error -> actual IP -> verification -> automatic Direct -> received content; WARP remains owned',flush=True)
+    for pre_resolve in [True,False]:
+        value,api_port,socks=config(auto_apply=True,prefix='<html><body>Verified synthetic application content.',pre_resolve=pre_resolve)
+        with running(value):
+            fail_request(socks,'one.example.test',port)
+            state=wait_state(api_port,lambda s:len(s['leases'])==1)
+            assert state['leases'][0]['failure']['source_id']=='meta' and state['leases'][0]['target']=='direct-out'
+            assert b'Verified synthetic' in fetch(socks,'one.example.test',port),'automatic lease did not route application data'
+            fail_request(socks,'two.example.test',port)
+            assert all(row['domain']!='two.example.test' for row in api(api_port)['candidates'])
+        print(f'PASS executable: pre_resolve={pre_resolve}: mixed A/AAAA -> actual IP -> verified Direct -> received content; WARP remains owned',flush=True)
+
 finally:
     server.shutdown();server.server_close();dns.shutdown();dns.server_close()
     subprocess.run(NFT+['delete','table','ip','kabanmax_auto_error_test'],check=False)

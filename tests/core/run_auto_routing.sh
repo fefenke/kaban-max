@@ -27,6 +27,7 @@ cp /extra-tests/auto_quic_field_test.go common/autoroute/
 cp /extra-tests/auto_all_ports_test.go common/autoroute/
 cp /extra-tests/auto_section_ip_test.go common/autoroute/
 cp /extra-tests/auto_applied_diagnostics_test.go common/autoroute/
+cp /extra-tests/auto_late_dns_test.go common/autoroute/
 cp /extra-tests/auto_ja3_alpn_test.go common/ja3/
 cp /extra-tests/auto_sniff_alpn_test.go common/sniff/
 cp /extra-tests/auto_dns_identity_test.go route/

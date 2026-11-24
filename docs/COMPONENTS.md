@@ -2,6 +2,8 @@
 
 Это карта ответственности, а не каталог всех исходников. Формальные glob-правила для контроля изменений — [PROJECT_MAP.json](PROJECT_MAP.json); порядок проверки — [TESTING](TESTING.md).
 
+Late-DNS Applied: patch0041 (`common/dialer/resolve.go`, `common/autoroute/ip_failure.go`), `auto_late_dns_test.go`, `config/auto_diagnostics.uc` и `autoRouting.ts`. Контракт — [late DNS](AUTO_ROUTING_LATE_DNS.md); обновление того же номера — [команды с ПК](UPDATE_023.md).
+
 | Компонент | Entry points | Ближайшие проверки | Документ контракта |
 | --- | --- | --- | --- |
 | LuCI/bootstrap | `fe-app-kabanmax/src/main.ts`, `luci-app-kabanmax/htdocs/luci-static/resources/view/kabanmax/` | frontend `tests/bundle/`, `tests/pageContract.test.js` | [архитектура](ARCHITECTURE.md) |

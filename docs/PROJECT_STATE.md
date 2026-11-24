@@ -1,6 +1,6 @@
 # Текущее состояние проекта
 
-Актуализировано **2026-11-24**. История — в [архиве](archive/README.md). Читать с [AGENTS](../AGENTS.md) и [навигатором](DEVELOPMENT_INDEX.md). API quota hotfix 0.2.3: [приёмка](RELEASE_023.md).
+**2026-11-25**. [AGENTS](../AGENTS.md), [навигатор](DEVELOPMENT_INDEX.md), [архив](archive/README.md). [Late DNS: r41, публикация готовится](AUTO_ROUTING_LATE_DNS.md).
 
 ## Рабочее дерево и выпуск
 
@@ -25,9 +25,9 @@
 | --- | --- |
 | Upstream | `https://github.com/ushan0v/sing-box-forkop.git` |
 | Закреплённый commit | `60d96c99815a672712915a5c00114bf0f690ad80` |
-| Версия локального ядра | `1.14.4-r40` |
+| Версия локального ядра | `1.14.4-r41` |
 | Go toolchain | `1.26.10` |
-| Количество core patches | 40 |
+| Количество core patches | 41 |
 | Общий minimum core | `1.14.4-r10` |
 | Minimum core авторутинга | `1.14.4-r24` |
 <!-- END GENERATED PROJECT FACTS -->

@@ -29,7 +29,8 @@ download(){
 }
 fetch_release kabanmax || exit 1
 fetch_release core || exit 1
-test "$F_VERSION/$F_TAG/$C_VERSION/$C_TAG" = '0.2.3/0.2.3/1.14.4-r40/0.2.3'
+expected_core=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$test_repo/release/core-release.json")
+test "$F_VERSION/$F_TAG/$C_VERSION/$C_TAG" = "0.2.3/0.2.3/$expected_core/0.2.3"
 test "$(asset_url core sing-box.apk)" = 'https://github.com/fefenke/kaban-max/releases/download/0.2.3/sing-box.apk'
 test "$(asset_url kabanmax SHA256SUMS)" = 'https://github.com/fefenke/kaban-max/releases/download/0.2.3/SHA256SUMS'
 TARGET_TAG=0.2.3

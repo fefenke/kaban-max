@@ -76,7 +76,11 @@ export function recordFailures(row: AutoEntry) {
       failure: row.failure,
       title:
         row.status === 'applied' && row.new_error
-          ? _('New error on the selected route')
+          ? row.reason === 'applied_route_bypassed'
+            ? _('New error on the original route')
+            : row.reason === 'applied_target_failed'
+              ? _('New error on the selected route')
+              : _('New connection error detected')
           : _('Original route error'),
     });
   return result;
@@ -124,6 +128,12 @@ export function routeText(row: AutoEntry): string {
 }
 
 export function recordStateText(row: AutoEntry): string {
+  if (
+    row.status === 'applied' &&
+    row.new_error &&
+    row.reason === 'applied_route_bypassed'
+  )
+    return _('Applied rule was bypassed; connection used the original route');
   if (row.status === 'applied' && row.new_error && row.error_port)
     return `${_('New connection error on port')}: ${row.error_port}`;
   if (row.status === 'applied')
