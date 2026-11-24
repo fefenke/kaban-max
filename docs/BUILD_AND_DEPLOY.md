@@ -8,6 +8,8 @@ Hotfix 0.2.3: при недоступном GitHub API установщик и �
 
 Пользователь запросил обновить существующий выпуск 0.2.3: меняются backend APK/IPK, install.sh и SHA256SUMS, без новой версии ядра или переписи tag/history. Source hotfix commit указывается в release notes. Остальные assets сохраняются побайтно. Hardware/публикационный результат — [отчёт](RELEASE_023.md).
 
+Bootstrap старых установок: прежний UI при API403 может скачивать старый install.sh из immutable tag. Код уже установленного UI не меняется обновлением GitHub asset. Для такого роутера требуется один раз скачать свежий `https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh` и запустить с pin/reinstall выше. Новая backend 0.2.3 уже использует maintained main bootstrap; старые теги ради обхода не переписываются.
+
 | Что | Источник истины |
 | --- | --- |
 | Upstream repo/commit/tag, local core package version, Go toolchain | `core/UPSTREAM` |

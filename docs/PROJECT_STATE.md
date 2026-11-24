@@ -4,7 +4,7 @@
 
 ## Рабочее дерево и выпуск
 
-- **Установлен 0.2.3/core r40**, stock installer exit 0, running. Applied original/target diagnostics и domain labels сохраняются в bounded RAM отдельно от компактных разрешений; native fresh-process restore PASS. Оба WARP HTTPS 34/48ms, fallback 42ms. Source/package/index privacy audit PASS. **Опубликован обычный latest release [0.2.3](https://github.com/fefenke/kaban-max/releases/tag/0.2.3)**: 16 assets с проверенными remote SHA256, tag/source commit `489c074`. История и прежние теги сохранены. [Команды и границы](RELEASE_023.md).
+- **Установлен 0.2.3/core r40, API quota hotfix `212e593`**, stock installer exit 0, running; config неизменён. Raw fallback KabanMax/Zapret2 принудительно проверен native PASS; обычная проверка обоих обновлений PASS. [Release 0.2.3](https://github.com/fefenke/kaban-max/releases/tag/0.2.3): заменены backend APK/IPK/install.sh/SHA256SUMS, все 16 assets сверены, tag `489c074` сохранён. **После restart WARP1 HTTPS 35ms, WARP2 дважды HTTP504 — остаётся открыто.** [Приёмка, сохранение Applied diagnostics и границы](RELEASE_023.md).
 
 - **Предыдущая приёмка 0.2.9/r39, section-wide applied IP:** устранена device-привязка persistent web approvals и удалён uncovered UI status, старые записи мигрируют; core 14 race packages, backend 99/99, frontend 14/14 + build/lint PASS. Оба старых Applied мигрировали на all_devices/all_ports и сохранены в RAM; collector включён, registry errors нет. WARP HTTPS 35/38ms, fallback 34ms; flash used 33352/free 58492 KiB. [Установка](PREVIEW_029.md), [контракт](AUTO_ROUTING_SECTION_IP.md).
 
