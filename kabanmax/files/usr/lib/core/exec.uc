@@ -26,17 +26,17 @@ function ok(argv) {
 }
 
 // { status, stdout }, with stderr discarded.
-function capture(argv) {
+function capture(argv, max_bytes) {
     let pipe = fs.popen(command_line(argv) + " 2>/dev/null", "r");
     if (!pipe)
         return { status: 1, stdout: "" };
-    let stdout = pipe.read("all");
+    let stdout = pipe.read(max_bytes ?? "all");
     return { status: pipe.close(), stdout: stdout ?? "" };
 }
 
 // All at once, each writing to a file: with a ubus connection open, a child that exits while
 // another's pipe is read interrupts that read for good.
-function capture_parallel(commands) {
+function capture_parallel(commands, max_bytes) {
     let now = clock();
     let base = sprintf("/tmp/kabanmax-exec.%d.%d.%d", common.own_pid(), now[0], now[1]);
     let jobs = [];
@@ -45,7 +45,23 @@ function capture_parallel(commands) {
     system(join(" ", jobs) + " wait");
     let results = [];
     for (let i = 0; i < length(commands); i++) {
-        push(results, { status: int(trim(fs.readfile(base + "." + i + ".status") ?? "1")), stdout: fs.readfile(base + "." + i) ?? "" });
+        let path = base + "." + i;
+        let size = fs.stat(path)?.size ?? 0;
+        let output;
+        if (max_bytes != null && size > max_bytes) {
+            let file = fs.open(path, "r");
+            if (file != null) {
+                file.seek(size - max_bytes);
+                output = file.read(max_bytes) ?? "";
+                file.close();
+                // The beginning can be in a record or a UTF-8 codepoint.
+                let newline = index(output, "\n");
+                output = newline < 0 ? "" : substr(output, newline + 1);
+            }
+        } else output = fs.readfile(path, max_bytes);
+        let result = { status: int(trim(fs.readfile(base + "." + i + ".status", 32) ?? "1")), stdout: output ?? "" };
+        if (max_bytes != null && size > max_bytes) result.truncated = true;
+        push(results, result);
         fs.unlink(base + "." + i);
         fs.unlink(base + "." + i + ".status");
     }

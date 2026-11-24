@@ -153,6 +153,9 @@ function valid_public_ipv6(value) {
         return false;
     if (index(value, "2001:db8") == 0)
         return false;
+    let bytes = iptoarr(value);
+    if (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0 && bytes[3] == 2 && bytes[4] == 0 && bytes[5] == 0)
+        return false;
     return true;
 }
 

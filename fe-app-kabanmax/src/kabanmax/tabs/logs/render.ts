@@ -47,7 +47,7 @@ export function render() {
       'p',
       {},
       _(
-        'Logs are kept in temporary RAM for up to 24 hours or 2 MiB. Rebooting clears them.',
+        'Logs are kept in temporary RAM for up to 24 hours, 256 KiB or 2048 records. Older records are discarded. Rebooting clears them.',
       ),
     ),
     E(

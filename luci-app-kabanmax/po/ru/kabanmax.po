@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: KABANMAX\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-18 02:27+0300\n"
-"PO-Revision-Date: 2026-11-18 02:27+0300\n"
+"POT-Creation-Date: 2026-11-24 18:56+0300\n"
+"PO-Revision-Date: 2026-11-24 18:56+0300\n"
 "Last-Translator: K.A.B.A.N.-MAX contributors\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -209,6 +209,9 @@ msgstr "Доступ к YACD из интернета. Порт нужно отк
 msgid "Account password"
 msgstr "Пароль учётной записи"
 
+msgid "Accounted memory budget, 1–32 MiB. Half is reserved for routes and exclusions; the rest is for pending errors and check results, kept until reviewed. When full, existing records are kept and new records are rejected. Increasing this does not add router RAM."
+msgstr "Бюджет памяти от 1 до 32 МиБ. Половина отведена маршрутам и исключениям, остальное — ожидающим ошибкам и результатам проверок, которые хранятся до разбора. При заполнении существующие записи сохраняются, новые не добавляются. Увеличение лимита не добавляет роутеру физическую память."
+
 msgid "Accurate latency measurement"
 msgstr "Точное измерение задержки"
 
@@ -407,6 +410,15 @@ msgstr "Не удалось выполнить действие автомарш
 msgid "Automatic routing is not active in the running configuration. Save & Apply the section settings and check the application log if activation fails."
 msgstr "Автомаршрутизация не активна в запущенной конфигурации. Сохраните и примените настройки секции; если включить её не удалось, проверьте журнал приложения."
 
+msgid "Automatic routing memory budget (MiB)"
+msgstr "Бюджет памяти авторутинга (МиБ)"
+
+msgid "Automatic routing memory budget reached. Existing routes are kept; remove old entries or increase the budget."
+msgstr "Достигнут бюджет памяти авторутинга. Существующие маршруты сохранены; удалите старые записи или увеличьте бюджет."
+
+msgid "Automatic routing save interval"
+msgstr "Период сохранения авторутинга"
+
 msgid "Automatically apply verified IP-only proposals too. Manual IP-only proposals do not require this preference."
 msgstr "Автоматически применять также проверенные предложения для IP без домена. Для ручного принятия эта галка не нужна."
 
@@ -523,6 +535,9 @@ msgstr "Интервал проверки"
 
 msgid "Check IP"
 msgstr "Проверить IP"
+
+msgid "Check result unavailable"
+msgstr "Результат проверки недоступен"
 
 msgid "Check settings"
 msgstr "Параметры проверок"
@@ -677,6 +692,9 @@ msgstr "Подключаться к серверу через другую се�
 msgid "Connect to the tunnel server through another section"
 msgstr "Подключаться к серверу туннеля через другую секцию"
 
+msgid "Connection error"
+msgstr "Ошибка соединения"
+
 msgid "Connection errors"
 msgstr "Ошибки соединений"
 
@@ -689,11 +707,20 @@ msgstr "Состояние подключений"
 msgid "Connection parameters"
 msgstr "Параметры подключения"
 
+msgid "Connection timed out while transferring data"
+msgstr "Таймаут при передаче данных"
+
 msgid "Connection timeout"
 msgstr "Таймаут подключения"
 
 msgid "Connection URI"
 msgstr "URI подключения"
+
+msgid "Connection was interrupted while transferring data"
+msgstr "Соединение прервано при передаче данных"
+
+msgid "Connection was refused"
+msgstr "Соединение отклонено"
 
 msgid "Connections"
 msgstr "Соединения"
@@ -986,6 +1013,9 @@ msgstr "Сбрасывать все активные соединения при
 msgid "Duplicate value"
 msgstr "Значение повторяется"
 
+msgid "Duration is outside the allowed range"
+msgstr "Длительность выходит за допустимый диапазон"
+
 msgid "Edit"
 msgstr "Редактировать"
 
@@ -1018,6 +1048,9 @@ msgstr "Включить YACD"
 
 msgid "Enable YACD WAN Access"
 msgstr "Включить доступ YACD WAN"
+
+msgid "Enter a whole number from 1 to 32"
+msgstr "Введите целое число от 1 до 32"
 
 msgid "Enter at least one valid domain or full:domain"
 msgstr "Укажите хотя бы один корректный домен или full:домен"
@@ -1733,8 +1766,8 @@ msgstr "Группа входа"
 msgid "Logs"
 msgstr "Логи"
 
-msgid "Logs are kept in temporary RAM for up to 24 hours or 2 MiB. Rebooting clears them."
-msgstr "Журнал хранится в оперативной памяти до 24 часов с лимитом 2 МиБ. Перезагрузка очищает его."
+msgid "Logs are kept in temporary RAM for up to 24 hours, 256 KiB or 2048 records. Older records are discarded. Rebooting clears them."
+msgstr "Логи хранятся в RAM до 24 часов, 256 КиБ или 2048 записей. Старые записи вытесняются. Перезагрузка очищает журнал."
 
 msgid "LuCI web interface"
 msgstr "веб-интерфейс LuCI"
@@ -1852,6 +1885,9 @@ msgstr "Обнаружена новая ошибка соединения"
 
 msgid "New connection error on port"
 msgstr "Новая ошибка соединения на порту"
+
+msgid "New error on the selected route"
+msgstr "Новая ошибка выбранного маршрута"
 
 msgid "Newest first"
 msgstr "Сначала новые"
@@ -2131,6 +2167,12 @@ msgstr "Время ожидания истекло"
 
 msgid "Original connection URI"
 msgstr "Исходная ссылка подключения"
+
+msgid "Original error details are unavailable"
+msgstr "Сведения об исходной ошибке не сохранились"
+
+msgid "Original route error"
+msgstr "Исходная ошибка маршрута"
 
 msgid "Original URI"
 msgstr "Исходная ссылка"
@@ -2525,6 +2567,9 @@ msgstr "Тот же файл, что и сертификат"
 msgid "Save"
 msgstr "Сохранить"
 
+msgid "Save changed routes and exclusions to flash. Default: 1d. Unsaved changes may be lost on power failure. Memory pressure can trigger a checkpoint, at most once per 15 minutes."
+msgstr "Сохранять изменённые маршруты и исключения во flash. По умолчанию: 1d. При отключении питания несохранённые изменения могут потеряться. При заполнении памяти возможно досрочное сохранение, не чаще раза в 15 минут."
+
 msgid "Saved route is not active"
 msgstr "Сохранённый маршрут не активен"
 
@@ -2572,9 +2617,6 @@ msgstr "Выберите сервер или задайте шаблон"
 
 msgid "Select an interface"
 msgstr "Выберите интерфейс"
-
-msgid "Select at most 64 records"
-msgstr "Выберите не более 64 записей"
 
 msgid "Select the network interface to which the traffic will originate"
 msgstr "Выберите сетевой интерфейс, на который будет поступать трафик"
@@ -2738,6 +2780,9 @@ msgstr "Показать маршрут"
 msgid "Show the metadata block on the dashboard"
 msgstr "Отображать блок метаданных в дашборде"
 
+msgid "Showing %s of %s active connections. Filters apply to the displayed connections."
+msgstr "Показано %s из %s активных соединений. Фильтры применяются к отображаемым соединениям."
+
 msgid "Sign in"
 msgstr "Войти"
 
@@ -2779,9 +2824,6 @@ msgstr "SNI"
 
 msgid "SOCKS5"
 msgstr "SOCKS5"
-
-msgid "Some connections are not covered by this rule"
-msgstr "Часть соединений не охвачена этим правилом"
 
 msgid "Sort by latency"
 msgstr "Сортировать по задержке"

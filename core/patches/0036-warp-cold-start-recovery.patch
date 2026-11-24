@@ -1,0 +1,255 @@
+diff --git a/option/wireguard.go b/option/wireguard.go
+--- a/option/wireguard.go
++++ b/option/wireguard.go
+@@ -7,18 +7,19 @@
+ )
+ 
+ type WireGuardCommonOptions struct {
+-	System       bool                             `json:"system,omitempty"`
+-	Name         string                           `json:"name,omitempty"`
+-	MTU          uint32                           `json:"mtu,omitempty"`
+-	Address      badoption.Listable[netip.Prefix] `json:"address"`
+-	PrivateKey   string                           `json:"private_key"`
+-	ListenPort   uint16                           `json:"listen_port,omitempty"`
+-	Peers        []WireGuardPeer                  `json:"peers,omitempty"`
+-	UDPTimeout   badoption.Duration               `json:"udp_timeout,omitempty"`
+-	UDPMapping   UDPNATBehavior                   `json:"udp_mapping,omitempty"`
+-	UDPFiltering UDPNATBehavior                   `json:"udp_filtering,omitempty"`
+-	UDPNATMax    uint32                           `json:"udp_nat_max,omitempty"`
+-	Workers      int                              `json:"workers,omitempty"`
++	ColdStartRecovery bool                             `json:"-"`
++	System            bool                             `json:"system,omitempty"`
++	Name              string                           `json:"name,omitempty"`
++	MTU               uint32                           `json:"mtu,omitempty"`
++	Address           badoption.Listable[netip.Prefix] `json:"address"`
++	PrivateKey        string                           `json:"private_key"`
++	ListenPort        uint16                           `json:"listen_port,omitempty"`
++	Peers             []WireGuardPeer                  `json:"peers,omitempty"`
++	UDPTimeout        badoption.Duration               `json:"udp_timeout,omitempty"`
++	UDPMapping        UDPNATBehavior                   `json:"udp_mapping,omitempty"`
++	UDPFiltering      UDPNATBehavior                   `json:"udp_filtering,omitempty"`
++	UDPNATMax         uint32                           `json:"udp_nat_max,omitempty"`
++	Workers           int                              `json:"workers,omitempty"`
+ 	DialerOptions
+ }
+ 
+diff --git a/protocol/warp/endpoint.go b/protocol/warp/endpoint.go
+--- a/protocol/warp/endpoint.go
++++ b/protocol/warp/endpoint.go
+@@ -146,12 +146,13 @@
+ 				// the same one-sided obfuscation class and passes it straight on.
+ 				Amnezia: options.Amnezia,
+ 				WireGuardCommonOptions: option.WireGuardCommonOptions{
+-					System:        options.System,
+-					Name:          options.Name,
+-					ListenPort:    options.ListenPort,
+-					UDPTimeout:    options.UDPTimeout,
+-					Workers:       options.Workers,
+-					DialerOptions: options.DialerOptions,
++					System:            options.System,
++					ColdStartRecovery: true,
++					Name:              options.Name,
++					ListenPort:        options.ListenPort,
++					UDPTimeout:        options.UDPTimeout,
++					Workers:           options.Workers,
++					DialerOptions:     options.DialerOptions,
+ 
+ 					Address: badoption.Listable[netip.Prefix]{
+ 						netip.MustParsePrefix(config.Interface.Addresses.V4 + "/32"),
+@@ -167,7 +168,7 @@
+ 								netip.MustParsePrefix("0.0.0.0/0"),
+ 								netip.MustParsePrefix("::/0"),
+ 							},
+-							PersistentKeepaliveInterval: options.PersistentKeepaliveInterval,
++							PersistentKeepaliveInterval: warpKeepalive(options.PersistentKeepaliveInterval),
+ 						},
+ 					},
+ 					MTU: 1280,
+@@ -389,3 +390,12 @@
+ 		Peers:      profile.Config.Peers,
+ 	}, nil
+ }
++
++// Start the initial handshake at endpoint startup, including a standby profile.
++// An explicitly configured interval (including zero) remains authoritative.
++func warpKeepalive(interval *option.Range[uint32]) *option.Range[uint32] {
++	if interval != nil {
++		return interval
++	}
++	return &option.Range[uint32]{From: 25, To: 25}
++}
+diff --git a/protocol/wireguard/endpoint.go b/protocol/wireguard/endpoint.go
+--- a/protocol/wireguard/endpoint.go
++++ b/protocol/wireguard/endpoint.go
+@@ -156,16 +156,17 @@
+ 	networkManager := service.FromContext[adapter.NetworkManager](ctx)
+ 	device := &sharedDevice{registry: registry, configuration: configuration, identities: identities}
+ 	wgEndpoint, err := wireguard.NewEndpoint(wireguard.EndpointOptions{
+-		Context:         ctx,
+-		Logger:          logger,
+-		System:          options.System,
+-		Handler:         device,
+-		UDPTimeout:      udpTimeout,
+-		ICMPTimeout:     C.ICMPTimeout,
+-		UDPMapping:      tun.NATMapping(options.UDPMapping),
+-		UDPFiltering:    tun.NATFiltering(options.UDPFiltering),
+-		UDPNATMax:       options.UDPNATMax,
+-		InterfaceFinder: networkManager.InterfaceFinder(),
++		Context:           ctx,
++		ColdStartRecovery: options.ColdStartRecovery,
++		Logger:            logger,
++		System:            options.System,
++		Handler:           device,
++		UDPTimeout:        udpTimeout,
++		ICMPTimeout:       C.ICMPTimeout,
++		UDPMapping:        tun.NATMapping(options.UDPMapping),
++		UDPFiltering:      tun.NATFiltering(options.UDPFiltering),
++		UDPNATMax:         options.UDPNATMax,
++		InterfaceFinder:   networkManager.InterfaceFinder(),
+ 		EgressPoolOptions: tun.UDPEgressPoolOptions{
+ 			Logger:           logger,
+ 			InterfaceFinder:  networkManager.InterfaceFinder(),
+diff --git a/protocol/wireguard/shared_device.go b/protocol/wireguard/shared_device.go
+--- a/protocol/wireguard/shared_device.go
++++ b/protocol/wireguard/shared_device.go
+@@ -40,9 +40,10 @@
+ }
+ 
+ type deviceConfiguration struct {
+-	Type    string                        `json:"type"`
+-	Options option.WireGuardCommonOptions `json:"options"`
+-	Amnezia *wireguard.AmneziaOptions     `json:"amnezia,omitempty"`
++	ColdStartRecovery bool                          `json:"cold_start_recovery,omitempty"`
++	Type              string                        `json:"type"`
++	Options           option.WireGuardCommonOptions `json:"options"`
++	Amnezia           *wireguard.AmneziaOptions     `json:"amnezia,omitempty"`
+ }
+ 
+ var registryAccess sync.Mutex
+@@ -62,7 +63,7 @@
+ }
+ 
+ func sharedDeviceKey(endpointType string, options option.WireGuardCommonOptions, amnezia *wireguard.AmneziaOptions) (string, []string, error) {
+-	content, err := json.Marshal(deviceConfiguration{Type: endpointType, Options: options, Amnezia: amnezia})
++	content, err := json.Marshal(deviceConfiguration{Type: endpointType, Options: options, Amnezia: amnezia, ColdStartRecovery: options.ColdStartRecovery})
+ 	if err != nil {
+ 		return "", nil, err
+ 	}
+diff --git a/third_party/wireguard-go/device/device.go b/third_party/wireguard-go/device/device.go
+--- a/third_party/wireguard-go/device/device.go
++++ b/third_party/wireguard-go/device/device.go
+@@ -160,9 +160,11 @@
+ 	// lx_giveup_rebind.go. Enabled by default; sing-box decides freshPort
+ 	// from whether the user pinned listen_port.
+ 	giveUpRebind struct {
+-		enabled   atomic.Bool
+-		freshPort atomic.Bool
+-		last      atomic.Int64 // unix seconds of the last rebind (debounce)
++		enabled     atomic.Bool
++		freshPort   atomic.Bool
++		coldStart   atomic.Bool
++		coldRebinds atomic.Uint32
++		last        atomic.Int64 // unix seconds of the last rebind (debounce)
+ 	}
+ }
+ 
+diff --git a/third_party/wireguard-go/device/lx_giveup_rebind.go b/third_party/wireguard-go/device/lx_giveup_rebind.go
+--- a/third_party/wireguard-go/device/lx_giveup_rebind.go
++++ b/third_party/wireguard-go/device/lx_giveup_rebind.go
+@@ -39,6 +39,12 @@
+ 	device.giveUpRebind.freshPort.Store(freshPort)
+ }
+ 
++// SetColdStartRecovery opts a client into trying a new UDP flow on each
++// unanswered initial retry. Existing/healthy sessions retain the normal policy.
++func (device *Device) SetColdStartRecovery(enabled bool) {
++	device.giveUpRebind.coldStart.Store(enabled)
++}
++
+ // handleHandshakeGiveUp is invoked from the give-up branch of
+ // expiredRetransmitHandshake: ~90s of initiations went unanswered, so the
+ // current socket's 5-tuple is proven dead.
+@@ -54,7 +60,11 @@
+ // sessionProvablyDead and keeps byte-for-byte upstream behaviour; the shared
+ // debounce means this also suppresses the giveup rebind of the same series.
+ func (device *Device) maybeEarlyGiveUpRebind(peer *Peer) {
+-	if peer.timers.handshakeAttempts.Load() < earlyGiveUpMinAttempts {
++	minimum := uint32(earlyGiveUpMinAttempts)
++	if device.coldStartPending(peer) {
++		minimum = 1
++	}
++	if peer.timers.handshakeAttempts.Load() < minimum {
+ 		return
+ 	}
+ 	if !device.sessionProvablyDead(peer) {
+@@ -117,11 +127,19 @@
+ 	}
+ 	now := time.Now().Unix()
+ 	last := device.giveUpRebind.last.Load()
+-	if now-last < int64(RekeyAttemptTime/time.Second) {
++	debounce := int64(RekeyAttemptTime / time.Second)
++	cold := len(peers) == 1 && device.coldStartPending(peers[0])
++	if cold {
++		debounce = 1
++	}
++	if now-last < debounce {
+ 		return false
+ 	}
+ 	if !device.giveUpRebind.last.CompareAndSwap(last, now) {
+ 		return false
++	}
++	if cold {
++		device.giveUpRebind.coldRebinds.Add(1)
+ 	}
+ 	fresh := device.giveUpRebind.freshPort.Load()
+ 	go func() {
+@@ -141,3 +159,9 @@
+ 	}()
+ 	return true
+ }
++
++// Only the first, never-established session gets a bounded burst of new paths.
++// After three rotations, retain the normal backoff even while the network is down.
++func (device *Device) coldStartPending(peer *Peer) bool {
++	return device.giveUpRebind.coldStart.Load() && device.giveUpRebind.freshPort.Load() && device.giveUpRebind.coldRebinds.Load() < 3 && peer.lastHandshakeNano.Load() == 0 && peer.keypairs.Current() == nil
++}
+diff --git a/transport/wireguard/endpoint.go b/transport/wireguard/endpoint.go
+--- a/transport/wireguard/endpoint.go
++++ b/transport/wireguard/endpoint.go
+@@ -244,6 +244,7 @@
+ 	// Retry a dead client UDP flow on a fresh port, not the same poisoned path.
+ 	// Listening/server and multi-peer devices must retain their bind identity.
+ 	wgDevice.SetGiveUpRebind(true, e.options.ListenPort == 0 && len(e.peers) == 1 && (e.peers[0].endpoint.IsValid() || e.peers[0].destination.IsDomain()))
++	wgDevice.SetColdStartRecovery(e.options.ColdStartRecovery)
+ 	e.tunDevice.SetDevice(wgDevice)
+ 	domainPeers := make(map[device.NoisePublicKey]*peerConfig)
+ 	for peerIndex, peer := range e.peers {
+diff --git a/transport/wireguard/endpoint_options.go b/transport/wireguard/endpoint_options.go
+--- a/transport/wireguard/endpoint_options.go
++++ b/transport/wireguard/endpoint_options.go
+@@ -14,15 +14,16 @@
+ )
+ 
+ type EndpointOptions struct {
+-	Context      context.Context
+-	Logger       logger.ContextLogger
+-	System       bool
+-	Handler      tun.Handler
+-	UDPTimeout   time.Duration
+-	ICMPTimeout  time.Duration
+-	UDPMapping   tun.NATMapping
+-	UDPFiltering tun.NATFiltering
+-	UDPNATMax    uint32
++	ColdStartRecovery bool
++	Context           context.Context
++	Logger            logger.ContextLogger
++	System            bool
++	Handler           tun.Handler
++	UDPTimeout        time.Duration
++	ICMPTimeout       time.Duration
++	UDPMapping        tun.NATMapping
++	UDPFiltering      tun.NATFiltering
++	UDPNATMax         uint32
+ 
+ 	InterfaceFinder   control.InterfaceFinder
+ 	EgressPoolOptions tun.UDPEgressPoolOptions

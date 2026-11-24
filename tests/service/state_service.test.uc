@@ -158,7 +158,7 @@ t.test("the Logs tab retains captured records after the system ring changes", ()
     let real_parallel = exec.capture_parallel;
     let full_reads = 0;
     exec.capture_parallel = (commands) => map(commands, (argv) =>
-        argv[0] == "logread" && argv[1] == "-l" && argv[2]==1000 ? { status: 0, stdout: "whole log " + ++full_reads + "\n" } : die("unexpected " + join(" ", argv)));
+        argv[0] == "logread" && argv[1] == "-l" && argv[2]==200 ? { status: 0, stdout: "whole log " + ++full_reads + "\n" } : die("unexpected " + join(" ", argv)));
     let log_text = (args) => service.object_methods().log_text.call({ args });
     let first = log_text({});
     let same = log_text({ cursor: first.cursor });
@@ -194,10 +194,11 @@ t.test("large log replies are bounded and continuation detects revision changes"
  let lines=[];for(let i=0;i<3000;i++)push(lines,sprintf("%04d %s",i,join("",map([1,2,3,4,5,6,7,8,9,10],()=>"synthetic log record "))));
  exec.capture_parallel=()=>[{status:0,stdout:join("\n",lines)+"\n"}];
  let methods=service.object_methods();let first=methods.log_text.call({args:{}});
- t.ok(length(first.text)<=262144);t.ok(first.next>0);
+ t.ok(length(first.text)<=32768);t.ok(first.next>0);
  let text=first.text;let part=first;
- while(part.next!=null) {part=methods.log_text.call({args:{cursor:first.cursor,offset:part.next}});t.eq(part.cursor,first.cursor);t.ok(length(part.text)<=262144);text+=part.text;}
- t.eq(text,join("\n",lines)+"\n");
+ while(part.next!=null) {part=methods.log_text.call({args:{cursor:first.cursor,offset:part.next}});t.eq(part.cursor,first.cursor);t.ok(length(part.text)<=32768);text+=part.text;}
+ t.ok(length(text)<=262144);t.contains(text,"2999 synthetic");t.excludes(text,"0000 synthetic");
+ t.eq(methods.log_text.call({args:{cursor:first.cursor,offset:first.next}}).reset,true,"a completed transfer releases its snapshot");
  let initial=methods.log_text.call({args:{}});
  let previousnext=initial.next;
  lines=[...lines,"new while reading"];
@@ -472,4 +473,39 @@ t.test("a registry read failure stays a read error and the same resident method 
  t.eq(methods.auto_records.call({args:{source_section:"zap"}}),{rows:[],total:0});
  records.page=previous;
 });
+t.test("unchanged log RPC does not assemble the full journal text", () => {
+    let module = require("service.log_journal");
+    let original = module.create;
+    let text_calls = 0;
+    module.create = (options, saved) => {
+        let log = original(options, saved);
+        let text = log.text;
+        log.text = (now) => { text_calls++; return text(now); };
+        return log;
+    };
+    let exec = require("core.exec");
+    let capture = exec.capture_parallel;
+    exec.capture_parallel = () => [{status:0,stdout:"one\n"}];
+    let methods = fresh_service().object_methods();
+    let first = methods.log_text.call({args:{}});
+    methods.log_text.call({args:{cursor:first.cursor}});
+    t.eq(text_calls, 1);
+    exec.capture_parallel = capture;
+    module.create = original;
+});
+
+t.test("oversized legacy archive is discarded with a warning before JSON parsing", () => {
+    let service = fresh_service();
+    fs.mkdir(service.paths.journal_dir, 0700);
+    fs.writefile(service.paths.journal_dir + "/archive.json", join("", map([1,2,3,4,5,6], () => sprintf("%0100000d", 1))));
+    let exec = require("core.exec");
+    let capture = exec.capture_parallel;
+    exec.capture_parallel = () => [{status:0,stdout:"fresh\n"}];
+    stub.commands([["logger", {status:0}]]);
+    t.eq(service.object_methods().log_text.call({args:{}}).text, "fresh\n");
+    t.contains(join("\n", stub.command_lines()), "previous temporary log archive");
+    stub.restore();
+    exec.capture_parallel = capture;
+});
+
 t.done();

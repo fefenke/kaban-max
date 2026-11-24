@@ -14,7 +14,7 @@ function run(payload) {
  if(request.action=="dismiss" && snapshot.registry_version!=3)die("Registry actions require the r13 core API");
  let query={source_section:request.source_section,status:request.status,search:request.search ?? "",sort:request.sort ?? "newest",page:1,page_size:100};
  let excluded=model.suppression().entries;let applied=store.load().entries;
- let page=require("diagnostics.auto_records").select(snapshot,excluded,query,applied);
+ let page=require("diagnostics.auto_records").select(snapshot,excluded,query,applied,request.ids);
  let available={};for(let row in page.rows)if(row.id!=null)available[row.id]=row;
  let source=filter(snapshot.sources ?? [],(s)=>s.id==request.source_section)[0];
  if(source==null)die("Active original Zapret2 source is unavailable");
@@ -46,8 +46,12 @@ function run(payload) {
   store.save("excluded",next_excluded); // Record deny intent before mutation; flash is batched.
  }
  if(request.action=="apply") {
-  let wanted={};for(let entry in applied)wanted[entry.scope]=true;for(let item in picked)wanted[item.scope]=true;
-  if(length(keys(wanted))>64)die("Applied registry is full (64 records)");
+  let projected=[...applied];
+  for(let item in picked) {
+   projected=filter(projected,(entry)=>entry.scope!=item.scope);
+   push(projected,{owner:"auto-routing",scope:item.scope,record:{...item.row,status:"applied",owner:"auto-routing",target:item.target ?? item.row.target}});
+  }
+  store.check_capacity("applied",projected,length(picked)*512);
  }
  let grants=[];
  for(let item in picked) {
@@ -60,7 +64,7 @@ function run(payload) {
    }
    else if(request.action=="remove") {
     runtime.io.request("registry_reset",{source_id:request.source_section,scope});
-    next_excluded=filter(next_excluded,(entry)=>entry.scope!=scope);
+    next_excluded=filter(next_excluded,(entry)=>sprintf("%J",common.parse_json(entry.scope))!=scope);
    }
    else if(request.action=="dismiss") {
     runtime.io.request("registry_dismiss",{source_id:request.source_section,id:row.id});
@@ -83,7 +87,7 @@ function run(payload) {
      die("Core returned a mismatched lease");
     }
     scope=store.key(lease);
-    push(grants,lease);next_applied=filter(next_applied,(entry)=>entry.scope!=scope && !(lease.persistent_ip==true && entry.record.source_id==lease.source_id && entry.record.ip==lease.ip && entry.record.source_ip==lease.source_ip && entry.record.inbound==lease.inbound && entry.record.port==lease.port));push(next_applied,{owner:"auto-routing",scope,record:lease});
+    push(grants,lease);next_applied=filter(next_applied,(entry)=>entry.scope!=scope && !(lease.persistent_ip==true && entry.record.source_id==lease.source_id && entry.record.ip==lease.ip && (lease.all_devices==true || (entry.record.source_ip==lease.source_ip && entry.record.inbound==lease.inbound && entry.record.port==lease.port))));push(next_applied,{owner:"auto-routing",scope,record:lease});
    }
    push(results,{id:row.id,status:"done"});
   } catch(e) {push(results,{id:row.id,status:"failed",reason:e.message});}

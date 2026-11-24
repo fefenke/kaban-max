@@ -1,3 +1,5 @@
+// Public synthetic test PKI. Not a production identity; never deploy this material.
+// Its exact key fingerprint is reviewed in tests/fixtures/public-test-material.json.
 export const CA = `-----BEGIN CERTIFICATE-----
 MIIDIzCCAgugAwIBAgIUHLbAJa6DPhJH7NczHivEjFWsC5kwDQYJKoZIhvcNAQEL
 BQAwGTEXMBUGA1UEAwwORm9ya29wIFRlc3QgQ0EwHhcNMjYwOTI5MDQzNDEwWhcN

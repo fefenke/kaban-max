@@ -127,7 +127,7 @@ function renderPot(entries, { name, email }, now) {
     `"POT-Creation-Date: ${stamp}\\n"`,
     `"PO-Revision-Date: ${stamp}\\n"`,
     `"Last-Translator: ${name} <${email}>\\n"`,
-    '"Language-Team: LANGUAGE <contributors@example.invalid>\\n"',
+    '"Language-Team: K.A.B.A.N.-MAX contributors <contributors@example.invalid>\\n"',
     '"Language: \\n"',
     '"MIME-Version: 1.0\\n"',
     '"Content-Type: text/plain; charset=UTF-8\\n"',

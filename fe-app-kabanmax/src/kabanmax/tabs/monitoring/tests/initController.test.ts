@@ -293,6 +293,47 @@ async function openMonitoring() {
 }
 
 describe('the Monitoring pause', () => {
+  it('shows why a snapshot was rejected instead of a generic unavailable state', async () => {
+    mocks.getClashApiConnections.mockResolvedValue({
+      success: false,
+      error: 'safe size limit',
+    });
+    await openMonitoring();
+    expect(byId('monitoring-connections').textContent).toContain(
+      'safe size limit',
+    );
+  });
+  it('bounds a legacy large snapshot and says how many connections exist', async () => {
+    mocks.getClashApiConnections.mockResolvedValue({
+      success: true,
+      data: {
+        connections: Array.from({ length: 10000 }, (_, i) => ({
+          id: String(i),
+          metadata: { host: `host-${i}` },
+        })),
+      },
+    });
+    await openMonitoring();
+    expect(rows()).toHaveLength(200);
+    expect(byId('monitoring-limit-note').textContent).toContain('10000');
+    expect(byId('monitoring-limit-note').hidden).toBe(false);
+  });
+
+  it('does not invent closed connections when a partial snapshot omits a row', async () => {
+    answer('a');
+    await openMonitoring();
+    mocks.getClashApiConnections.mockResolvedValue({
+      success: true,
+      data: {
+        connections: [{ id: 'b', metadata: { host: 'b' } }],
+        connectionsTotal: 10000,
+        truncated: true,
+      },
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    showTab('monitoring-tab-closed');
+    expect(hosts()).not.toContain('a.example.com');
+  });
   it('holds new connections back while Auto refresh is off', async () => {
     answer('a');
     await openMonitoring();

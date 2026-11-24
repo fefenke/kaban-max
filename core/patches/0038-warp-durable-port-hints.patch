@@ -1,0 +1,253 @@
+diff --git a/adapter/warp_path.go b/adapter/warp_path.go
+new file mode 100644
+index 0000000..e8b4f43
+--- /dev/null
++++ b/adapter/warp_path.go
+@@ -0,0 +1,11 @@
++package adapter
++
++// WARPPathStatus contains no profile credentials or remote addresses.
++type WARPPathStatus struct {
++	Tag         string `json:"tag"`
++	ProfileID   string `json:"profile_id"`
++	Port        uint16 `json:"port"`
++	HandshakeAt int64  `json:"handshake_at"`
++	DataAt      int64  `json:"data_at"`
++	Instance    string `json:"instance"`
++}
+diff --git a/experimental/clashapi/server.go b/experimental/clashapi/server.go
+index dbb0abb..486f10e 100644
+--- a/experimental/clashapi/server.go
++++ b/experimental/clashapi/server.go
+@@ -130,6 +130,7 @@ func NewServer(ctx context.Context, logFactory log.ObservableFactory, options op
+ 		r.Get("/logs", getLogs(s.ctx, logFactory))
+ 		r.Get("/traffic", traffic(s.ctx, trafficManager))
+ 		r.Get("/version", version)
++		r.Get("/kabanmax/warp-paths", warpPaths(s.endpoint))
+ 		r.Get("/kabanmax/auto", kabanmaxAuto(s, false))
+ 		r.Post("/kabanmax/auto", kabanmaxAuto(s, true))
+ 		r.Mount("/configs", configRouter(s, logFactory))
+diff --git a/experimental/clashapi/warp_paths.go b/experimental/clashapi/warp_paths.go
+new file mode 100644
+index 0000000..5f094e8
+--- /dev/null
++++ b/experimental/clashapi/warp_paths.go
+@@ -0,0 +1,22 @@
++package clashapi
++
++import (
++	"github.com/go-chi/render"
++	"github.com/sagernet/sing-box/adapter"
++	"net/http"
++)
++
++func warpPaths(manager adapter.EndpointManager) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Cache-Control", "no-store")
++		paths := []adapter.WARPPathStatus{}
++		if manager != nil {
++			for _, endpoint := range manager.Endpoints() {
++				if reporter, ok := endpoint.(interface{ WARPPathStatus() adapter.WARPPathStatus }); ok {
++					paths = append(paths, reporter.WARPPathStatus())
++				}
++			}
++		}
++		render.JSON(w, r, render.M{"endpoints": paths})
++	}
++}
+diff --git a/option/warp.go b/option/warp.go
+index 4918a20..3769e18 100644
+--- a/option/warp.go
++++ b/option/warp.go
+@@ -3,6 +3,7 @@ package option
+ import "github.com/sagernet/sing/common/json/badoption"
+ 
+ type WARPEndpointOptions struct {
++	ListenPortHint              uint16             `json:"listen_port_hint,omitempty"`
+ 	System                      bool               `json:"system,omitempty"`
+ 	Name                        string             `json:"name,omitempty"`
+ 	ListenPort                  uint16             `json:"listen_port,omitempty"`
+diff --git a/protocol/warp/endpoint.go b/protocol/warp/endpoint.go
+index 402bf9a..f63bd3f 100644
+--- a/protocol/warp/endpoint.go
++++ b/protocol/warp/endpoint.go
+@@ -8,6 +8,7 @@ import (
+ 	"math/rand"
+ 	"net"
+ 	"net/netip"
++	"strconv"
+ 	"strings"
+ 	"sync"
+ 	"time"
+@@ -48,6 +49,7 @@ type Endpoint struct {
+ 	endpoint     adapter.Endpoint
+ 	startHandler func(scope *adapter.Scope)
+ 	savePath     func()
++	pathInstance string
+ 	cancel       context.CancelFunc
+ 
+ 	// await closes once the first attempt to bring the endpoint up ends, done
+@@ -79,13 +81,14 @@ func NewEndpoint(ctx context.Context, router adapter.Router, logger log.ContextL
+ 		dependencies = append(dependencies, options.Profile.Detour)
+ 	}
+ 	endpoint := &Endpoint{
+-		Adapter: endpoint.NewAdapter(C.TypeWARP, tag, []string{N.NetworkTCP, N.NetworkUDP}, dependencies),
+-		ctx:     ctx,
+-		logger:  logger,
+-		cancel:  cancel,
+-		options: options,
+-		await:   make(chan struct{}),
+-		done:    make(chan struct{}),
++		Adapter:      endpoint.NewAdapter(C.TypeWARP, tag, []string{N.NetworkTCP, N.NetworkUDP}, dependencies),
++		ctx:          ctx,
++		logger:       logger,
++		cancel:       cancel,
++		options:      options,
++		pathInstance: time.Now().Format(time.RFC3339Nano),
++		await:        make(chan struct{}),
++		done:         make(chan struct{}),
+ 	}
+ 	endpoint.startHandler = func(scope *adapter.Scope) {
+ 		defer endpoint.release()
+@@ -149,7 +152,7 @@ func NewEndpoint(ctx context.Context, router adapter.Router, logger log.ContextL
+ 				WireGuardCommonOptions: option.WireGuardCommonOptions{
+ 					System:            options.System,
+ 					ColdStartRecovery: true,
+-					ListenPortHint:    config.ListenPortHint,
++					ListenPortHint:    warpListenPortHint(options, config.ListenPortHint),
+ 					Name:              options.Name,
+ 					ListenPort:        options.ListenPort,
+ 					UDPTimeout:        options.UDPTimeout,
+@@ -424,3 +427,31 @@ func warpKeepalive(interval *option.Range[uint32]) *option.Range[uint32] {
+ 	}
+ 	return &option.Range[uint32]{From: 25, To: 25}
+ }
++
++// A RAM hint may be newer than the durable boot hint. Neither pins the bind.
++func warpListenPortHint(options option.WARPEndpointOptions, cached uint16) uint16 {
++	if options.ListenPort != 0 || options.Profile.Recreate {
++		return 0
++	}
++	if cached != 0 {
++		return cached
++	}
++	return options.ListenPortHint
++}
++
++func (w *Endpoint) WARPPathStatus() adapter.WARPPathStatus {
++	status := adapter.WARPPathStatus{Tag: w.Tag(), ProfileID: w.options.Profile.ID, Instance: w.pathInstance}
++	if w.options.ListenPort != 0 || w.options.Profile.Recreate {
++		return status
++	}
++	w.access.RLock()
++	defer w.access.RUnlock()
++	if path, ok := w.endpoint.(interface {
++		WARPPathStats() (uint16, int64, int64, uint64)
++	}); ok {
++		var epoch uint64
++		status.Port, status.HandshakeAt, status.DataAt, epoch = path.WARPPathStats()
++		status.Instance += ":" + strconv.FormatUint(epoch, 10)
++	}
++	return status
++}
+diff --git a/protocol/wireguard/endpoint.go b/protocol/wireguard/endpoint.go
+index 9d5081c..de60a48 100644
+--- a/protocol/wireguard/endpoint.go
++++ b/protocol/wireguard/endpoint.go
+@@ -432,3 +432,5 @@ func (w *Endpoint) PreferredAddress(metadata *adapter.InboundContext, address ne
+ }
+ 
+ func (e *Endpoint) LastHandshakePort() uint16 { return e.endpoint.LastHandshakePort() }
++
++func (e *Endpoint) WARPPathStats() (uint16, int64, int64, uint64) { return e.endpoint.WARPPathStats() }
+diff --git a/third_party/wireguard-go/device/device.go b/third_party/wireguard-go/device/device.go
+index 8a0530c..41ec486 100644
+--- a/third_party/wireguard-go/device/device.go
++++ b/third_party/wireguard-go/device/device.go
+@@ -160,13 +160,16 @@ type Device struct {
+ 	// lx_giveup_rebind.go. Enabled by default; sing-box decides freshPort
+ 	// from whether the user pinned listen_port.
+ 	giveUpRebind struct {
+-		enabled      atomic.Bool
+-		freshPort    atomic.Bool
+-		coldStart    atomic.Bool
+-		coldRebinds  atomic.Uint32
+-		activePort   atomic.Uint32
+-		lastGoodPort atomic.Uint32
+-		last         atomic.Int64 // unix seconds of the last rebind (debounce)
++		enabled        atomic.Bool
++		freshPort      atomic.Bool
++		coldStart      atomic.Bool
++		coldRebinds    atomic.Uint32
++		activePort     atomic.Uint32
++		handshakeAt    atomic.Int64
++		dataAt         atomic.Int64
++		pathGeneration atomic.Uint64
++		lastGoodPort   atomic.Uint32
++		last           atomic.Int64 // unix seconds of the last rebind (debounce)
+ 	}
+ }
+ 
+@@ -869,6 +872,9 @@ func (device *Device) BindUpdate() error {
+ 	}
+ 
+ 	device.giveUpRebind.activePort.Store(uint32(netc.port))
++	device.giveUpRebind.handshakeAt.Store(0)
++	device.giveUpRebind.dataAt.Store(0)
++	device.giveUpRebind.pathGeneration.Add(1)
+ 	netc.netlinkCancel, err = device.startRouteListener(netc.bind)
+ 	if err != nil {
+ 		netc.bind.Close()
+@@ -915,3 +921,11 @@ func (device *Device) BindClose() error {
+ func (device *Device) LastHandshakePort() uint16 {
+ 	return uint16(device.giveUpRebind.lastGoodPort.Load())
+ }
++
++func (device *Device) WARPPathStats() (uint16, int64, int64, uint64) {
++	port := device.giveUpRebind.activePort.Load()
++	if port == 0 || port != device.giveUpRebind.lastGoodPort.Load() {
++		return 0, 0, 0, device.giveUpRebind.pathGeneration.Load()
++	}
++	return uint16(port), device.giveUpRebind.handshakeAt.Load(), device.giveUpRebind.dataAt.Load(), device.giveUpRebind.pathGeneration.Load()
++}
+diff --git a/third_party/wireguard-go/device/receive.go b/third_party/wireguard-go/device/receive.go
+index 6d9994d..e9baadf 100644
+--- a/third_party/wireguard-go/device/receive.go
++++ b/third_party/wireguard-go/device/receive.go
+@@ -639,6 +639,9 @@ func (peer *Peer) processInboundContainer(elemsContainer *QueueInboundElementsCo
+ 			continue
+ 		}
+ 
++		// Only authenticated, replay-checked, valid allowed-source IP payload counts.
++		// Handshakes and padded/empty keepalives must not qualify a durable hint.
++		device.giveUpRebind.dataAt.Store(time.Now().Unix())
+ 		// the plaintext sits behind the (untouched) padding and the header
+ 		start := int(elem.padding)
+ 		scratch = append(scratch, elem.buffer[start:start+MessageTransportOffsetContent+len(elem.packet)])
+diff --git a/third_party/wireguard-go/device/timers.go b/third_party/wireguard-go/device/timers.go
+index fa14b59..14d0cb5 100644
+--- a/third_party/wireguard-go/device/timers.go
++++ b/third_party/wireguard-go/device/timers.go
+@@ -238,6 +238,7 @@ func (peer *Peer) timersHandshakeComplete() {
+ 	peer.lastHandshakeNano.Store(time.Now().UnixNano())
+ 	if port := peer.device.giveUpRebind.activePort.Load(); port != 0 {
+ 		peer.device.giveUpRebind.lastGoodPort.Store(port)
++		peer.device.giveUpRebind.handshakeAt.Store(time.Now().Unix())
+ 	}
+ }
+ 
+diff --git a/transport/wireguard/endpoint.go b/transport/wireguard/endpoint.go
+index 4d2b241..d80f8e0 100644
+--- a/transport/wireguard/endpoint.go
++++ b/transport/wireguard/endpoint.go
+@@ -499,3 +499,10 @@ func (e *Endpoint) LastHandshakePort() uint16 {
+ 	}
+ 	return e.device.LastHandshakePort()
+ }
++
++func (e *Endpoint) WARPPathStats() (uint16, int64, int64, uint64) {
++	if e.device == nil {
++		return 0, 0, 0, 0
++	}
++	return e.device.WARPPathStats()
++}

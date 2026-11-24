@@ -1,35 +1,27 @@
 # Навигатор разработчика
 
-0.2.0/r14 опубликован: [actual IP, configured секция, dismiss/UI и clear журнала](AUTO_ROUTING_IP_FIX.md). Статус публикации в PROJECT_STATE, точные проверки в TESTING.
+Старт: [AGENTS](../AGENTS.md) → [PROJECT_STATE](PROJECT_STATE.md). Текущий выпуск и native smoke — [0.2.3/r40](RELEASE_023.md). Затем выбрать **одну тему**, не читать все ссылки подряд. Формальная карта путей — [PROJECT_MAP.json](PROJECT_MAP.json).
 
-0.1.9/r13 в подготовке: [ошибка в журнале → своя Zapret-секция → проверка альтернативы](AUTO_ROUTING_019.md). Удалены no-progress/подмешивание чужих наблюдений; новая lease требует реальной ошибки, а UI возвращает нативную геометрию и обычные страницы. Статус публикации — PROJECT_STATE.
-
-0.1.7/r12: [bounded registry, persistence, exact scope и bulk](AUTO_REGISTRY_017.md); [свежие gates](TESTING.md). Предыдущие UI v2/r11 записи ниже исторические.
-
-№04Б-ФИНАЛ 2026-11-16: ordinary HTTPS без nonce, только manual proposals; актуальные критерии в [контракте](AUTO_ROUTING_IMPLEMENTATION_04B.md), свежие результаты в [TESTING](TESTING.md).
-
-
-ТЗ №04Б: [active verifier, scoped leases, LuCI и границы](AUTO_ROUTING_IMPLEMENTATION_04B.md); [свежие тесты](TESTING.md), [передача](AI_HANDOFF.md).
-
-
-ТЗ №04: [read-only прогноз маршрута, ограничения автоматики и продолжение](AUTO_ROUTING_DIAGNOSTICS_04.md).
-
-Актуальная проверка r10 и lifecycle: [ТЗ №03](LIFECYCLE_FALLBACK_03.md), команды — [TESTING](TESTING.md).
-
-Текущий результат и передача №03 после ТЗ №02: [запуск, DNS, устройства и смешанные ответы](STARTUP_DNS_DEVICES_02.md).
-
-Минимальный контекст: [AGENTS](../AGENTS.md) → [PROJECT_STATE](PROJECT_STATE.md). Далее читать только нужную тему.
-
-| Задача | Документы | Код |
+| Задача | Сначала читать | Код и проверки |
 | --- | --- | --- |
-| Понять устройство | [Архитектура](ARCHITECTURE.md), [компоненты](COMPONENTS.md) | `kabanmax/files/usr/lib/`, frontend `src/kabanmax/` |
-| Fallback/TLS/статистика | [Решения](DECISIONS.md), [сеть](NETWORKING.md), [fallback](connections/fallback.md) | `core/patches/`, `.local/core-src/protocol/group/` |
-| Запуск, DNS, NFQUEUE | [Диагностика](TROUBLESHOOTING.md), [проблемы](KNOWN_ISSUES.md) | backend `service/`, `nft/`, `zapret2/` |
-| Сборка/проверки | [Сборка](BUILD_AND_DEPLOY.md), [тесты](TESTING.md), [ловушки](PITFALLS.md) | `scripts/`, `tests/`, `core/UPSTREAM` |
-| Публикация и приватность | [Безопасность](SECURITY.md), [сборка](BUILD_AND_DEPLOY.md) | `install.sh`, release scripts |
-| Продолжить разработку | [План](ROADMAP.md), [изменения](CHANGELOG.md) | точечный поиск по компоненту |
-| Найти старые исследования | [Аудит переноса](ISOLATION_AUDIT.md) | `.local/research/`, `.local/legacy/` |
+| Авторутинг: память, flash, реестр | [контракт r24](AUTO_ROUTING_STORAGE.md), [ошибки №2–4](AUTO_ROUTING_FIELD_ERRORS.md) | `config/auto_*.uc`, `diagnostics/auto_*.uc`, `autoRecords.ts`, `autoRouting.ts`, `autoStorage.ts`, `tests/core/auto*` |
+| Fallback, TLS, статистика | [NETWORKING](NETWORKING.md), [DECISIONS](DECISIONS.md), [fingerprints](../core/FINGERPRINTS.md) | `core/UPSTREAM`, `core/patches/`, `tests/core/`, `shared/tls-fingerprints.json` |
+| DNS, устройства, nft | [NETWORKING](NETWORKING.md), [COMPONENTS](COMPONENTS.md) | `singbox/generator.uc`, `config/validator.uc`, `nft/`, `tests/singbox/`, `tests/nft/` |
+| WAN-log gate, DNS-повторы, IPv6 FakeIP | [NETWORK_AVAILABILITY](NETWORK_AVAILABILITY.md), [LOGGING](LOGGING.md) | `core/patches/0027*`, `0028*`, `singbox/constants.uc`, `diagnostics/route_policy.uc`, `tests/core/run_network_availability.sh` |
+| Запуск, reload, RPC, журналы | [LOGGING](LOGGING.md), [ARCHITECTURE](ARCHITECTURE.md), [KNOWN_ISSUES](KNOWN_ISSUES.md) | `service/lifecycle.uc`, `state_service.uc`, `cli.uc`, `log_journal.uc`, `tests/service/` |
+| LuCI, формы, URI, переводы | [COMPONENTS](COMPONENTS.md), [PITFALLS](PITFALLS.md) | `fe-app-kabanmax/src/`, frontend `tests/`, `luci-app-kabanmax/po/` |
+| Zapret2, WARP, каскады | [NETWORKING](NETWORKING.md), [текущий WARP outage](WARP_RECOVERY.md), [SECURITY](SECURITY.md) | `zapret2/model.uc`, `singbox/generator.uc`, `tests/singbox/generator_warp_stability.test.uc`, `core/patches/` |
+| Сборка, версии, упаковка | [BUILD_AND_DEPLOY](BUILD_AND_DEPLOY.md), [TESTING](TESTING.md) | `scripts/`, `core/UPSTREAM`, `.github/workflows/`, package Makefiles |
+| Полевой сбой | [KNOWN_ISSUES](KNOWN_ISSUES.md), [TROUBLESHOOTING](TROUBLESHOOTING.md), [SECURITY](SECURITY.md) | точный компонент и синтетическое воспроизведение; live доступ — отдельно |
+| Обновление документов | [WORKFLOW](WORKFLOW.md), [DOCUMENTATION_AUDIT](DOCUMENTATION_AUDIT.md) | `scripts/check-project-docs.py`, `tests/docs/`, `.github/workflows/docs-check.yml` |
+| Старый эксперимент | [архив](archive/README.md), затем нужный отчёт | `docs/AUTO_*.md`, `superpowers/`, `audits/`; `.local/` — только под конкретную гипотезу |
 
-Пользовательское руководство остаётся в `guide/`, `connections/`, `dns/`, `sections/`, `tunnels/`, `servers/` и `settings.md`. Не дублировать их содержимое в AGENTS. Подробные приватные материалы читать только под конкретную гипотезу; пути к ним не означают разрешение запускать старые команды.
+Пути `config/`, `service/`, `singbox/`, `nft/`, `zapret2/`, `diagnostics/` относительны `kabanmax/files/usr/lib/`. Точные frontend entrypoints — в COMPONENTS/PROJECT_MAP.
 
-??????????? ????? ? ?? DNS/UCI/GeoIP: [?????????](audits/README.md). ??????????? ????? ????????? ??????: [AI_HANDOFF](AI_HANDOFF.md).
+## Иерархия знаний
+
+- Состояние сейчас: PROJECT_STATE; контракт: ARCHITECTURE/NETWORKING/актуальный тематический документ.
+- Причины: DECISIONS. Неизвестное: KNOWN_ISSUES. Проверки: TESTING.
+- Старые отчёты относятся к своему этапу. r11/r12 manual-only и лимит 64 не описывают локальный r24.
+- Пользовательское руководство: [сайт](index.md), `guide/`, `connections/`, `dns/`, `sections/`, `tunnels/`, `servers/`, `settings.md`. Оно не подтверждает выпуск локальных изменений.
+- [AI_HANDOFF](AI_HANDOFF.md) — указатель для другого чата, без дублирования состояния.

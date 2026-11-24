@@ -1,0 +1,96 @@
+diff --git a/common/autoroute/ip_registry.go b/common/autoroute/ip_registry.go
+index de72fe7..cc4befa 100644
+--- a/common/autoroute/ip_registry.go
++++ b/common/autoroute/ip_registry.go
+@@ -61,6 +61,7 @@ func appendDomain(names []string, name string) []string {
+ func (m *Manager) persistentIP(d *Decision) {
+ 	d.PersistentIP = true
+ 	d.AllPorts = true
++	d.AllDevices = true
+ 	for _, event := range m.events {
+ 		if event.Source == d.Source && event.IP == d.IP {
+ 			for _, name := range event.Domains {
+@@ -69,9 +70,9 @@ func (m *Manager) persistentIP(d *Decision) {
+ 			d.Domains = appendDomain(d.Domains, event.ObservedDomain)
+ 		}
+ 	}
+-	// Exactly one grant for this IP and original device/inbound/port scope.
++	// Exactly one user-approved IP grant within the original winning section.
+ 	for key, old := range m.leases {
+-		if old.Source == d.Source && old.IP == d.IP && old.SourceIP == d.SourceIP && old.Inbound == d.Inbound {
++		if old.Source == d.Source && old.IP == d.IP {
+ 			delete(m.leases, key)
+ 			delete(m.reserved, m.key(leaseQuery(old)))
+ 		}
+diff --git a/common/autoroute/lease.go b/common/autoroute/lease.go
+index 028f488..6bc8b24 100644
+--- a/common/autoroute/lease.go
++++ b/common/autoroute/lease.go
+@@ -8,8 +8,9 @@ import (
+ )
+ 
+ type Lease struct {
+- AllPorts bool `json:"all_ports,omitempty"`
+- ErrorPort uint16 `json:"error_port,omitempty"`
++	AllDevices       bool         `json:"all_devices,omitempty"`
++	AllPorts         bool         `json:"all_ports,omitempty"`
++	ErrorPort        uint16       `json:"error_port,omitempty"`
+ 	NewError         bool         `json:"new_error,omitempty"`
+ 	PersistentIP     bool         `json:"persistent_ip,omitempty"`
+ 	Domains          []string     `json:"domains,omitempty"`
+@@ -45,7 +46,7 @@ func (l Lease) matches(source string, m *adapter.InboundContext, now time.Time)
+ 	if !l.IPOnly && !l.PersistentIP && len(m.DestinationAddresses) != 1 {
+ 		return false
+ 	}
+-	if (!l.PersistentIP && !now.Before(l.Deadline)) || source != l.Source || (m.Network != "tcp" && !(m.Network == "udp" && l.PersistentIP)) || m.Inbound != l.Inbound || m.Source.Addr.Unmap().String() != l.SourceIP || (!l.AllPorts && m.Destination.Port != l.Port) {
++	if (!l.PersistentIP && !now.Before(l.Deadline)) || source != l.Source || (m.Network != "tcp" && !(m.Network == "udp" && l.PersistentIP)) || (!l.AllDevices && (m.Inbound != l.Inbound || m.Source.Addr.Unmap().String() != l.SourceIP)) || (!l.AllPorts && m.Destination.Port != l.Port) {
+ 		return false
+ 	}
+ 	if l.IPOnly {
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+index 09a8e5b..ce7e654 100644
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -501,7 +501,7 @@ func (m *Manager) Failed(e *Event, err error) {
+ 	}
+ 	// A new original-route failure after a grant means this flow bypassed it.
+ 	for key, l := range m.leases {
+-		if l.AllPorts && sameIPDeviceScope(leaseQuery(l), e.Query) && e.Created.After(l.Created) {
++		if l.AllPorts && l.Source == e.Source && l.IP == e.IP && (l.AllDevices || sameIPDeviceScope(leaseQuery(l), e.Query)) && e.Created.After(l.Created) {
+ 			l.NewError = true
+ 			l.ErrorPort = e.Port
+ 			l.Reason = "applied_route_bypassed"
+@@ -588,7 +588,7 @@ func (m *Manager) SelectForEvent(ctx context.Context, original string, meta *ada
+ 			continue
+ 		}
+ 		concreteIP := (meta.Destination.IsIP() && meta.Destination.Addr.Unmap().String() == l.IP) || (len(meta.DestinationAddresses) == 1 && containsIP(meta.DestinationAddresses, l.IP))
+-		if ((l.PersistentIP && concreteIP) || (!l.IPOnly && l.Domain == strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".")) || (l.IPOnly && concreteIP)) && l.Source == original && (len(meta.DestinationAddresses) == 0 || containsIP(meta.DestinationAddresses, l.IP)) && l.SourceIP == meta.Source.Addr.Unmap().String() && l.Inbound == meta.Inbound && (l.AllPorts || l.Port == meta.Destination.Port) {
++		if ((l.PersistentIP && concreteIP) || (!l.IPOnly && l.Domain == strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), ".")) || (l.IPOnly && concreteIP)) && l.Source == original && (len(meta.DestinationAddresses) == 0 || containsIP(meta.DestinationAddresses, l.IP)) && (l.AllDevices || (l.SourceIP == meta.Source.Addr.Unmap().String() && l.Inbound == meta.Inbound)) && (l.AllPorts || l.Port == meta.Destination.Port) {
+ 			copy := l
+ 			candidate = &copy
+ 			break
+@@ -645,7 +645,7 @@ func (m *Manager) SelectForEvent(ctx context.Context, original string, meta *ada
+ 	}
+ 	m.mu.Lock()
+ 	current, exists := m.leases[candidate.ID]
+-	if !exists || m.closed || m.disabled[original] || m.deniedScope(leaseQuery(current)) || (!current.PersistentIP && !time.Now().Before(current.Deadline)) {
++	if !exists || m.closed || m.disabled[original] || m.deniedScope(leaseQuery(current)) || m.deniedScope(Query{Source: original, IP: candidate.IP, Domain: strings.TrimSuffix(strings.ToLower(meta.Destination.Fqdn), "."), SourceIP: meta.Source.Addr.Unmap().String(), Inbound: meta.Inbound, Port: meta.Destination.Port}) || (!current.PersistentIP && !time.Now().Before(current.Deadline)) {
+ 		m.mu.Unlock()
+ 		return original
+ 	}
+diff --git a/common/autoroute/registry.go b/common/autoroute/registry.go
+index 7d9100e..12efe1b 100755
+--- a/common/autoroute/registry.go
++++ b/common/autoroute/registry.go
+@@ -18,9 +18,10 @@ func (m *Manager) loadSaved(s option.KabanmaxAutoSource) {
+ 				l.Deadline = l.Expires
+ 				l.PersistentIP = true
+ 				l.AllPorts = true
++				l.AllDevices = true
+ 				keep := true
+ 				for key, old := range m.leases {
+-					if sameIPDeviceScope(leaseQuery(old), leaseQuery(l)) {
++					if old.Source == l.Source && old.IP == l.IP {
+ 						if old.Created.After(l.Created) {
+ 							keep = false
+ 							break

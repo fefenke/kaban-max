@@ -1,0 +1,75 @@
+diff --git a/route/connection_log.go b/route/connection_log.go
+--- a/route/connection_log.go
++++ b/route/connection_log.go
+@@ -11,7 +11,7 @@
+ 
+ // These per-flow transport failures do not identify a configuration fix. Keep
+ // their original cause for diagnostics and routing evidence, but below Warn.
+-func (m *ConnectionManager) logConnectionFailure(ctx context.Context, err error) {
++func routineConnectionFailure(err error) bool {
+ 	routine := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF)
+ 	for _, cause := range []error{syscall.EHOSTUNREACH, syscall.ENETUNREACH, syscall.ENOTCONN, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE, syscall.ECONNREFUSED, syscall.ETIMEDOUT} {
+ 		routine = routine || errors.Is(err, cause)
+@@ -25,7 +25,11 @@
+ 	for _, text := range []string{"no route to host", "network is unreachable", "endpoint not connected", "connection reset by peer", "broken pipe", "connection refused", "connection timed out", "i/o timeout", "context deadline exceeded"} {
+ 		routine = routine || detail == text || strings.HasSuffix(detail, ": "+text)
+ 	}
+-	if routine {
++	return routine
++}
++
++func (m *ConnectionManager) logConnectionFailure(ctx context.Context, err error) {
++	if routineConnectionFailure(err) {
+ 		m.logger.DebugContext(ctx, err)
+ 	} else {
+ 		m.logger.ErrorContext(ctx, err)
+diff --git a/route/kabanmax_auto.go b/route/kabanmax_auto.go
+--- a/route/kabanmax_auto.go
++++ b/route/kabanmax_auto.go
+@@ -27,10 +27,11 @@
+ 			if r.autoLogEnabled == nil || !r.autoLogEnabled() {
+ 				return false
+ 			}
+-			// The normal connection logger already emits this failure. The
+-			// registry consumes the routed event directly, never logread text.
++			// Admission is independent of log text. Newly retained Debug-level
++			// failures get a visible source warning below.
+ 			return true
+ 		}
++		m.LogSourceFailure = r.logAutoSourceFailure
+ 		m.Match = func(ctx context.Context, metadata *adapter.InboundContext) (string, error) {
+ 			selected, selectedIndex, buffers, packets, e := r.matchRule(ctx, metadata, nil, nil)
+ 			buf.ReleaseMulti(buffers)
+@@ -239,3 +240,11 @@
+ 	}
+ 	return addresses, ttl, nil
+ }
++
++// Promote every admitted source failure that the connection logger keeps
++// at Debug. Protocol/configuration failures already have their own Error entry.
++func (r *Router) logAutoSourceFailure(event autoroute.Event, err error) {
++	if routineConnectionFailure(err) {
++		r.logger.WarnContext(r.ctx, "auto-routing source failure: ", event.Source, " -> ", event.IP, ":", event.Port, ": ", err)
++	}
++}
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -73,6 +73,7 @@
+ 
+ 	RegistryOverflow uint64
+ 	LogFailure       func(Event, error) bool
++	LogSourceFailure  func(Event, error)
+ 	mu               sync.Mutex
+ 	job              sync.Mutex
+ 	sources          map[string]option.KabanmaxAutoSource
+@@ -561,6 +562,9 @@
+ 		e.Reason = "connection_error_without_identity"
+ 	}
+ 	e.Updated = time.Now()
++	if m.LogSourceFailure != nil {
++		m.LogSourceFailure(*e, err)
++	}
+ }
+ func (m *Manager) Select(ctx context.Context, original string, meta *adapter.InboundContext) string {
+ 	return m.SelectForEvent(ctx, original, meta, nil)

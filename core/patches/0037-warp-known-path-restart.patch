@@ -1,0 +1,199 @@
+diff --git a/option/wireguard.go b/option/wireguard.go
+--- a/option/wireguard.go
++++ b/option/wireguard.go
+@@ -7,6 +7,7 @@
+ )
+ 
+ type WireGuardCommonOptions struct {
++	ListenPortHint    uint16                           `json:"-"`
+ 	ColdStartRecovery bool                             `json:"-"`
+ 	System            bool                             `json:"system,omitempty"`
+ 	Name              string                           `json:"name,omitempty"`
+diff --git a/protocol/warp/config.go b/protocol/warp/config.go
+--- a/protocol/warp/config.go
++++ b/protocol/warp/config.go
+@@ -3,8 +3,9 @@
+ import "github.com/sagernet/sing-box/common/cloudflare"
+ 
+ type Config struct {
+-	PrivateKey string `json:"private_key"`
+-	Interface  struct {
++	ListenPortHint uint16 `json:"listen_port_hint,omitempty"`
++	PrivateKey     string `json:"private_key"`
++	Interface      struct {
+ 		Addresses struct {
+ 			V4 string `json:"v4"`
+ 			V6 string `json:"v6"`
+diff --git a/protocol/warp/endpoint.go b/protocol/warp/endpoint.go
+--- a/protocol/warp/endpoint.go
++++ b/protocol/warp/endpoint.go
+@@ -47,6 +47,7 @@
+ 	access       sync.RWMutex
+ 	endpoint     adapter.Endpoint
+ 	startHandler func(scope *adapter.Scope)
++	savePath     func()
+ 	cancel       context.CancelFunc
+ 
+ 	// await closes once the first attempt to bring the endpoint up ends, done
+@@ -148,6 +149,7 @@
+ 				WireGuardCommonOptions: option.WireGuardCommonOptions{
+ 					System:            options.System,
+ 					ColdStartRecovery: true,
++					ListenPortHint:    config.ListenPortHint,
+ 					Name:              options.Name,
+ 					ListenPort:        options.ListenPort,
+ 					UDPTimeout:        options.UDPTimeout,
+@@ -187,6 +189,26 @@
+ 				return
+ 			}
+ 		}
++		if options.ListenPort == 0 && !options.Profile.Recreate && cacheFile != nil && cacheFile.StoreWARPConfig() {
++			endpoint.savePath = func() {
++				path, ok := wireguardEndpoint.(interface{ LastHandshakePort() uint16 })
++				if !ok {
++					return
++				}
++				port := path.LastHandshakePort()
++				if port == 0 || port == config.ListenPortHint {
++					return
++				}
++				config.ListenPortHint = port
++				content, saveErr := json.Marshal(config)
++				if saveErr == nil {
++					saveErr = cacheFile.SaveWARPConfig(cacheKey, &adapter.SavedBinary{LastUpdated: time.Now(), Content: content})
++				}
++				if saveErr != nil {
++					logger.DebugContext(ctx, "save WARP UDP path hint: ", saveErr)
++				}
++			}
++		}
+ 		endpoint.access.Lock()
+ 		endpoint.endpoint = wireguardEndpoint
+ 		endpoint.access.Unlock()
+@@ -287,6 +309,9 @@
+ 	scope.Add(func() error {
+ 		w.cancel()
+ 		<-w.done
++		if w.savePath != nil {
++			w.savePath()
++		}
+ 		return endpointScope.Close()
+ 	})
+ 	go func() {
+diff --git a/protocol/wireguard/endpoint.go b/protocol/wireguard/endpoint.go
+--- a/protocol/wireguard/endpoint.go
++++ b/protocol/wireguard/endpoint.go
+@@ -158,6 +158,7 @@
+ 	wgEndpoint, err := wireguard.NewEndpoint(wireguard.EndpointOptions{
+ 		Context:           ctx,
+ 		ColdStartRecovery: options.ColdStartRecovery,
++		ListenPortHint:    options.ListenPortHint,
+ 		Logger:            logger,
+ 		System:            options.System,
+ 		Handler:           device,
+@@ -429,3 +430,5 @@
+ 	}
+ 	return w.endpoint.Lookup(address) != nil
+ }
++
++func (e *Endpoint) LastHandshakePort() uint16 { return e.endpoint.LastHandshakePort() }
+diff --git a/third_party/wireguard-go/device/device.go b/third_party/wireguard-go/device/device.go
+--- a/third_party/wireguard-go/device/device.go
++++ b/third_party/wireguard-go/device/device.go
+@@ -160,11 +160,13 @@
+ 	// lx_giveup_rebind.go. Enabled by default; sing-box decides freshPort
+ 	// from whether the user pinned listen_port.
+ 	giveUpRebind struct {
+-		enabled     atomic.Bool
+-		freshPort   atomic.Bool
+-		coldStart   atomic.Bool
+-		coldRebinds atomic.Uint32
+-		last        atomic.Int64 // unix seconds of the last rebind (debounce)
++		enabled      atomic.Bool
++		freshPort    atomic.Bool
++		coldStart    atomic.Bool
++		coldRebinds  atomic.Uint32
++		activePort   atomic.Uint32
++		lastGoodPort atomic.Uint32
++		last         atomic.Int64 // unix seconds of the last rebind (debounce)
+ 	}
+ }
+ 
+@@ -866,6 +868,7 @@
+ 		return err
+ 	}
+ 
++	device.giveUpRebind.activePort.Store(uint32(netc.port))
+ 	netc.netlinkCancel, err = device.startRouteListener(netc.bind)
+ 	if err != nil {
+ 		netc.bind.Close()
+@@ -907,3 +910,8 @@
+ 	device.net.Unlock()
+ 	return err
+ }
++
++// LastHandshakePort reports only a port that received an authenticated handshake.
++func (device *Device) LastHandshakePort() uint16 {
++	return uint16(device.giveUpRebind.lastGoodPort.Load())
++}
+diff --git a/third_party/wireguard-go/device/timers.go b/third_party/wireguard-go/device/timers.go
+--- a/third_party/wireguard-go/device/timers.go
++++ b/third_party/wireguard-go/device/timers.go
+@@ -236,6 +236,9 @@
+ 	peer.timers.maxHandshakeAttempts.Store(peer.device.maxHandshakeAttempts())
+ 	peer.timers.sentLastMinuteHandshake.Store(false)
+ 	peer.lastHandshakeNano.Store(time.Now().UnixNano())
++	if port := peer.device.giveUpRebind.activePort.Load(); port != 0 {
++		peer.device.giveUpRebind.lastGoodPort.Store(port)
++	}
+ }
+ 
+ /* Should be called after an ephemeral key is created, which is before sending a handshake response or after receiving a handshake response. */
+diff --git a/transport/wireguard/endpoint.go b/transport/wireguard/endpoint.go
+--- a/transport/wireguard/endpoint.go
++++ b/transport/wireguard/endpoint.go
+@@ -286,6 +286,11 @@
+ 	}
+ 	var ipcConf strings.Builder
+ 	ipcConf.WriteString(e.ipcConf)
++	hintLine := ""
++	if e.options.ListenPort == 0 && e.options.ListenPortHint != 0 {
++		hintLine = "\nlisten_port=" + strconv.Itoa(int(e.options.ListenPortHint))
++		ipcConf.WriteString(hintLine)
++	}
+ 	if e.options.Amnezia != nil {
+ 		if e.options.Amnezia.JC > 0 {
+ 			ipcConf.WriteString("\njc=" + strconv.Itoa(e.options.Amnezia.JC))
+@@ -375,6 +380,10 @@
+ 		ipcConf.WriteString("\nendpoint=" + e.peers[0].destination.String())
+ 	}
+ 	err = wgDevice.IpcSet(ipcConf.String())
++	if err != nil && hintLine != "" {
++		// A remembered path is a hint, never an explicit bind requirement.
++		err = wgDevice.IpcSet(strings.Replace(ipcConf.String(), hintLine, "\nlisten_port=0", 1))
++	}
+ 	if err != nil {
+ 		wgDevice.Close()
+ 		return E.Cause(err, "setup wireguard")
+@@ -483,3 +492,10 @@
+ 	}
+ 	return ipcLines.String()
+ }
++
++func (e *Endpoint) LastHandshakePort() uint16 {
++	if e.device == nil {
++		return 0
++	}
++	return e.device.LastHandshakePort()
++}
+diff --git a/transport/wireguard/endpoint_options.go b/transport/wireguard/endpoint_options.go
+--- a/transport/wireguard/endpoint_options.go
++++ b/transport/wireguard/endpoint_options.go
+@@ -14,6 +14,7 @@
+ )
+ 
+ type EndpointOptions struct {
++	ListenPortHint    uint16
+ 	ColdStartRecovery bool
+ 	Context           context.Context
+ 	Logger            logger.ContextLogger

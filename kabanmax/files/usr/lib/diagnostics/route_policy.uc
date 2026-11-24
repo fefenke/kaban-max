@@ -3,6 +3,7 @@
 let ip = require("core.ip");
 let domain = require("config.domain");
 let common = require("core.common");
+let singbox_constants = require("singbox.constants");
 
 function values(value) {
     return value == null ? [] : type(value) == "array" ? value : [value];
@@ -131,7 +132,13 @@ function predict(config, query) {
         result.predicted = { status: "invalid_input", reason: "expected_domain_or_ip_source_and_port" };
         return result;
     }
-    if (q.address != "" && (ip.prefix_contains("198.18.0.0/15", q.address) || ip.prefix_contains("fc00::/18", q.address))) {
+    let fakeip_ranges = [singbox_constants.FAKEIP_INET4_RANGE, singbox_constants.FAKEIP_INET6_RANGE];
+    // Inspect the file actually being forecast, including a still-running legacy pool.
+    for (let server in config?.dns?.servers ?? [])
+        if (server.type == "fakeip")
+            for (let range in [server.inet4_range, server.inet6_range])
+                if (type(range) == "string" && ip.valid_ip_cidr(range)) push(fakeip_ranges, range);
+    if (q.address != "" && length(filter(fakeip_ranges, (range) => ip.prefix_contains(range, q.address))) > 0) {
         result.predicted = { status: "unknown", reason: "fakeip_requires_core_mapping" };
         return result;
     }

@@ -20,43 +20,62 @@ function create(options, saved) {
     let last_dump = null;
     let recent_hashes = {};
     let max_age = options.max_age ?? 86400;
-    let max_bytes = options.max_bytes ?? 2097152;
-    let max_storage_bytes = options.max_storage_bytes ?? 2097152;
-    let entries = type(saved?.entries) == "array" ? saved.entries : [];
+    let max_bytes = options.max_bytes ?? 262144;
+    let max_storage_bytes = options.max_storage_bytes ?? 524288;
+    let max_entries = options.max_entries ?? 2048;
+    let max_line_bytes = options.max_line_bytes ?? 2048;
+    function bounded_line(line) {
+        if (length(line) <= max_line_bytes) return line;
+        let end = max_line_bytes - length(" [truncated]");
+        while (end > 0 && (ord(line, end) & 192) == 128) end--;
+        return substr(line, 0, end) + " [truncated]";
+    }
+    // Bound object count independently of payload bytes, including legacy restores.
+    let source = type(saved?.entries) == "array" ? saved.entries : [];
+    let restore_changed = length(source) > max_entries;
+    let entries = [];
+    let sizes = [];
+    let bytes = 0;
+    let stored = 0;
+    for (let i = max(0, length(source) - max_entries); i < length(source); i++) {
+        let entry = source[i];
+        if (type(entry.line) != "string" || type(entry.at) != "int") { restore_changed = true; continue; }
+        let retained = { at: entry.at, line: bounded_line(entry.line) };
+        if (retained.line != entry.line) restore_changed = true;
+        let size = length(sprintf("%J", retained)) + 2;
+        push(entries, retained);
+        push(sizes, size);
+        bytes += length(retained.line) + 1;
+        stored += size;
+    }
+    source = null;
     let previous = type(saved?.previous) == "array" ? saved.previous : [];
     if (saved?.version != 2)
         previous = map(previous, fingerprint);
     previous = slice(previous, length(previous) > 128 ? length(previous) - 128 : 0);
     let previous_count = int(saved?.previous_count ?? length(previous));
     let previous_digest = saved?.previous_digest ?? "";
-    let revision = int(saved?.revision ?? 0);
+    let revision = int(saved?.revision ?? 0) + (restore_changed ? 1 : 0);
 
     function prune(now) {
-        let retained = [];
-        let bytes = 0;
-        let stored = length(sprintf("%J", previous)) + 256;
-        for (let entry in entries) {
-            if (type(entry.line) != "string" || type(entry.at) != "int" || entry.at <= now - max_age)
-                continue;
-            push(retained, entry);
-            bytes += length(entry.line) + 1;
-            stored += length(sprintf("%J", entry)) + 2;
-        }
+        let overhead = length(sprintf("%J", previous)) + 256;
         let first = 0;
-        while ((bytes > max_bytes || stored > max_storage_bytes) && first < length(retained)) {
-            bytes -= length(retained[first].line) + 1;
-            stored -= length(sprintf("%J", retained[first])) + 2;
+        while (first < length(entries) && (entries[first].at <= now - max_age ||
+               bytes > max_bytes || stored + overhead > max_storage_bytes || length(entries) - first > max_entries)) {
+            bytes -= length(entries[first].line) + 1;
+            stored -= sizes[first];
             first++;
         }
-        retained = slice(retained, first);
-        let changed = length(retained) != length(entries);
-        if (changed)
+        if (first > 0) {
+            entries = slice(entries, first);
+            sizes = slice(sizes, first);
             revision++;
-        entries = retained;
-        return changed;
+        }
+        return first > 0;
     }
 
     function ingest(lines, now) {
+        lines = map(lines, bounded_line);
         let dump = join("\n", lines);
         if (last_dump != null && dump == last_dump) {
             prune(now);
@@ -102,18 +121,28 @@ function create(options, saved) {
         previous_count = length(hashes);
         previous_digest = digest;
         last_dump = dump;
-        for (let line in fresh)
-            push(entries, { at: now, line });
+        for (let line in fresh) {
+            let entry = { at: now, line };
+            let size = length(sprintf("%J", entry)) + 2;
+            push(entries, entry);
+            push(sizes, size);
+            bytes += length(line) + 1;
+            stored += size;
+            // Evict during admission, not after building an oversized batch heap.
+            if (length(entries) > max_entries + 128 || bytes > max_bytes + 65536)
+                prune(now);
+        }
         if (length(fresh) > 0)
             revision++;
         prune(now);
         return fresh;
     }
 
+    prune(0);
     return {
         ingest,
         prune,
-        clear: function(now) { entries = []; revision++; },
+        clear: function(now) { entries = []; sizes = []; bytes = 0; stored = 0; revision++; },
         revision: function() { return revision; },
         text: function(now) {
             prune(now);

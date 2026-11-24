@@ -70,7 +70,7 @@ func TestIPOnlyAppliesOnlyWithExplicitOptInAndIPCertificate(t *testing.T){
  meta:=metadata(q)
  if m.Select(context.Background(),q.Source,&meta)!="direct-out"{t.Fatal("verified IP route not used")}
  other:=meta;other.Source=metadata(Query{SourceIP:"192.0.2.99"}).Source
- if m.Select(context.Background(),q.Source,&other)!=q.Source{t.Fatal("IP route leaked to another device")}
+ if m.Select(context.Background(),q.Source,&other)!="direct-out"{t.Fatal("approved section-wide IP missed another device")}
  invalid,badQ:=ipCertificateManager(t,false)
  badResult,err:=invalid.Probe(context.Background(),badQ);if err!=nil{t.Fatal(err)}
  if badResult.(Decision).ApplyAllowed || len(invalid.leases)!=0{t.Fatal("TCP-only or invalid certificate authorized IP route")}

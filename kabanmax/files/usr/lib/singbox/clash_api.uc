@@ -143,6 +143,10 @@ function exchange(api, method, path, options) {
                 break;
             received += chunk;
             end = index(received, "\r\n\r\n");
+            if ((end < 0 && length(received) > 16384) || end > 16384) {
+                conn.close();
+                return { status: 413, body: '{"message":"Clash API headers exceed the safe size limit"}' };
+            }
         }
         let status = end < 0 ? null : match(received, /^HTTP\/1\.[01] ([1-5][0-9][0-9])[ \r]/)?.[1];
         let rest = end < 0 ? "" : substr(received, end + 4);
@@ -156,9 +160,17 @@ function exchange(api, method, path, options) {
             reply = { status: int(status), value };
         }
         else if (status != null) {
+            let max_bytes = options.max_bytes ?? (path == "/connections" ? 131072 : 2097152);
+            let size = length(rest);
             push(parts, rest);
-            for (let chunk = reader.read(); chunk != ""; chunk = reader.read())
+            for (let chunk = reader.read(); chunk != ""; chunk = reader.read()) {
+                size += length(chunk);
+                if (size > max_bytes) {
+                    conn.close();
+                    return { status: 413, body: '{"message":"Clash API response exceeds the safe size limit; update the KabanMax core for bounded connection snapshots"}' };
+                }
                 push(parts, chunk);
+            }
             reply = { status: int(status), body: join("", parts) };
         }
     }
@@ -199,7 +211,7 @@ function summary() {
         body: sprintf("%J", {
             downloadTotal: payload.downloadTotal || 0,
             uploadTotal: payload.uploadTotal || 0,
-            connections: type(payload.connections) == "array" ? length(payload.connections) : 0
+            connections: payload.connectionsTotal ?? (type(payload.connections) == "array" ? length(payload.connections) : 0)
         })
     };
 }

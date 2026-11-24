@@ -114,6 +114,28 @@ it('asks for the exit of an outbound by its encoded tag', async () => {
   );
 });
 
+it('keeps the total connection count when core returns a bounded sample', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue({
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            connections: [{ id: 'sample' }],
+            connectionsTotal: 10000,
+          }),
+      }),
+  );
+  const { getClashApiConnectionsSummary } = await import('../clashApi');
+  // The first read can use the CLI; let the direct transport become reachable first.
+  const { getClashApiConnections } = await import('../clashApi');
+  await getClashApiConnections();
+  const reply = await getClashApiConnectionsSummary();
+  expect(reply.success && reply.data.connections).toBe(10000);
+});
+
 it('loads the configured test URL before the first latency request', async () => {
   const fetchMock = vi
     .fn()

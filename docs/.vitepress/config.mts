@@ -11,7 +11,7 @@ export default defineConfig({
   lastUpdated: true,
   // Engineering handoff documents link to repository files outside the site.
   // Keep the existing lowercase user guide as the VitePress source.
-  srcExclude: ['README.md', '[A-Z]*.md', 'superpowers/**', 'audits/**'],
+  srcExclude: ['README.md', '[A-Z]*.md', 'superpowers/**', 'audits/**', 'archive/**'],
   head: [
     ['meta', { name: 'theme-color', content: '#0d9488' }],
     ['meta', { property: 'og:title', content: 'K.A.B.A.N.-MAX' }],

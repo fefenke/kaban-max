@@ -1,54 +1,65 @@
 # Архитектура
 
-Локально после r13: patch 0010 сохраняет failed dial IP и выбирает lease на уровне конкретного dial, сохраняя source first-match и здоровые DNS siblings. Альтернатива — configured выход секции без её списков. Журнал собирает bounded tail, обслуживает неизменившийся дамп быстрым путём и передаёт одну revision частями. [Контракт и границы](AUTO_ROUTING_IP_FIX.md).
+Текущий инженерный обзор; версия и приёмка — [PROJECT_STATE](PROJECT_STATE.md). Источник истины поведения — код и относящиеся к нему проверки, а не исторические планы.
 
-0.1.9/r13: ошибка конкретного соединения → реально записанный log ID → source-owned candidate → повторная first-match/TLS/content проверка → scoped lease по отдельному opt-in. Нет `/connections`/no-progress или угадывания секции. Patch 0009 добавляет Failure provenance/API3 dismiss и IP-only HTTPS identity; отказ альтернативы отзывает только свою lease, не становится исходной ошибкой. Backend фильтрует по подтверждённой failure, UI сохраняет DOM одинаковых snapshots. [Контракт и проверки](AUTO_ROUTING_019.md).
+## Поток управления
 
-0.1.7/r12: `config.auto_registry` → saved intents/slot inventory в opt-in JSON → core patch 0008. Никакой прямой загрузки intents в active leases. Write-only `auto_action(op=records)` → scoped batch adapter → exact core operations; read-only `auto_records` → source-filtered pages/selection. Existing first-match/DNS/FakeIP/nft/PBR и transport не переписывались. [Контракт](AUTO_REGISTRY_017.md).
+Applied diagnostics r40: `config/auto_diagnostics.uc` хранит отдельный bounded RAM snapshot, registry пишет туда diagnostic context после успешного сохранения разрешений, UI присоединяет его только по точному binding. Compact grant/flash и authorization не зависят от диагностических текстов. Один indexed snapshot на view. [Выпуск](RELEASE_023.md).
 
-UI v2 добавляет `cbi/formUx.ts` (делегированная справка и scoped layout) и read-only RPC `auto_records` → `diagnostics/auto_records.uc` (серверный paged view существующего snapshot, не новый verifier). Старый write-only `auto_action` остаётся единственным путём мутаций. Core, DNS/nft/PBR и transport не менялись. [Границы реализации](audits/UI_FIXES_V2.md).
+Minute timer state service вызывает `diagnostics/warp_ports.uc`: authenticated core path status → RAM stability/boot allowance → редкий UCI commit через изолированный cursor под lifecycle lock. Контракт задержки и нулевых записей при рабочем порте — [WARP port hints](WARP_PORT_HINTS.md). Контракт WARP сохранён в текущем preview 0.2.9/r39; section-wide IP approvals и границы установки — [PREVIEW_029](PREVIEW_029.md).
 
-## Доработка №04Б-ФИНАЛ, 2026-11-16
-
-Patch 0007 добавляет web verifier и дополнительные facts поверх 0006. Route connection manager передаёт actual dial remote IP в context-bound event исходного Zapret2; DNS siblings не копируются в кандидаты. Lease application требует single exact original DestinationAddress. Server-side decision разделяет evidence/apply_allowed/auto_apply_eligible: web — только manual, strict — прежняя строгая автоматика. [Контракт](AUTO_ROUTING_IMPLEMENTATION_04B.md).
-
-
-## Расширение №04Б
-
-[Автомаршрутизация](AUTO_ROUTING_IMPLEMENTATION_04B.md): LuCI → отдельные read/write ubus методы → bounded CLI worker → аутентифицированный core API. Route matcher r10 сначала выбирает пользовательский маршрут; опциональный Manager проверяет lease только внутри победившего Zapret2. Probe/detection не записывают пользовательские правила. Apply потребляет server-side evidence; suppression хранится атомарно отдельно от UCI, leases — только RAM текущего Box.
-
-
-ТЗ №04 добавляет только read-only forecast уже сформированного JSON. Он не является источником сетевой политики; unknown не разрешает дальнейшую автоматизацию. Active probes и managed UCI пока отсутствуют из-за ограничений r10 API и domain/IP scope. [Контракт](AUTO_ROUTING_DIAGNOSTICS_04.md).
-
-ТЗ №03 уточняет существующий lifecycle: общий JSON требует Close/Create и закрывает TCP; FakeIP может восстановиться из того же cache, ручные pins — только если файл пережил boot. Штатный `/tmp` этого не обеспечивает. Частичный reload и отдельное flash-хранилище pins не добавлены. [Архитектурная записка и тесты](LIFECYCLE_FALLBACK_03.md).
-
-ТЗ №02: частичный IP-Bypass DNS остаётся FakeIP; resolve выполняется в позиции секции, терминальный route использует только соответствующие IP-кандидаты. Неизвестный remote set удерживается через nft pending и scoped отказ core до первого содержимого. Snapshot и снятие pending атомарны. Свои mark-биты проверяются масками, чужие сохраняются. Это локальный контракт r10; схема LuCI/UCI и pinned upstream не заменены. [Подробности](STARTUP_DNS_DEVICES_02.md).
-
-WARP API: native generator задаёт `profile.detour` даже автоматической регистрации — секция либо маркированный `direct-out`. API использует dialer ядра независимо от транспортного каскада; raw JSON остаётся явной пользовательской конфигурацией. No-op определяется итоговым JSON, реальные изменения требуют пересоздания всего core. Ограничения RAM-кэша и приёмка — TESTING, раздел WARP.
-
-uTLS IDs/версии/REALITY-ограничения приложения имеют один источник — `shared/tls-fingerprints.json`. Backend получает проверяемый generated `.uc`, не читает JSON с диска на роутере. Новые версии не синтезируются по номеру: контракт каталога проверяется на ClientHello и parser текущего pinned core. В UI отдельные виртуальные поля семейства/варианта разрешаются в прежнее поле `tls_fingerprint`, без миграции UCI.
-
-Ручной VPN-редактор: `connectionUri.ts` читает поддерживаемые URI и меняет только затронутые компоненты; `connectionEditor.ts` строит виртуальные поля LuCI JSONMap. `links.ts` через CBI `prepareSave` проверяет эффективный URI до записи diff в существующий `connection_link`. Виртуальные поля не расширяют UCI. Генератор продолжает выдавать `type: parser` с `link` и отдельными TLS-override; экспорт ссылки применяет приоритет fingerprint без изменения сохранённого URI. Exact-фильтры Fallback/URLTest остаются именованными; редактор синхронизирует их при rename/delete, regex не переписывает.
-
-```text
-LuCI (TypeScript bundle)
-  → LuCI fs/exec RPC + ACL → /usr/bin/kabanmax (ucode)
-  → service.cli → config validator/migration → generator
-  → sing-box config + service lifecycle + nftables/routing
-  → sing-box outbounds (VLESS/WARP/groups/direct)
-  → помеченный Zapret2 outbound → NFQUEUE → nfqws2 на секцию
+```mermaid
+flowchart TD
+    UI[LuCI / TypeScript] --> RPC[ubus / CLI / session ACL]
+    RPC --> CFG[UCI: миграции и валидация]
+    CFG --> GEN[Генератор sing-box и nft]
+    GEN --> LIFE[Lifecycle: lock, проверка, apply/reload]
+    LIFE --> CORE[sing-box: DNS, маршруты, группы, авторутинг]
+    LIFE --> NFT[nftables / routing / capture]
+    NFT --> ZAP[Zapret2: очередь и worker секции]
+    CORE --> STATE[Состояние / журнал / диагностика]
+    STATE --> RPC
 ```
 
-Frontend `src/main.ts` экспортирует KabanMaxView; LuCI-обёртка передаёт его `view.extend()`. Точка входа `/usr/bin/kabanmax` загружает библиотеку из `/usr/lib/kabanmax` или подготовленного bytecode; `KABANMAX_LIB` позволяет указать другую библиотеку. Реальные данные читаются RPC/CLI и Clash API; браузер и роутер могут иметь разную сетевую достижимость API.
+## Ответственность слоёв
 
-`service/lifecycle.uc` сериализует start/stop/reload lock-ом, выполняет миграции/валидацию, проверяет готовность ядра и сохраняет fingerprint применённого nft script. Reload сравнивает сформированные конфиги, а изменение конфигурации во время операции ставит повторное применение в очередь. Ядро/watch и отдельные procd workers не следует подменять внешними одноразовыми shell-командами.
+| Слой | Контракт |
+| --- | --- |
+| Frontend | Формы и отображение; пользовательские намерения через RPC. Не выдаёт собственное сетевое наблюдение за разрешение core. `src/main.ts` собирается в LuCI bundle. |
+| UCI/config | Нормализация, миграции, валидация входа, имена и ссылки. Не менять UCI ради виртуального поля формы. |
+| Generator + nft | Две согласованные части маршрутизации. Изменение DNS/mark/order проверять в обоих путях. |
+| Lifecycle | Сериализация start/stop/apply, проверка готовности, учёт изменения конфигурации во время работы. |
+| Core patches | Дополнения sing-box поверх pinned upstream; не отдельный произвольно обновляемый fork checkout. |
+| State service | Резидентный ubus service, наблюдение процессов/логов, ограниченные снимки и capture авторутинга. |
 
-`config/` нормализует UCI, секции, правила и подключения. `singbox/generator.uc` строит outbounds, DNS и routing; `nft/sections.uc` и `nft/apply.uc` строят перехват и приоритетные sets. Это две части одной политики: изменение одной требует проверки другой. Списки IP и доменов не взаимозаменяемы.
+## Lifecycle и сбои
 
-`zapret2/model.uc` — общий источник очередей, mark и аргументов worker для sing-box/nft/procd. Реестр слотов сохраняет идентичность секций; удаление реестра без оценки действующих соединений опасно. Runtime проверяет ожидаемый PID каждой очереди; наличия процесса nfqws2 недостаточно.
+- Итоговый runtime JSON определяет необходимость reload. No-op Save не должен создавать лишние записи/перезапуск.
+- Реальное изменение JSON пересоздаёт core; существующие TCP-соединения могут закрыться. Частичный reload не обещается.
+- FakeIP/cache восстанавливаются только из сохранившегося файла. `/tmp` обычно tmpfs и очищается при reboot.
+- При неожиданном завершении sing-box перехват приостанавливается до готовности процесса после procd restart. Сообщение OOM диагностирует выбранную жертву, не источник всего расхода памяти.
+- Нельзя подменять workers/lifecycle внешними одноразовыми shell-командами. Проверять PID/очередь/mark конкретной секции, а не только наличие процесса.
 
-Go-ядро воспроизводится через `core/UPSTREAM` + patch + branding script. Рабочая копия в `.local/core-src` содержит исходники/тесты изменений, но релизная сборка берёт закреплённый commit и применяет patch заново. Изменять только рабочую копию недостаточно.
+## Авторутинг
 
-Сетевая последовательность и ограничения — [NETWORKING](NETWORKING.md); точные владельцы модулей — [COMPONENTS](COMPONENTS.md).
+Исходный first-match выбирается до опционального перенаправления. Реальная source-owned ошибка создаёт evidence; проверки и ручное применение используют атрибутированный flow и core guards. Ошибка альтернативы не становится ошибкой исходного Zapret.
 
-Резидентный state service собирает подходящие строки `logread` каждые 1.5s независимо от открытой вкладки. Журнал хранится в приватном `/tmp/kabanmax-journal/archive.json`: до 24 часов с момента сбора по монотонным часам и до 2 МиБ вместе с JSON/метаданными, старейшие записи удаляются первыми. Состояние переживает перезапуск процесса, но не перезагрузку роутера. Для дедупликации сохраняются ограниченное окно отпечатков и отпечаток системного снимка, а не удалённый текст. `clear_logs` требует write ACL и успешного свежего чтения, иначе отказывается от очистки. Вкладка и резервный CLI-чтитель используют архив.
+Реестр разделён на компактные routes/exclusions и временную диагностику. Capture и flash checkpoint сериализованы lifecycle lock. Frontend получает страницы без private members; bulk повторно проверяет source/filter и ID. Точный контракт памяти, сохранения и восстановления — [AUTO_ROUTING_STORAGE](AUTO_ROUTING_STORAGE.md), field fixes — [AUTO_ROUTING_FIELD_ERRORS](AUTO_ROUTING_FIELD_ERRORS.md).
+
+## Хранилища
+
+| Данные | Источник/место | Срок |
+| --- | --- | --- |
+| Пользовательская конфигурация | UCI `kabanmax` | постоянная; фактический overlay зависит от устройства |
+| Runtime sing-box JSON | `config_path`, default `/etc/sing-box/config.json` | пересоздаётся генератором |
+| Core cache | `cache_path`, default `/tmp/sing-box/cache.db` | default не переживает reboot |
+| Авторутинг | RAM; компактные applied/suppression JSON в `/etc/kabanmax/` | configurable checkpoint; несохранённые изменения могут потеряться |
+| Private autoroute context | `/var/run/kabanmax/` | RAM-only; bounded/retention |
+| Журнал приложения | приватный `/tmp/kabanmax-journal/archive.json` | до 24h/256 КиБ текста/2048 строк; JSON до 512 КиБ; сбор каждые 1.5s, не flash |
+| Сетевая статистика fallback | RAM core | отдельно от журнала приложения |
+
+Точные владельцы — [COMPONENTS](COMPONENTS.md), сетевые инварианты — [NETWORKING](NETWORKING.md), обоснования — [DECISIONS](DECISIONS.md).
+
+Журнал ограничен также по размеру строки/входного batch и RPC-страницы; неизменившийся ответ не собирает полный текст. Core отдаёт до 200 последних соединений в HTTP/WebSocket и реальный `connectionsTotal`, LuCI явно показывает неполный список. Это ограничивает диагностические аллокации, не число пользовательских соединений. Контракт, миграция временного архива, замеры и границы — [LOGGING](LOGGING.md).
+
+Core WAN monitor живёт в Router lifecycle scope на OpenWrt; logger output gate подавляет связанные сетевые Warn/Error только в подтверждённом outage. Состояние RAM-only, переходы сериализованы с выводом двух WAN-событий; fallback/autoroute не приостанавливаются. [Доступность, источники причин и границы](NETWORK_AVAILABILITY.md).

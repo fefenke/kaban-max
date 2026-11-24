@@ -1,0 +1,62 @@
+diff --git a/common/autoroute/scope.go b/common/autoroute/scope.go
+--- a/common/autoroute/scope.go
++++ b/common/autoroute/scope.go
+@@ -43,7 +43,7 @@
+ 			break
+ 		}
+ 	}
+-	if q.Source == "" || m.key(q) != key {
++	if q.Source == "" {
+ 		return q, errors.New("source_or_scope_not_found")
+ 	}
+ 	return q, nil
+@@ -54,6 +54,8 @@
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	// JSON formatting/escapes are not part of the six-field scope identity.
++	key = m.key(q)
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+ 	if !m.suppressed[key] && !m.essentialRoomLocked(128+2*len(key)) {
+@@ -125,6 +127,8 @@
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	// JSON formatting/escapes are not part of the six-field scope identity.
++	key = m.key(q)
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+ 	for _, l := range m.leases {
+diff --git a/common/autoroute/registry.go b/common/autoroute/registry.go
+--- a/common/autoroute/registry.go
++++ b/common/autoroute/registry.go
+@@ -133,6 +133,7 @@
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	key = m.key(q)
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+ 	found := false
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -109,12 +109,14 @@
+ 		m.sources[s.Outbound] = s
+ 		m.loadSaved(s)
+ 		for _, key := range s.RegistryScopes {
+-			if _, err := m.registryQuery(s.ID, key); err == nil {
+-				m.reserved[key] = true
++			if q, err := m.registryQuery(s.ID, key); err == nil {
++				m.reserved[m.key(q)] = true
+ 			}
+ 		}
+ 		for _, k := range s.Suppressed {
+-			m.suppressed[k] = true
++			if q, err := m.registryQuery(s.ID, k); err == nil {
++				m.suppressed[m.key(q)] = true
++			}
+ 		}
+ 		m.loadPending(s)
+ 		s.Saved = nil

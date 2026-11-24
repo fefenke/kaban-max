@@ -11,6 +11,7 @@ type ClashConnectionsSnapshot = {
   downloadTotal?: number;
   uploadTotal?: number;
   connections?: unknown[];
+  connectionsTotal?: number;
 };
 
 type DirectClashApiOutcome =
@@ -464,7 +465,8 @@ function summarizeConnections(
   return {
     downloadTotal: snapshot?.downloadTotal || 0,
     uploadTotal: snapshot?.uploadTotal || 0,
-    connections: snapshot?.connections?.length || 0,
+    connections:
+      snapshot?.connectionsTotal ?? snapshot?.connections?.length ?? 0,
   };
 }
 

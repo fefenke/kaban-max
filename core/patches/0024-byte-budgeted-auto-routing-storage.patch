@@ -1,0 +1,834 @@
+diff --git a/common/autoroute/checkpoint.go b/common/autoroute/checkpoint.go
+--- a/common/autoroute/checkpoint.go
++++ b/common/autoroute/checkpoint.go
+@@ -36,10 +36,13 @@
+ func (m *Manager) loadPending(source option.KabanmaxAutoSource) {
+ 	for _, raw := range source.Pending {
+ 		var saved pendingEvent
+-		if len(m.events) >= 64 || json.Unmarshal(raw, &saved) != nil {
++		if json.Unmarshal(raw, &saved) != nil {
+ 			continue
+ 		}
+ 		e := saved.Event
++		if time.Since(e.Updated) > m.retention() {
++			continue
++		}
+ 		if e.Source != source.Outbound || e.SourceID != source.ID || (e.Network != "tcp" && e.Network != "udp") || e.ID == "" || e.Failure == nil || e.Failure.ID != e.ID || e.Failure.SourceID != source.ID || e.Failure.At.After(time.Now()) || !registryScope(e.Query) || sourceContext(source, e.Query) != nil || m.protected(e.Query) || m.deniedScope(e.Query) {
+ 			continue
+ 		}
+@@ -54,10 +57,15 @@
+ 		}
+ 		e.active = 0
+ 		e.attempted = false
+-        // No job survives a process restart. Never restore an active spinner.
+-        if e.Status == "checking" || e.Status == "proposed" || e.Reason == "cancelled_generation" {
+-            e.Status, e.Reason = "detected", "queued"
+-        }
++		// No job survives a process restart. Never restore an active spinner.
++		if e.Status == "checking" || e.Status == "proposed" || e.Reason == "cancelled_generation" {
++			e.Status, e.Reason = "detected", "queued"
++		}
++		if !m.transientRoomLocked(storageBytes(saved)) {
++			m.RegistryOverflow++
++			continue
++		}
+ 		m.events[e.ID] = &e
++		m.transientCached = false
+ 	}
+ }
+diff --git a/common/autoroute/failure.go b/common/autoroute/failure.go
+--- a/common/autoroute/failure.go
++++ b/common/autoroute/failure.go
+@@ -84,6 +84,7 @@
+ 	}
+ 	for key, decision := range m.decisions {
+ 		if sameIPScope(q, leaseQuery(decision.Lease)) {
++			m.transientCached = false
+ 			delete(m.decisions, key)
+ 		}
+ 	}
+diff --git a/common/autoroute/ip_registry.go b/common/autoroute/ip_registry.go
+--- a/common/autoroute/ip_registry.go
++++ b/common/autoroute/ip_registry.go
+@@ -2,8 +2,8 @@
+ 
+ import "encoding/json"
+ 
+-func sameIPDeviceScope(a,b Query) bool {
+- return a.Source==b.Source && a.IP==b.IP && a.SourceIP==b.SourceIP && a.Inbound==b.Inbound
++func sameIPDeviceScope(a, b Query) bool {
++	return a.Source == b.Source && a.IP == b.IP && a.SourceIP == b.SourceIP && a.Inbound == b.Inbound
+ }
+ func sameIPScope(a, b Query) bool {
+ 	return a.Source == b.Source && a.IP == b.IP && a.SourceIP == b.SourceIP && a.Inbound == b.Inbound && a.Port == b.Port
+@@ -24,14 +24,18 @@
+ 		return true
+ 	}
+ 	q.Domain = ""
+-	if m.suppressed[m.key(q)] { return true }
+-    if s:=m.sources[q.Source];s.Mode=="web" {
+-        for key := range m.suppressed {
+-            var parts []any
+-            if json.Unmarshal([]byte(key),&parts)==nil && len(parts)==6 && parts[0]==s.ID && parts[1]==q.IP && parts[2]=="" && parts[3]==q.SourceIP && parts[4]==q.Inbound { return true }
+-        }
+-    }
+-    return false
++	if m.suppressed[m.key(q)] {
++		return true
++	}
++	if s := m.sources[q.Source]; s.Mode == "web" {
++		for key := range m.suppressed {
++			var parts []any
++			if json.Unmarshal([]byte(key), &parts) == nil && len(parts) == 6 && parts[0] == s.ID && parts[1] == q.IP && parts[2] == "" && parts[3] == q.SourceIP && parts[4] == q.Inbound {
++				return true
++			}
++		}
++	}
++	return false
+ }
+ 
+ // Domains are labels collected from actual connections, never reverse DNS.
+@@ -44,7 +48,11 @@
+ 			return names
+ 		}
+ 	}
+-	if len(names) < 64 {
++	size := len(name)
++	for _, old := range names {
++		size += len(old)
++	}
++	if size <= 1024 {
+ 		names = append(names, name)
+ 	}
+ 	return names
+@@ -52,7 +60,7 @@
+ 
+ func (m *Manager) persistentIP(d *Decision) {
+ 	d.PersistentIP = true
+- d.AllPorts = true
++	d.AllPorts = true
+ 	for _, event := range m.events {
+ 		if event.Source == d.Source && event.IP == d.IP {
+ 			for _, name := range event.Domains {
+@@ -65,7 +73,7 @@
+ 	for key, old := range m.leases {
+ 		if old.Source == d.Source && old.IP == d.IP && old.SourceIP == d.SourceIP && old.Inbound == d.Inbound {
+ 			delete(m.leases, key)
+-            delete(m.reserved,m.key(leaseQuery(old)))
++			delete(m.reserved, m.key(leaseQuery(old)))
+ 		}
+ 	}
+ }
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -30,6 +30,8 @@
+ 	Source     string `json:"source"`
+ }
+ type Event struct {
++	inFlightBytes int
++
+ 	Domains          []string `json:"domains,omitempty"`
+ 	originalMetadata *adapter.InboundContext
+ 	Query
+@@ -64,6 +66,11 @@
+ 	Scope             string       `json:"scope"`
+ }
+ type Manager struct {
++	transientCached        bool
++	transientRetainedBytes int
++
++	inFlightBytes int
++
+ 	RegistryOverflow uint64
+ 	LogFailure       func(Event, error) bool
+ 	mu               sync.Mutex
+@@ -110,6 +117,11 @@
+ 			m.suppressed[k] = true
+ 		}
+ 		m.loadPending(s)
++		s.Saved = nil
++		s.Pending = nil
++		s.RegistryScopes = nil
++		s.Suppressed = nil
++		m.sources[s.Outbound] = s
+ 	}
+ 	return m
+ }
+@@ -403,10 +415,20 @@
+ 		e.Reason = "udp_not_supported"
+ 	}
+ 	// Ephemeral error context only: no candidate exists before a logged failure.
++	m.mu.Lock()
++	cost := storageBytes(pendingEvent{*e, e.originalMetadata})
++	if !m.transientRoomLocked(cost) {
++		m.mu.Unlock()
++		return nil
++	}
++	e.inFlightBytes = cost
++	m.inFlightBytes += cost
++	m.mu.Unlock()
+ 	return e
+ }
+ func (m *Manager) stage(q Query, status, reason string) {
+ 	m.mu.Lock()
++	m.transientCached = false
+ 	defer m.mu.Unlock()
+ 	for _, e := range m.events {
+ 		if e.Source == q.Source && (e.Domain == q.Domain || (m.sources[q.Source].Mode == "web" && q.IP != "" && e.IP == q.IP)) && e.SourceIP == q.SourceIP && e.Port == q.Port && e.Inbound == q.Inbound && (e.IP == q.IP || e.IP == "") {
+@@ -430,7 +452,17 @@
+ 		return
+ 	}
+ 	m.mu.Lock()
+-	defer m.mu.Unlock()
++	defer func() {
++		if err != nil {
++			m.transientCached = false
++		}
++		m.mu.Unlock()
++	}()
++	if e.inFlightBytes > 0 {
++		m.inFlightBytes -= e.inFlightBytes
++		e.inFlightBytes = 0
++	}
++
+ 	if e.active > 0 {
+ 		e.active--
+ 	}
+@@ -453,8 +485,8 @@
+ 		if lease, ok := m.leases[e.routedLease]; ok {
+ 			if lease.PersistentIP {
+ 				lease.NewError = true
+-                    lease.ErrorPort = e.Port
+-				lease.Failure = &Failure{ID: e.ID, SourceID: lease.SourceID, Message: err.Error(), At: time.Now()}
++				lease.ErrorPort = e.Port
++				lease.Failure = &Failure{ID: e.ID, SourceID: lease.SourceID, Message: shortFailure(err), At: time.Now()}
+ 				m.leases[lease.ID] = lease
+ 				return
+ 			}
+@@ -465,13 +497,16 @@
+ 		return
+ 	}
+ 	// A new original-route failure after a grant means this flow bypassed it.
+- for key,l := range m.leases {
+-  if l.AllPorts && sameIPDeviceScope(leaseQuery(l),e.Query) && e.Created.After(l.Created) {
+-   l.NewError=true;l.ErrorPort=e.Port;l.Reason="applied_route_bypassed"
+-   l.Failure=&Failure{ID:e.ID,SourceID:l.SourceID,Message:err.Error(),At:time.Now()};m.leases[key]=l
+-  }
+- }
+- if m.sources[e.Source].CollectDisabled {
++	for key, l := range m.leases {
++		if l.AllPorts && sameIPDeviceScope(leaseQuery(l), e.Query) && e.Created.After(l.Created) {
++			l.NewError = true
++			l.ErrorPort = e.Port
++			l.Reason = "applied_route_bypassed"
++			l.Failure = &Failure{ID: e.ID, SourceID: l.SourceID, Message: shortFailure(err), At: time.Now()}
++			m.leases[key] = l
++		}
++	}
++	if m.sources[e.Source].CollectDisabled {
+ 		return
+ 	}
+ 	if m.LogFailure == nil || !m.LogFailure(*e, err) {
+@@ -483,11 +518,11 @@
+ 	for _, old := range m.events {
+ 		if e.IP != "" && old.Source == e.Source && old.IP == e.IP && old.SourceIP == e.SourceIP && old.Inbound == e.Inbound && old.Port == e.Port {
+ 			e.ID, e.Created = old.ID, old.Created
+-            // A new failure of the original route does not invalidate a
+-            // completed alternative, or interrupt the job for this IP.
+-            if m.sources[e.Source].Mode == "web" && (old.Status == "proposed" || old.Status == "checking") {
+-                e.Status, e.Reason, e.attempted = old.Status, old.Reason, old.attempted
+-            }
++			// A new failure of the original route does not invalidate a
++			// completed alternative, or interrupt the job for this IP.
++			if m.sources[e.Source].Mode == "web" && (old.Status == "proposed" || old.Status == "checking") {
++				e.Status, e.Reason, e.attempted = old.Status, old.Reason, old.attempted
++			}
+ 			e.lastJob = old.lastJob
+ 			e.Domains = append([]string(nil), old.Domains...)
+ 			if old.ObservedDomain != "" {
+@@ -499,26 +534,22 @@
+ 		}
+ 	}
+ 	e.Domains = appendDomain(e.Domains, e.ObservedDomain)
+-	if len(m.events) >= 64 && m.events[e.ID] == nil {
+-		for key, old := range m.events {
+-			if old.Status == "applied" || old.Status == "suppressed" {
+-				delete(m.events, key)
+-				break
+-			}
+-		}
+-	}
+-	if len(m.events) >= 64 && m.events[e.ID] == nil {
+-		// Never invalidate an ID which the user can currently apply/delete.
++	e.Failure = &Failure{ID: e.ID, SourceID: e.SourceID, Message: shortFailure(err), At: time.Now()}
++	cost := storageBytes(pendingEvent{*e, e.originalMetadata})
++	if old := m.events[e.ID]; old != nil {
++		cost -= storageBytes(pendingEvent{*old, old.originalMetadata})
++	}
++	if !m.transientRoomLocked(cost) {
+ 		m.RegistryOverflow++
+ 		return
+ 	}
+ 	m.events[e.ID] = e
+-	e.Failure = &Failure{ID: e.ID, SourceID: e.SourceID, Message: err.Error(), At: time.Now()}
++	e.Failure = &Failure{ID: e.ID, SourceID: e.SourceID, Message: shortFailure(err), At: time.Now()}
+ 	if e.Status != "proposed" && e.Status != "checking" {
+-        e.Status = "detected"
+-        e.attempted = false
+-        e.Reason = "connection_error"
+-    }
++		e.Status = "detected"
++		e.attempted = false
++		e.Reason = "connection_error"
++	}
+ 	if e.Network != "tcp" && !(e.Network == "udp" && m.sources[e.Source].Mode == "web") {
+ 		e.Status = "inconclusive"
+ 		e.Reason = "udp_not_supported"
+@@ -618,8 +649,9 @@
+ 			break
+ 		}
+ 	}
+-	if !known && len(current.Domains) < 64 {
+-		current.Domains = append(append([]string(nil), current.Domains...), name)
++	if !known && m.essentialRoomLocked(2*len(name)+32) {
++		current = m.leases[candidate.ID]
++		current.Domains = appendDomain(append([]string(nil), current.Domains...), name)
+ 		m.leases[current.ID] = current
+ 	}
+ 	// Bind under the same lock as selection: a later failure may only revoke
+@@ -660,12 +692,6 @@
+ 	sort.Slice(events, func(i, j int) bool { return events[i].Updated.After(events[j].Updated) })
+ 	counts := map[string]int{"candidates": len(events), "decisions": len(decisions), "leases": len(leases), "history": len(m.history)}
+ 	sort.Slice(decisions, func(i, j int) bool { return decisions[i].Created.After(decisions[j].Created) })
+-	if len(events) > 64 {
+-		events = events[:64]
+-	}
+-	if len(decisions) > 64 {
+-		decisions = decisions[:64]
+-	}
+ 	history := append([]Lease{}, m.history...)
+ 	if len(history) > 30 {
+ 		history = history[len(history)-30:]
+@@ -676,10 +702,11 @@
+ 			disabled = append(disabled, source)
+ 		}
+ 	}
+-	return map[string]any{"registry_overflow": m.RegistryOverflow, "manual_apply_supported": true, "registry_version": 3, "version": 1, "leases": leases, "candidates": events, "decisions": decisions, "history": history, "counts": counts, "disabled_sources": disabled, "probe_contract": "exact-prefix+fresh-nonce", "physical_egress_verified": false}
++	return map[string]any{"memory_bytes": m.essentialBytesLocked() + m.transientBytesLocked(), "memory_limit": m.memoryLimit(), "memory_pressure": (m.essentialBytesLocked() > m.memoryLimit()*9/20 || m.transientBytesLocked() > m.memoryLimit()*9/20), "registry_overflow": m.RegistryOverflow, "manual_apply_supported": true, "registry_version": 3, "version": 1, "leases": leases, "candidates": events, "decisions": decisions, "history": history, "counts": counts, "disabled_sources": disabled, "probe_contract": "exact-prefix+fresh-nonce", "physical_egress_verified": false}
+ }
+ func (m *Manager) Revoke(key string, clear bool) ([]string, error) {
+ 	m.mu.Lock()
++	m.transientCached = false
+ 	defer m.mu.Unlock()
+ 	if !clear && !m.registryRevokeBudget(key) {
+ 		return nil, errors.New("suppression_budget")
+@@ -751,15 +778,21 @@
+ 	return unique, nil
+ }
+ func (m *Manager) record(l Lease) {
++	m.transientCached = false
+ 	m.history = append(m.history, l)
+-	if len(m.history) > 100 {
+-		m.history = m.history[len(m.history)-100:]
++	if len(m.history) > 100 || m.transientBytesLocked() > m.memoryLimit()/2 {
++		if len(m.history) > 100 {
++			m.history = m.history[len(m.history)-100:]
++		} else {
++			m.history = nil
++		}
+ 	}
+ }
+ 
+ // One finite job per sweep; an unavailable recheck withdraws the old lease.
+ func (m *Manager) Sweep(ctx context.Context) {
+ 	m.mu.Lock()
++	m.cleanupLocked(time.Now(), false)
+ 	var previous *Lease
+ 	now := time.Now()
+ 	for k, l := range m.leases {
+@@ -827,10 +860,10 @@
+ 				e.lastJob = m.cooldown[m.probeKey(e.Query)]
+ 			}
+ 		}
+-        if e := m.events[next.ID]; e != nil && err.Error() != "busy" && err.Error() != "cooldown" && err.Error() != "hourly_budget" {
+-            e.Status, e.Reason, e.attempted = "inconclusive", err.Error(), true
+-            e.Updated = time.Now()
+-        }
++		if e := m.events[next.ID]; e != nil && err.Error() != "busy" && err.Error() != "cooldown" && err.Error() != "hourly_budget" {
++			e.Status, e.Reason, e.attempted = "inconclusive", err.Error(), true
++			e.Updated = time.Now()
++		}
+ 		m.mu.Unlock()
+ 	}
+ }
+diff --git a/common/autoroute/manual.go b/common/autoroute/manual.go
+--- a/common/autoroute/manual.go
++++ b/common/autoroute/manual.go
+@@ -31,7 +31,7 @@
+ 	}
+ 	m.mu.Unlock()
+ 	ctx = context.WithValue(ctx, manualChoiceKey{}, &frozen)
+- ctx = context.WithValue(ctx, explicitManualIntentKey{}, true)
++	ctx = context.WithValue(ctx, explicitManualIntentKey{}, true)
+ 	s, err := m.guard(ctx, q)
+ 	if err != nil {
+ 		return nil, err
+@@ -68,17 +68,8 @@
+ 	if ctx.Err() != nil || m.closed || m.generation != generation || m.disabled[q.Source] || m.suppressed[d.Scope] || !exists || current.Source != q.Source || current.IP != q.IP || current.SourceIP != q.SourceIP || current.Inbound != q.Inbound || current.Port != q.Port || current.Failure == nil {
+ 		return nil, errors.New("cancelled_or_suppressed")
+ 	}
+-	if !m.reserved[d.Scope] && len(m.reserved) >= 64 {
++	if !m.grantRoomLocked(d.Lease) {
+ 		return nil, errors.New("persistent_registry_budget")
+-	}
+-	count := len(m.leases)
+-	for _, old := range m.leases {
+-		if m.key(Query{Source: old.Source, IP: old.IP, Domain: old.Domain, SourceIP: old.SourceIP, Inbound: old.Inbound, Port: old.Port}) == d.Scope {
+-			count--
+-		}
+-	}
+-	if count >= 64 {
+-		return nil, errors.New("lease_budget")
+ 	}
+ 	m.registryAdvance(d.Scope)
+ 	for key, old := range m.leases {
+@@ -90,6 +81,7 @@
+ 	}
+ 	for key, old := range m.decisions {
+ 		if old.Scope == d.Scope {
++			m.transientCached = false
+ 			delete(m.decisions, key)
+ 		}
+ 	}
+diff --git a/common/autoroute/probe.go b/common/autoroute/probe.go
+--- a/common/autoroute/probe.go
++++ b/common/autoroute/probe.go
+@@ -279,6 +279,7 @@
+ 			return nil, errors.New("scope_budget")
+ 		}
+ 	}
++	m.transientCached = false
+ 	m.runs = append(m.runs, now)
+ 	m.cooldown[budgetKey] = now
+ 	m.mu.Unlock()
+@@ -400,7 +401,12 @@
+ 	}
+ 	if d.Status == "inconclusive" && d.Reason == "" {
+ 		d.Reason = "no_working_alternative"
+-        for _,attempt := range d.Attempts { if attempt.Reason=="protocol_unconfirmed" { d.Reason="protocol_unconfirmed";break } }
++		for _, attempt := range d.Attempts {
++			if attempt.Reason == "protocol_unconfirmed" {
++				d.Reason = "protocol_unconfirmed"
++				break
++			}
++		}
+ 	}
+ 	if d.Status != "proposed" {
+ 		d.ApplyAllowed = false
+@@ -414,20 +420,23 @@
+ 		m.stage(q, "inconclusive", "cancelled_generation")
+ 		return map[string]any{"status": "inconclusive", "reason": "cancelled_generation"}, nil
+ 	}
+-	if len(m.decisions) >= 64 {
++	if !m.transientRoomLocked(storageBytes(d)) {
+ 		for k, v := range m.decisions {
+ 			if !time.Now().Before(v.Deadline) {
++				m.transientCached = false
+ 				delete(m.decisions, k)
+ 			}
+ 		}
+ 	}
+-	if len(m.decisions) < 64 {
++	if m.transientRoomLocked(storageBytes(d)) {
+ 		for id, previous := range m.decisions {
+ 			if previous.Scope == d.Scope {
++				m.transientCached = false
+ 				delete(m.decisions, id)
+ 			}
+ 		}
+ 		m.decisions[d.ID] = d
++		m.transientCached = false
+ 	}
+ 	m.mu.Unlock()
+ 	if d.Status == "proposed" && d.AutoApplyEligible && (s.AutoApply || restore) {
+@@ -438,6 +447,7 @@
+ func (m *Manager) Apply(ctx context.Context, decisionID string) (any, error) {
+ 	m.mu.Lock()
+ 	d, ok := m.decisions[decisionID]
++	m.transientCached = false
+ 	delete(m.decisions, decisionID)
+ 	validGeneration := d.Generation == m.generation
+ 	m.mu.Unlock()
+@@ -469,11 +479,8 @@
+ 	if m.closed || m.generation != d.Generation || m.disabled[d.Source] || m.suppressed[d.Scope] {
+ 		return nil, errors.New("cancelled_or_suppressed")
+ 	}
+-	if !m.reserved[d.Scope] && len(m.reserved) >= 64 {
++	if !m.grantRoomLocked(d.Lease) {
+ 		return nil, errors.New("persistent_registry_budget")
+-	}
+-	if len(m.leases) >= 64 {
+-		return nil, errors.New("lease_budget")
+ 	}
+ 	if s.Mode == "web" {
+ 		m.persistentIP(&d)
+diff --git a/common/autoroute/registry.go b/common/autoroute/registry.go
+--- a/common/autoroute/registry.go
++++ b/common/autoroute/registry.go
+@@ -14,17 +14,24 @@
+ 		var l Lease
+ 		if json.Unmarshal(raw, &l) == nil && (l.PersistentIP || l.Evidence == "manual_user_choice" || l.Evidence == "alternative_reachable") && s.Mode == "web" && l.Owner == "auto-routing" && l.SourceID == s.ID && l.Source == s.Outbound && l.Created.Before(now) && l.Status == "applied" && l.Failure != nil && l.Failure.SourceID == s.ID {
+ 			q := Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}
+-			if registryScope(q) && !m.protected(q) && sourceContext(s, q) == nil && len(m.leases) < 64 && (l.Target == "direct-out" && s.Direct || l.Target != "" && l.Target == s.WARP) {
++			if registryScope(q) && !m.protected(q) && sourceContext(s, q) == nil && (l.Target == "direct-out" && s.Direct || l.Target != "" && l.Target == s.WARP) {
+ 				l.Deadline = l.Expires
+ 				l.PersistentIP = true
+-                l.AllPorts = true
+-                keep := true
+-                for key, old := range m.leases {
+-                 if sameIPDeviceScope(leaseQuery(old),leaseQuery(l)) {
+-                  if old.Created.After(l.Created) { keep=false;break };delete(m.leases,key);delete(m.reserved,m.key(leaseQuery(old)))
+-                 }
+-                }
+-                if !keep { continue }
++				l.AllPorts = true
++				keep := true
++				for key, old := range m.leases {
++					if sameIPDeviceScope(leaseQuery(old), leaseQuery(l)) {
++						if old.Created.After(l.Created) {
++							keep = false
++							break
++						}
++						delete(m.leases, key)
++						delete(m.reserved, m.key(leaseQuery(old)))
++					}
++				}
++				if !keep {
++					continue
++				}
+ 				m.leases[l.ID] = l
+ 				m.reserved[m.key(q)] = true
+ 			}
+@@ -34,7 +41,7 @@
+ 			continue
+ 		}
+ 		q := Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}
+-		if !registryScope(q) || len(m.saved) >= 64 {
++		if !registryScope(q) {
+ 			continue
+ 		}
+ 		m.saved[m.key(q)] = l // Intent only: never insert into leases here.
+@@ -93,13 +100,13 @@
+ 		return nil, errors.New("source_or_record_not_found")
+ 	}
+ 	key := m.key(q)
+-	if !m.suppressed[key] && len(m.suppressed) >= 64 {
++	if !m.suppressed[key] && !m.essentialRoomLocked(128+2*len(key)) {
+ 		return nil, errors.New("suppression_budget")
+ 	}
+ 	m.registryAdvance(key)
+ 	m.suppressed[key] = true
+ 	for keyID, l := range m.leases {
+-		if m.key(Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}) == key || (l.AllPorts && sameIPDeviceScope(leaseQuery(l),q)) {
++		if m.key(Query{Source: l.Source, IP: l.IP, Domain: l.Domain, SourceIP: l.SourceIP, Inbound: l.Inbound, Port: l.Port}) == key || (l.AllPorts && sameIPDeviceScope(leaseQuery(l), q)) {
+ 			l.Status = "removed"
+ 			m.record(l)
+ 			delete(m.leases, keyID)
+@@ -107,6 +114,7 @@
+ 	}
+ 	for keyID, d := range m.decisions {
+ 		if d.Scope == key {
++			m.transientCached = false
+ 			delete(m.decisions, keyID)
+ 		}
+ 	}
+@@ -141,6 +149,7 @@
+ 	delete(m.saved, key)
+ 	for id, d := range m.decisions {
+ 		if scopeMatches(q, leaseQuery(d.Lease)) {
++			m.transientCached = false
+ 			delete(m.decisions, id)
+ 		}
+ 	}
+diff --git a/common/autoroute/scope.go b/common/autoroute/scope.go
+--- a/common/autoroute/scope.go
++++ b/common/autoroute/scope.go
+@@ -8,6 +8,7 @@
+ // Retire in-flight work without invalidating already verified decisions for a
+ // different exact scope. Apply still rechecks DNS, policy and expiry itself.
+ func (m *Manager) registryAdvance(key string) {
++	m.transientCached = false
+ 	previous := m.generation
+ 	m.generation++
+ 	for id, d := range m.decisions {
+@@ -55,7 +56,7 @@
+ 	}
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+-	if !m.suppressed[key] && len(m.suppressed) >= 64 {
++	if !m.suppressed[key] && !m.essentialRoomLocked(128+2*len(key)) {
+ 		return nil, errors.New("suppression_budget")
+ 	}
+ 	m.registryAdvance(key)
+@@ -70,6 +71,7 @@
+ 	}
+ 	for id, d := range m.decisions {
+ 		if scopeMatches(q, leaseQuery(d.Lease)) {
++			m.transientCached = false
+ 			delete(m.decisions, id)
+ 		}
+ 	}
+@@ -109,7 +111,13 @@
+ 	if m.activeQuery != nil && m.activeQuery.Source == key && registryScope(*m.activeQuery) {
+ 		keys[m.key(*m.activeQuery)] = true
+ 	}
+-	return len(keys) <= 64
++	bytes := 0
++	for k := range keys {
++		if !m.suppressed[k] {
++			bytes += 128 + 2*len(k)
++		}
++	}
++	return m.essentialRoomLocked(bytes)
+ }
+ 
+ func (m *Manager) registryRelease(sourceID, key string) (any, error) {
+diff --git a/common/autoroute/storage.go b/common/autoroute/storage.go
+new file mode 100644
+--- /dev/null
++++ b/common/autoroute/storage.go
+@@ -0,0 +1,217 @@
++package autoroute
++
++import (
++	"encoding/json"
++	"time"
++)
++
++// Accounted bytes deliberately include object/map overhead and a multiplier for
++// separately allocated strings. This is an admission budget, not process RSS.
++func storageBytes(value any) int {
++	raw, err := json.Marshal(value)
++	if err != nil {
++		return 1 << 20
++	}
++	return 512 + 2*len(raw)
++}
++func (m *Manager) memoryLimit() int {
++	limit := 4 << 20
++	configured := false
++	for _, source := range m.sources {
++		if source.MemoryBytes >= 1<<20 && source.MemoryBytes <= 32<<20 && (!configured || source.MemoryBytes < limit) {
++			limit = source.MemoryBytes
++			configured = true
++		}
++	}
++	return limit
++}
++func (m *Manager) retention() time.Duration {
++	seconds := 3600
++	configured := false
++	for _, source := range m.sources {
++		if source.CleanupSeconds >= 60 && source.CleanupSeconds <= 604800 && (!configured || source.CleanupSeconds < seconds) {
++			seconds = source.CleanupSeconds
++			configured = true
++		}
++	}
++	return time.Duration(seconds) * time.Second
++}
++func (m *Manager) essentialBytesLocked() int {
++	bytes := 0
++	for _, l := range m.leases {
++		bytes += storageBytes(l)
++	}
++	for _, l := range m.saved {
++		bytes += storageBytes(l)
++	}
++	for key := range m.reserved {
++		bytes += 128 + 2*len(key)
++	}
++	for key := range m.suppressed {
++		bytes += 128 + 2*len(key)
++	}
++	return bytes
++}
++func (m *Manager) transientBytesLocked() int {
++	if m.transientCached {
++		return m.transientRetainedBytes + m.inFlightBytes
++	}
++	bytes := 0
++	for _, event := range m.events {
++		bytes += storageBytes(pendingEvent{*event, event.originalMetadata})
++	}
++	for _, d := range m.decisions {
++		bytes += storageBytes(d)
++	}
++	for _, l := range m.history {
++		bytes += storageBytes(l)
++	}
++	for key := range m.cooldown {
++		bytes += 128 + 2*len(key)
++	}
++	bytes += len(m.runs) * 32
++	m.transientRetainedBytes = bytes
++	m.transientCached = true
++	return bytes + m.inFlightBytes
++}
++func shortFailure(err error) string {
++	text := err.Error()
++	if len(text) > 2048 {
++		return text[:2048]
++	}
++	return text
++}
++func compactLease(l Lease) Lease {
++	l.Domains = nil
++	l.ObservedDomain = ""
++	l.Reason = ""
++	l.OriginSourcePort = 0
++	if l.Failure != nil {
++		l.Failure = &Failure{SourceID: l.Failure.SourceID}
++	}
++	if l.PersistentIP {
++		l.DNSSet = nil
++	}
++	l.NewError = false
++	l.ErrorPort = 0
++	return l
++}
++func (m *Manager) essentialRoomLocked(extra int) bool {
++	if extra <= 0 {
++		return true
++	}
++	if m.essentialBytesLocked()+extra <= m.memoryLimit()/2 {
++		return true
++	}
++	m.cleanupLocked(time.Now(), true)
++	ok := m.essentialBytesLocked()+extra <= m.memoryLimit()/2
++	if !ok {
++		m.RegistryOverflow++
++	}
++	return ok
++}
++func (m *Manager) grantRoomLocked(l Lease) bool {
++	extra := storageBytes(compactLease(l)) + 128 + 2*len(m.key(leaseQuery(l)))
++	for _, old := range m.leases {
++		if m.key(leaseQuery(old)) == m.key(leaseQuery(l)) || (m.sources[l.Source].Mode == "web" && sameIPDeviceScope(leaseQuery(old), leaseQuery(l))) {
++			extra -= storageBytes(old) + 128 + 2*len(m.key(leaseQuery(old)))
++		}
++	}
++	return m.essentialRoomLocked(extra)
++}
++func (m *Manager) transientRoomLocked(extra int) bool {
++	if extra <= 0 {
++		return true
++	}
++	if m.transientBytesLocked()+extra <= m.memoryLimit()/2 {
++		return true
++	}
++	m.cleanupLocked(time.Now(), true)
++	ok := m.transientBytesLocked()+extra <= m.memoryLimit()/2
++	if !ok {
++		m.RegistryOverflow++
++	}
++	return ok
++}
++func (m *Manager) cleanupLocked(now time.Time, pressure bool) {
++	m.transientCached = false
++	retention := m.retention()
++	oldEvents := len(m.events)
++	oldDecisions := len(m.decisions)
++	oldCooldown := len(m.cooldown)
++	for key, event := range m.events {
++		active := m.activeQuery != nil && m.key(*m.activeQuery) == m.key(event.Query)
++		if !active && (event.Status == "applied" || event.Status == "suppressed" || now.Sub(event.Updated) > retention) {
++			delete(m.events, key)
++			for id, d := range m.decisions {
++				if d.Failure != nil && d.Failure.ID == event.ID {
++					delete(m.decisions, id)
++				}
++			}
++		}
++	}
++	for id, d := range m.decisions {
++		if !now.Before(d.Deadline) {
++			delete(m.decisions, id)
++		}
++	}
++	cooldownAge := retention
++	if cooldownAge < 5*time.Minute {
++		cooldownAge = 5 * time.Minute
++	}
++	for key, at := range m.cooldown {
++		if now.Sub(at) >= cooldownAge {
++			delete(m.cooldown, key)
++		}
++	}
++	for id, l := range m.leases {
++		if pressure || now.Sub(l.Created) > retention {
++			compact := compactLease(l)
++			if l.NewError && l.Failure != nil && now.Sub(l.Failure.At) < retention {
++				compact.NewError = true
++				compact.ErrorPort = l.ErrorPort
++				compact.Failure = l.Failure
++				compact.Reason = l.Reason
++			}
++			m.leases[id] = compact
++		}
++	}
++	for key, l := range m.saved {
++		if !now.Before(l.Expires) {
++			delete(m.saved, key)
++			delete(m.reserved, key)
++		}
++	}
++	kept := make([]Lease, 0, len(m.history))
++	if !pressure {
++		for _, l := range m.history {
++			if now.Sub(l.Created) < retention {
++				kept = append(kept, l)
++			}
++		}
++	}
++	m.history = kept
++	// Deletion frees payloads; rebuilding sparse maps also releases their tables
++	// to the normal Go collector, without periodic forced GC or system cache drops.
++	if pressure || len(m.events) < oldEvents/2 {
++		fresh := make(map[string]*Event, len(m.events))
++		for k, v := range m.events {
++			fresh[k] = v
++		}
++		m.events = fresh
++	}
++	if pressure || len(m.decisions) < oldDecisions/2 {
++		fresh := make(map[string]Decision, len(m.decisions))
++		for k, v := range m.decisions {
++			fresh[k] = v
++		}
++		m.decisions = fresh
++	}
++	if pressure || len(m.cooldown) < oldCooldown/2 {
++		fresh := make(map[string]time.Time, len(m.cooldown))
++		for k, v := range m.cooldown {
++			fresh[k] = v
++		}
++		m.cooldown = fresh
++	}
++}
+diff --git a/option/kabanmax_auto.go b/option/kabanmax_auto.go
+--- a/option/kabanmax_auto.go
++++ b/option/kabanmax_auto.go
+@@ -4,8 +4,10 @@
+ 
+ // Explicitly opted-in control resource; no wildcard status or arbitrary proxy.
+ type KabanmaxAutoSource struct {
+-	CollectDisabled bool `json:"collect_disabled,omitempty"`
+-	Pending []json.RawMessage `json:"pending,omitempty"`
++	MemoryBytes     int               `json:"memory_bytes,omitempty"`
++	CleanupSeconds  int               `json:"cleanup_seconds,omitempty"`
++	CollectDisabled bool              `json:"collect_disabled,omitempty"`
++	Pending         []json.RawMessage `json:"pending,omitempty"`
+ 	RegistryScopes  []string          `json:"registry_scopes,omitempty"`
+ 	Saved           []json.RawMessage `json:"saved,omitempty"`
+ 	Mode            string            `json:"mode,omitempty"`

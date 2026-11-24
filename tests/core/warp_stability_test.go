@@ -15,6 +15,18 @@ import (
 	"github.com/sagernet/sing/service"
 )
 
+func TestWARPStartsStandbyHandshakeWithoutOverridingKeepalive(t *testing.T) {
+	if got := warpKeepalive(nil); got.From != 25 || got.To != 25 {
+		t.Fatalf("standby WARP has no initial handshake trigger: %+v", got)
+	}
+	for _, value := range []uint32{0, 7, 60} {
+		explicit := &option.Range[uint32]{From: value, To: value}
+		if warpKeepalive(explicit) != explicit {
+			t.Fatalf("explicit keepalive %d changed", value)
+		}
+	}
+}
+
 type apiTestManager struct {
 	adapter.OutboundManager
 	outbound adapter.Outbound
@@ -85,5 +97,35 @@ func TestWARPProfilesRetryIndependentlyWithoutRecreatingEndpoint(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("profile did not stop on close")
+	}
+}
+
+type interfaceUpdateTestEndpoint struct {
+	adapter.Endpoint
+	seen  context.Context
+	calls int
+}
+
+func (e *interfaceUpdateTestEndpoint) InterfaceUpdated(ctx context.Context) {
+	e.seen = ctx
+	e.calls++
+}
+
+func TestWARPForwardsNetworkResetToInitializedTransport(t *testing.T) {
+	w := &Endpoint{}
+	listener, ok := any(w).(adapter.InterfaceUpdateListener)
+	if !ok {
+		t.Fatal("network manager skips WARP on interface updates and network resets")
+	}
+	// Network changes while registration is pending must not block the manager.
+	listener.InterfaceUpdated(context.Background())
+	transport := &interfaceUpdateTestEndpoint{}
+	w.endpoint = transport
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	listener.InterfaceUpdated(ctx)
+	listener.InterfaceUpdated(ctx)
+	if transport.calls != 2 || transport.seen != ctx {
+		t.Fatal("WARP lost the transport reset or its cancellation context")
 	}
 }

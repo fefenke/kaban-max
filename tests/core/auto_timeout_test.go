@@ -5,12 +5,59 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"syscall"
 	"testing"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/warp"
 )
+
+func TestWouldBlockDoesNotTriggerRouting(t *testing.T) {
+	for _, errno := range []error{syscall.EAGAIN, syscall.EWOULDBLOCK} {
+		err := fmt.Errorf("splice read: %w", &os.SyscallError{Syscall: "splice", Err: errno})
+		if connectionFailure(err) {
+			t.Fatalf("temporary readiness error triggered routing: %v", err)
+		}
+	}
+	if !connectionFailure(os.ErrDeadlineExceeded) {
+		t.Fatal("real timeout was discarded")
+	}
+}
+
+func TestWithdrawAlreadyAbsentLeaseDoesNotDisableSource(t *testing.T) {
+	m, q, _, _ := testManager(t, "fail:")
+	s := m.sources[q.Source]
+	if _, err := m.registryWithdraw(s.ID, "already-gone"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.source(q.Source); !ok {
+		t.Fatal("source was disabled")
+	}
+	if _, err := m.registryWithdraw("foreign", "already-gone"); err == nil {
+		t.Fatal("unknown owner accepted")
+	}
+}
+
+func TestDisabledSourceStillAllowsRegistryCleanup(t *testing.T) {
+	m, q, _, _ := testManager(t, "fail:")
+	s := m.sources[q.Source]
+	key := m.key(q)
+	m.suppressed[key] = true
+	m.disabled[q.Source] = true
+	if _, err := m.registryReset(s.ID, key); err != nil {
+		t.Fatal(err)
+	}
+	if m.suppressed[key] {
+		t.Fatal("disabled source trapped an exclusion")
+	}
+	if _, err := m.registryReset("foreign", key); err == nil {
+		t.Fatal("foreign scope accepted")
+	}
+	if !m.disabled[q.Source] {
+		t.Fatal("cleanup silently enabled routing")
+	}
+}
 
 func TestRealNetworkTimeoutIsRetainedAsLoggedFailure(t *testing.T) {
 	m, q, _, _ := testManager(t, "fail:")

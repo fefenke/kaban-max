@@ -1,82 +1,33 @@
-# Ловушки разработки
+# Ловушки, которые нельзя повторять
 
-0.1.9: кандидаты не выводятся из счётчиков/глобальных логов. Наличие одной opted-in секции не доказывает принадлежность ей трафика. Факт ошибки, ID журнала и исходный winner связываются в контексте соединения; отказ уже применённой альтернативы не допускается как новый исходный отказ. `min-height` поверх нативного LuCI margin-bottom создавал строки по 60px: оставлять нативную высоту и выравнивать grid items. [Проверки](AUTO_ROUTING_019.md).
+Короткая справка по неочевидным ограничениям. История экспериментов — в [архиве](archive/README.md); правила безопасности — [SECURITY](SECURITY.md).
 
-## Реестр r12
+## Авторутинг
 
-Не восстанавливать lease непосредственно из JSON: это только intent с исходным Expires; нужен новый flow и strict evidence. Сначала сохранить deny перед revoke, а новый grant при ошибке durable write отозвать. Reset одного исключения не возвращает старый proposal. Зарезервированные persistent scopes учитываются даже у неактивных записей, иначе 64 старых intents и 64 новых leases обходят общий лимит. При увеличении generation точечным действием не обесценивать уже проверенные решения чужого устройства; Apply всё равно проверяет policy/DNS/TTL. [Тесты](TESTING.md).
+- `syscall.EAGAIN.Timeout()` может вернуть true: EAGAIN/EWOULDBLOCK проверять **до** `net.Error.Timeout()`. Настоящий timeout не отбрасывать.
+- Snapshot может устареть до withdrawal. Отсутствующий lease для известной source уже отозван; это не повод выключить source.
+- Не смешивать ошибку private checkpoint с потерей сохранённого intent. Не снимать fail-closed при настоящем отказе записи/отзыва grants.
+- Запись flash не освобождает действующие маршруты в RAM. Pressure считать по dirty bytes; unchanged/diagnostic-only не должны писать flash.
+- Не сериализовать весь retained registry на каждом успешном flow. Учитывать in-flight context, инвалидировать cached accounting при мутации, не скрывать свежую applied-route ошибку из-за возраста grant.
+- Страница не должна передавать все private members/selection. Bulk ищет ID за первой сотней с тем же source/filter и повторно проверяет scope.
+- Старые лимит 64, manual-only и TTL-утверждения читать в контексте версии, не копировать в r24. [Контракт](AUTO_ROUTING_STORAGE.md).
 
-## UI v2
+## UI и конфигурация
 
-0.1.8: нельзя блокировать checked opt-in только из-за отсутствия prerequisites — разрешение должно отзываться. После снятия снова блокировать включение без strict/main; исходный readonly сохранять. `minmax(0,1fr) auto` для desktop Flag растягивает промежуток до правого края: использовать общую с полями колонку. Компактным help/стрелкам нужен явный min-inline-size/padding из-за стилей LuCI-тем.
+- LuCI `disabled="false"` и `hidden="false"` всё равно означают установленные HTML-атрибуты. Для boolean использовать DOM properties.
+- Новые default-поля не должны создавать UCI diff при no-op Save. Проверять round-trip, unsaved values и скрытые поля.
+- URI-редактор изменяет только затронутые компоненты. Не переписывать неизвестные query/fragment, regex или скрытые виртуальные поля в UCI.
+- Точные include/exclude ссылки Fallback/URLTest следуют rename/delete; regex не является ID-ссылкой.
+- Генерируемый LuCI bundle и fingerprint `.uc` не править вручную; UI, RU/POT и backend должны совпадать с source.
 
-Распознавать Flag по `data-widget="CBI.FlagValue"`, а не по любому вложенному checkbox: MultiValue/dropdown также могут содержать checkbox. LuCI label click toggles control; кнопке help нужен stopPropagation до этого обработчика. Не скрывать help однополевой модалки вместе с её title. Snapshot cache нужно инвалидировать в `state_service` после завершения worker: CLI-процесс имеет другой module cache. При смене фильтра во время RPC старый ответ не должен обновлять таблицу. [Проверки и границы](audits/UI_FIXES_V2.md).
+## Сеть, сборка и проверки
 
-LuCI E/dom.attr записывает boolean false через setAttribute: `hidden="false"` скрывает, `disabled="false"` блокирует. Для таких состояний присваивать DOM properties либо вообще не создавать атрибут при false. Mock `...attrs` не моделирует эту семантику; regression должен различать attribute presence и property value. Воспроизведено для release feedback и кнопок autoRouting после 0.1.6.
+- Domain match одного DNS address не разрешает Direct для siblings. Pending remote ruleset не означает пустой разрешающий список.
+- WARP profile API detour не равен traffic detour. Автоматическая регистрация тоже должна получать выбранный API detour.
+- Не ставить TLS override на всю группу; поддерживаемый fingerprint доказывается wire/parser тестами.
+- `.local/core-src` не заменяет pinned upstream + patches. Для нового patch проверять clean apply и runner/CI, включающие нужные тесты.
+- Отсутствие ucode/Go/Docker или отказ доступа — не успешный тест. В Windows использовать `npm.cmd` при блокировке PowerShell script shim; не менять ExecutionPolicy глобально.
+- `git` и Docker могут работать под разными identity/permissions. Не исправлять это глобальным safe.directory ради задачи; запускать нужную проверку в подходящем контексте.
+- Проверка только serialized bytes не доказывает RSS или отсутствие общего OOM. Локальный compile check не является выпуском или hardware smoke.
 
-QA 0.1.6: minimum core и поставляемый core могут различаться (r10/r11); release checker обязан сравнивать версии, не строки на равенство. Managed infrastructure tag нужно резервировать одновременно в backend/LuCI/page fixture. APK payload содержит штатные `lib/apk/packages` metadata, которых нет в IPK; сравнивать остальной payload побайтно. OpenWrt logread нельзя подменять BusyBox для доказательства TZ. [Доказательства](TESTING.md).
-
-## №04Б-ФИНАЛ: два новых regression-вывода
-
-Includes(IP) в списке A/AAAA недостаточно для lease: выбор проверенного IP вместо original dialer меняет и потоки к здоровому sibling. Теперь нужен единственный exact address. Web recheck не должен вызывать обычный Apply для нового предложения: оно требует пользователя. Успешные TLS/HTTP headers с зависшим телом — не healthy; body timeout после двух попыток только suspected transport failure. Нельзя повышать generic HTTPS в verified_for_apply или брать FQDN из соседнего события/общего DNS.
-
-
-## №04Б: не превращать наблюдение в разрешение
-
-TCP connect, /delay, timeout и случайный 403 не доказывают приложение. Имя из reverse DNS/соседнего лога не доказывает принадлежность IP. Lease нельзя ставить перед first-match или расширять на CDN-IP целиком. Progress одного соединения не должен скрывать stall другого; bytes inbound Read — upload, Write — download. Clear/delete во время probe обязаны отменять generation, иначе позднее решение вернёт удалённый маршрут. Suppression должен использовать стабильный ID, не display name; runtime lease ID защищает замену от поздней ошибки старой сессии. Эти дефекты покрыты синтетическими regression-тестами №04Б.
-
-
-ТЗ №04: Clash `/delay` меняет URLTest health и не даёт app/IP/egress evidence. Не считать domain+IP обычного destination rule безопасным AND. Unknown SRS/regex в составном правиле не доказывается несовпадением одного домена. Адрес самого System без runtime metadata неизвестен. [Контракт прогноза](AUTO_ROUTING_DIAGNOSTICS_04.md).
-
-ТЗ №03: успешный reload pin из cache не доказывает сохранение после reboot `/tmp`. Сохранение FakeIP не означает сохранения TCP. Upstream builder требует Git-индекс для проверки LF даже при `--binary-only`: для archive достаточно временного `git init`/индекса без коммитов. Собирать r10 в отдельный output и проверять сам executable положительными и отрицательными loopback контролями. [Подробности](LIFECYCLE_FALLBACK_03.md).
-
-## ТЗ №02: DNS и marks
-
-- Одного core-теста недостаточно: реальный IP смешанного ответа может пройти мимо nft domain-only секции. Частичный ответ сохраняет FakeIP; resolved-кандидаты ограничиваются выбранным правилом. Глобальный pre-resolve и lookup в позиции IP-Bypass — разные стадии.
-- Проверять собственные mark-биты и исключения, сохранять чужие через OR. Коллизии одинаковых битов OR не исправляет. Корпоративный VPN на ПК не эквивалентен mark пакета роутера.
-- Успешный старт с пустым remote set ещё не fail-closed: нужны nft pending и отказ core в области секции. При замене core guards включаются заново; sync снимает их атомарно. Валидный пустой domain-only snapshot отличается от revision=0.
-- `ResetRuleCache()` вызывается внутри logical AND/OR: флаг неизвестного provider нельзя стирать между дочерними условиями. Его сбрасывает граница новой проверки маршрута.
-- Synthetic `dns.A` должен содержать 4-byte IP, `dns.AAAA` — 16-byte. AAAA с nil не проверяет IPv6. Ucode-тест обязан вызывать `t.done()`, иначе зарегистрированные тесты не выполняются.
-
-## DNS / UCI / GeoIP ? 2026-11-15
-
-- LuCI ????? ??????? default-?????: ?????? config_path ???????? ? ?????? fallback ?????? ?? ?????? ?????? ???????, ?? ? readiness, Clash API ? ???????????. ???????????? ?????? backend path helpers.
-- ?????? route.default_domain_resolver ??? ?????? bootstrap ??? ?????????? VPN, ??????????????? ????? ? ????????? HTTP-???????? ??????? startup DNS-loop. ?????? WARP API-??????????? ????????? ???????? ?? detour ?????? ???????.
-- rule_set_domain_only ???????? query-????, ?? ?? ????????? IP Bypass. Response matching ? ?????????? IPv6/source/??????? ????????? ????????. ????????? ??????? ? ????? ?????? ?? ????????, ??? ??? ?????? ??????? ? Bypass.
-- ? PowerShell ?????????? bash-???? ? ????????? ????????: ????? `$f` ???????????? ?? ??????? ?????????? ? tests/run.sh ???????? ?????? ??????. ?????? ?????? ????????? ??? suite. ????????/fixture null ?? ????? ????????????? UCI-?????: ??? missing-case ??????? ????.
-
-- WARP API без `profile.detour` использует Go HTTP transport, а не core default_mark: при активном перехвате запрос может вернуться в свой WARP. Native generator всегда задаёт секцию либо `direct-out`, даже без сохранённых credentials. Каскад endpoint и detour API независимы. Смена обфускации вызывает общий reload и не доказывает причину восстановления. RAM-кэш не является автономным cold-boot профилем.
-
-- Наличие имени fingerprint в enum не доказывает отдельного ClientHello: все пять специальных chrome_psk/pq-имён текущего ядра возвращают Chrome 133. Реальные версии проверять по mapper и собранному hello. Каталог менять в `shared/tls-fingerprints.json`, затем `node scripts/generate-fingerprints.mjs`; generated backend вручную не редактировать.
-- В локальном TLS 1.3 тесте через unbuffered net.Pipe SessionTicket может взаимно заблокировать handshake. В fingerprint-тесте tickets отключены на тестовом сервере (как в существующем helper); сертификат при этом проверяется по собственному тестовому trust root. Это не признак блокировки/поломки профиля.
-
-- Не пересобирать весь URI через нормализующий URL serializer ради одного поля: это меняет encoding неизвестного query, fragment и отдельные форматы credentials. Редактор меняет только нужные компоненты; raw URI после ручной правки требует явного повторного импорта перед использованием полей. `_uri_editor` и XHTTP `mode` должны иметь разные ключи формы.
-- Reload и переключение Fallback различаются: Close/Create core закрывает старые TCP-сессии, обычный switch при `interrupt_exist_connections=0` сохраняет их. Ошибка до reload оставляет старую конфигурацию; сохранённый ручной выбор selector не отменяется созданием новой группы.
-
-- Точные `fallback_level.include_outbounds/exclude_outbounds` содержат имена, не ID `connection_link`: переименование/удаление ручного сервера должно обновлять их только в своей секции. Regex не является ссылкой и автоматически не переписывается. Старые потерянные связи нельзя угадывать по URI или новому одноимённому серверу.
-
-- `chrome` в закреплённом uTLS означает 133, а не автоматически последний Chrome. Для 155 нужен отдельный профиль, парсер и schema; одной строки версии недостаточно. Проверять raw ClientHello и GREASE, а не только ClientHelloID.
-- `connection_link.tls_fingerprint` переопределяет только выбранную запись после разбора URI; не переписывать общий URI и не распространять настройку на совпадающие ссылки. Override не включает TLS и требует TCP TLS/uTLS: наличие `security` в произвольной ссылке не доказывает поддержку (например, HTTP без HTTPS или XHTTP с HTTP/3). Frontend и backend должны одинаково отказывать неподдерживаемым сочетаниям.
-- Любой новый core patch должен применяться и в build script, и в CI. Сначала все patches по имени, потом branding. Не обновлять зависимость по движущемуся branch; фиксировать Go-resolved pseudo-version и go.sum. Смена uTLS не реализует отсутствующую ML-DSA verification автоматически.
-
-- Общий LuCI CSS оформляет HTML `header` как шапку страницы; локальный заголовок fallback должен использовать нейтральный контейнер. Кнопки с переводом не сжимать ниже суммы текста, значка и отступов; разрешать перенос.
-- Очистка журнала требует успешного свежего чтения logread, иначе ещё не собранные строки вернутся после очистки. Не сохранять удалённый текст в метаданных дедупликации. Лимит журнала учитывает сериализованный JSON, а возраст — монотонные часы, чтобы NTP не сокращал хранение.
-
-- `kaban-max` раньше был Git worktree другого checkout, а не самостоятельной папкой. Перенос `.git`-файла без `git worktree repair` ломает историю. Не повторять перенос из архива без проверки common-dir.
-- Не использовать глобальное `safe.directory=*`. Для чтения чужого по владельцу checkout применять `git -c safe.directory=<точный путь>`; глобальные настройки не менять.
-- Перед экспортом core patch новые Go-файлы должны быть видны diff (например `git add -N` точных файлов). `git diff` без untracked-файлов создаёт неполный релиз.
-- Изменения `.local/core-src` не попадают в продукт автоматически. Проверить применение patch к чистому pinned commit; не собирать релиз из произвольного dirty tree.
-- `core/UPSTREAM` — LF, без CR в значениях commit/version. Shell `sed` иначе возвращает несуществующий SHA с хвостовым CR.
-- PowerShell не является Bash: here-string с кириллицей через pipe может испортить UTF-8; JSON.stringify не shell quoting. Текст release notes писать файлом и передавать `--notes-file`.
-- Linux symlinks из `node_modules/.bin` на Windows могут быть недоступными reparse points. Не считать их потерянным кодом; зависимости воспроизводить по lockfile, не копировать чужой node_modules как постоянную зависимость.
-- Frontend locales читают собранный bundle: сначала build, затем `sync-locales.js`; po2lmo нужен официальный. После генерации каталогов проверить diff и переводы.
-- Required Value/TextValue поля следуют общему custom validator; необдуманный `rmempty=false` ломал bundle requiredFields tests. Длительности проверять без округления, иначе 500ms превращаются в допустимую секунду.
-- Stable fallback не переигрывает пользовательский запрос. Успешный dial, старые потоки, прежний раунд и изменившийся leaf outbound не являются свежим доказательством.
-- 24h статистика — время выбора, не uptime. Минутная агрегация может недосчитать <60s; не возвращать накопление lifetime под подписью «24 часа».
-- Не запускать старые `.local/research/*.sh` автоматически: там могут быть реальные адреса и изменяющие систему команды.
-- Docker bind старого пути после переноса не использовать. Новый контейнер монтирует только KABANMAX; не связывать сборку с соседним Forkop/node_modules.
-- Удалять файлы только по точному проверенному пути в проекте; сначала manifest/backup. Не выполнять `nft flush ruleset`, широкие `rm -rf` или `git clean -fdx` ради уборки.
-
-## IP из dial и очистка журнала
-
-Успешный dial и DNS-набор не заменяют адрес неудачного dial: сохранять `net.OpError.Addr`. Полная ошибка A/AAAA должна иметь регрессию на реальном бинарнике. Удаление pending по ID нельзя блокировать проверкой IP, необходимой для разрешения маршрутизации. Не заменять модальную форму секции при показе подтверждения, иначе теряются несохранённые настройки. Не возвращать 2 МиБ журнала одним RPC и не хешировать неизменившийся системный дамп после clear. [Локальное исправление](AUTO_ROUTING_IP_FIX.md).
+Документация тоже может устареть: [WORKFLOW](WORKFLOW.md), [проверка](../scripts/check-project-docs.py).

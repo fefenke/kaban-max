@@ -18,7 +18,7 @@ func TestAppliedIPRoutesOtherPortsAndReportsTheirFailures(t *testing.T) {
   for _,l:=range m.leases{if !l.NewError{t.Fatal("other-port error hidden")}}
   meta.Source.Port++
   meta.Source.Addr=netip.MustParseAddr("192.0.2.99")
-  if got:=m.SelectForEvent(context.Background(),q.Source,&meta,nil);got!=q.Source{t.Fatal("all ports expanded to a different device")}
+  if got:=m.SelectForEvent(context.Background(),q.Source,&meta,nil);got!="direct-out"{t.Fatal("section-wide IP missed another device")}
  }
 }
 

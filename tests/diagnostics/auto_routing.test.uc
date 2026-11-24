@@ -95,10 +95,10 @@ t.test("bounded registry pages cover all 64 records and exclude foreign sources"
     push(candidates,{id:"foreign",source_id:"other",ip:"203.0.113.1",domain:"last.test"});
     let snapshot={registry_version:2,sources:[{id:"zap",outbound:"zap"}],candidates,leases:[],decisions:[],unattributed:[]};
     let page=view.select(snapshot,[],{source_section:"zap",status:"pending",page:2,page_size:25});
-    t.eq(length(page.rows),25);t.eq(page.total,64);t.eq(length(page.selection),64);t.eq(page.rows[0].id,"c00025");
+    t.eq(length(page.rows),25);t.eq(page.total,64);t.eq(length(page.selection),25);t.eq(page.rows[0].id,"c00025");
     t.eq(view.select(snapshot,[],{source_section:"zap",status:"pending",search:"last.test",page:1,page_size:25}).total,1);
     snapshot.registry_overflow=1;t.eq(view.select(snapshot,[],{source_section:"zap"}).registry_overflow,1);
-    snapshot.candidates=slice(snapshot.candidates,0,63);t.eq(view.select(snapshot,[],{source_section:"zap"}).registry_overflow,0);
+    snapshot.candidates=slice(snapshot.candidates,0,63);t.eq(view.select(snapshot,[],{source_section:"zap"}).registry_overflow,1);
     t.throws(()=>view.select(snapshot,[],{source_section:"zap",page_size:5000}));
 });
 t.test("WARP UI toggle preserves its stored profile and leaves baseline policy intact", () => {
@@ -148,6 +148,53 @@ t.test("column IP sorting applies to the entire filtered registry in both direct
  t.eq(map(records.select(snapshot,[],query).rows,(row)=>row.ip),["203.0.113.2","203.0.113.10","2001:db8::2","2001:db8::10"]);
  query.sort="ip_desc";
  t.eq(map(records.select(snapshot,[],query).rows,(row)=>row.ip),["2001:db8::10","2001:db8::2","203.0.113.10","203.0.113.2"]);
+});
+
+t.test("runtime source shutdown is visible while registry rows remain available for cleanup",()=>{
+ let view=require("diagnostics.auto_records");
+ let snapshot={registry_version:3,sources:[{id:"zap",outbound:"META"}],disabled_sources:["META"]};
+ let scope=sprintf("%J",["zap","203.0.113.8","","192.0.2.8","tproxy-in",443]);
+ let page=view.select(snapshot,[{owner:"auto-routing",scope,created:1}],{source_section:"zap",status:"excluded"});
+ t.eq(page.reason,"automatic_routing_unavailable: runtime_source_disabled");
+ t.eq(page.counts.excluded,1);
+});
+t.test("successful check keeps its WARP target, timestamp and attempts after newer original errors",()=>{
+ let view=require("diagnostics.auto_records");
+ let failure={id:"flow",source_id:"zap",message:"synthetic timeout",at:123};
+ let row={id:"flow",source_id:"zap",source:"META",ip:"203.0.113.8",domain:"member.test",status:"proposed",failure};
+ let attempt={outbound:"WARP",status:"verified"};
+ let decision={...row,id:"check",status:"proposed",reason:"repeated_transport_failure_alternative_reachable",target:"WARP",created:"2026-01-01T00:00:00Z",apply_allowed:false,attempts:[attempt,attempt]};
+ let snapshot={registry_version:3,manual_apply_supported:true,sources:[{id:"zap",outbound:"META",mode:"web",warp:"WARP"}],candidates:[row],decisions:[decision],leases:[]};
+ let query={source_section:"zap",status:"pending"};
+ let result=view.select(snapshot,[],query).rows[0];
+ t.eq(result.status,"proposed");t.eq(result.target,"WARP");t.eq(length(result.attempts),2);t.eq(result.checked_at,decision.created);
+ row.failure={...failure,at:999,message:"later original error"};row.status="detected";
+ result=view.select(snapshot,[],query).rows[0];
+ t.eq(result.status,"proposed");t.eq(result.target,"WARP");t.eq(result.failure.message,"later original error");t.eq(result.checked_at,decision.created);
+ row.status="checking";row.reason="checking:WARP";
+ result=view.select(snapshot,[],query).rows[0];
+ t.eq(result.status,"checking");t.eq(result.reason,"checking:WARP");
+});
+
+t.test("upgrade preserves an old core result only for the exact pending record",()=>{
+ let fs=require("fs");let runtime=require("diagnostics.auto_routing");
+ let previous=runtime.paths.pending;
+ let path=require("stub").tmpdir()+"/pending-check-upgrade.json";
+ runtime.paths.pending=path;
+ let row={id:"flow-upgrade",source_id:"upgrade-source",source:"upgrade-source",ip:"203.0.113.88",domain:"example.test",source_ip:"192.0.2.8",inbound:"tproxy-in",port:443};
+ let check={...row,id:"check-upgrade",owner:"auto-routing",target:"direct-out",status:"expired",reason:"check_expired",attempts:[{outbound:"direct-out",status:"verified"},{outbound:"direct-out",status:"verified"}],failure:{id:row.id},created:"2026-01-01T00:00:00Z"};
+ fs.writefile(path,sprintf("%J",[row]));
+ fs.writefile(path+".checks",sprintf("%J",[{...check,source_id:"foreign"},check]));
+ let source={".name":"upgrade-source",action:"zapret2",enabled:"1",auto_routing_enabled:"1",auto_routing_direct:"1"};
+ fixture.seed({settings:{yacd_secret_key:"synthetic"},section:[source]});
+ let config={experimental:{clash_api:{secret:"synthetic"}},outbounds:[],endpoints:[],dns:{servers:[]}};
+ let result=model.sources(config,[source],(id)=>id);
+ t.eq(result[0].pending[0].check_result.id,"check-upgrade");
+ t.eq(result[0].pending[0].check_result.status,"proposed");
+ fs.writefile(path+".checks",sprintf("%J",[{...check,source_ip:"192.0.2.9"}]));
+ result=model.sources(config,[source],(id)=>id);
+ t.eq(result[0].pending[0].check_result,null);
+ fs.unlink(path);fs.unlink(path+".checks");runtime.paths.pending=previous;
 });
 
 t.done();

@@ -34,6 +34,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5.0.0
 
+      - name: Check release privacy rules
+        run: |
+          python3 -m unittest discover -s tests/security -p 'test_*.py'
+          python3 scripts/audit-release-privacy.py
+
       - name: Build ucode
         shell: bash
         run: |

@@ -19,10 +19,9 @@ function suppression() {
     if (raw == null) return { version: 1, entries: [] };
     let value = common.parse_json(raw);
     if (type(value) != "object" || value.version != 1 || type(value.entries) != "array") die("Automatic routing suppression store is corrupt");
-    if (length(value.entries) > 1024) die("Automatic routing suppression store exceeds limit");
     for (let entry in value.entries)
         if (entry?.owner != "auto-routing" || !valid_scope(entry.scope)) die("Automatic routing suppression ownership or scope is corrupt");
-    return value;
+    return {version:1,entries:require("config.auto_storage").entries("excluded",value.entries)};
 }
 
 function contract(section) {
@@ -102,7 +101,22 @@ function warp_sections(config, sections, tag_for_section) {
     return map(filter(sections,(s)=>common.bool_option(s,"enabled",true) && warp_output(config,tag_for_section(s[".name"]))),(s)=>({id:s[".name"],name:connections.section_display_name(s[".name"]),outbound:tag_for_section(s[".name"])}));
 }
 function sources(config, sections, tag_for_section) {
+    let storage=require("config.auto_storage").settings();
     let pending=common.read_json_file(require("diagnostics.auto_routing").paths.pending) ?? [];
+    // Upgrade from cores whose private checkpoint did not yet include results.
+    // The installer preparation may preserve the old core's bounded snapshot.
+    let pending_path=require("diagnostics.auto_routing").paths.pending;
+    let legacy_checks=type(pending_path)=="string" ? common.read_json_file(pending_path+".checks") : null;
+    if(type(legacy_checks)=="array")pending=map(pending,(row)=>{
+        if(row.check_result!=null)return row;
+        let matches=filter(legacy_checks,(d)=>d.owner=="auto-routing" && d.source_id==row.source_id && d.source==row.source && d.failure?.id==row.id && d.ip==row.ip && d.source_ip==row.source_ip && d.inbound==row.inbound && d.port==row.port && d.domain==row.domain);
+        sort(matches,(a,b)=>common.as_string(a.created)>common.as_string(b.created) ? -1 : 1);
+        if(length(matches)==0)return row;
+        let checked=matches[0];
+        if(checked.status=="expired" && checked.reason=="check_expired" && checked.target!=null && length(filter(checked.attempts ?? [],(a)=>a.outbound==checked.target && a.status=="verified"))>=2)
+            checked={...checked,status:"proposed",reason:"retained_verified_alternative"};
+        return {...row,check_result:checked};
+    });
     let saved=require("config.auto_registry").load().entries;
     let enabled = filter(sections, (s) => common.option(s, "action", "") == "zapret2" && (common.bool_option(s, "auto_routing_enabled", false) || length(filter(saved,(e)=>common.parse_json(e.scope)[0]==s[".name"]))>0 || length(filter(pending,(e)=>e.source_id==s[".name"]))>0));
     if (length(enabled) == 0) return [];
@@ -165,6 +179,7 @@ function sources(config, sections, tag_for_section) {
             if(warp_section!="" && warp_output(config,tag_for_section(warp_section)))warp=tag_for_section(warp_section);
         }
         push(result, { ...contract(section), id: section[".name"], outbound: tag_for_section(section[".name"]),
+            memory_bytes:storage.memory_bytes,cleanup_seconds:storage.cleanup_seconds,
             collect_disabled: !common.bool_option(section,"auto_routing_enabled",false),
             pending: filter(pending,(e)=>e.source_id==section[".name"]),
             saved: map(filter(saved,(e)=>common.parse_json(e.scope)[0]==section[".name"] && index(suppressed,e.scope)<0 && index(suppressed,require("config.auto_registry").key({...e.record,domain:""}))<0),(e)=>e.record),

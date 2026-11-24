@@ -5,6 +5,7 @@ store.paths.applied=tmp+"/checkpoint-applied.json";
 store.paths.budget=tmp+"/checkpoint-budget.json";
 store.paths.pending=null;
 auto.paths.pending=tmp+"/private-checkpoint.json";
+auto.paths.lock=tmp+"/checkpoint.lock";
 
 t.test("real request decoder accepts private arrays and rejects wrong response shapes",()=>{
  let api=require("singbox.clash_api");let exchange=api.exchange;let controller=api.controller;
@@ -25,5 +26,13 @@ t.test("temporary checkpoint failure preserves original private metadata",()=>{
 t.test("only a genuinely old core uses public checkpoint compatibility",()=>{
  auto.io.request=(op)=>{if(op=="checkpoint")die("unknown operation");return {registry_version:3,candidates:[{id:"legacy"}]};};
  t.ok(auto.checkpoint([]));t.eq(json(fs.readfile(auto.paths.pending)),[{id:"legacy"}]);
+});
+t.test("private checkpoint timeout does not revoke a newly remembered route",()=>{
+ let calls=[];let remember=store.remember;
+ store.remember=()=>true;
+ auto.io.request=(op)=>{push(calls,op);if(op=="state")return {registry_version:3,leases:[{id:"new",source_id:"zap",target:"direct-out"}]};die("API timeout");};
+ t.eq(auto.capture(),false);
+ t.eq(calls,["state","checkpoint"]);
+ store.remember=remember;
 });
 t.done();

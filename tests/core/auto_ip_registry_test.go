@@ -50,7 +50,7 @@ func TestPersistentIPRestoresAndReportsNewAlternativeError(t *testing.T) {
 func TestRegistryOverflowDoesNotInvalidateShownIDs(t *testing.T) {
  m,q,_,_:=webManager(t,200,normalPage);first:=manualEvent(m).ID
  for i:=0;i<64;i++ {meta:=metadata(q);meta.Source.Addr=netip.AddrFrom4([4]byte{192,0,2,byte(i+20)});event:=m.Observe(&meta,q.Source);m.Failed(event,errors.New("unique device timeout"))}
- if len(m.events)!=64 || m.events[first]==nil || m.RegistryOverflow!=1 {t.Fatal("full registry evicted a shown ID",len(m.events),m.RegistryOverflow)}
+ if len(m.events)!=65 || m.events[first]==nil || m.RegistryOverflow!=0 {t.Fatal("byte budget lost a shown ID",len(m.events),m.RegistryOverflow)}
  if _,err:=manualAPI(m,"s1",first,"direct-out");err!=nil {t.Fatal(err)}
 }
 

@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "archives": ["docs/archive/context-2026-11-23/manifest.json"],
+  "global_updates": ["docs/PROJECT_STATE.md"],
+  "entrypoint_max_bytes": {
+    "AGENTS.md": 9000,
+    "docs/PROJECT_STATE.md": 14000,
+    "docs/DEVELOPMENT_INDEX.md": 12000,
+    "docs/AI_HANDOFF.md": 4000
+  },
+  "maintained_docs": [
+    "AGENTS.md", "docs/README.md", "docs/PROJECT_STATE.md", "docs/DEVELOPMENT_INDEX.md",
+    "docs/AI_HANDOFF.md", "docs/ARCHITECTURE.md", "docs/COMPONENTS.md", "docs/WORKFLOW.md",
+    "docs/DECISIONS.md", "docs/KNOWN_ISSUES.md", "docs/PITFALLS.md", "docs/ROADMAP.md",
+    "docs/TESTING.md", "docs/BUILD_AND_DEPLOY.md", "docs/NETWORKING.md", "docs/SECURITY.md",
+    "docs/CHANGELOG.md", "docs/DOCUMENTATION_AUDIT.md", "docs/AUTO_ROUTING_STORAGE.md",
+    "docs/AUTO_ROUTING_FIELD_ERRORS.md", "docs/LOGGING.md", "docs/NETWORK_AVAILABILITY.md", "docs/archive/README.md", ".github/pull_request_template.md"
+  ],
+  "components": [
+    {
+      "id": "autorouting",
+      "patterns": ["*/autoRouting.ts", "*/autoRecords.ts", "*/autoStorage.ts", "*/autoStorage.test.ts", "*/auto_*.uc", "tests/core/auto*", "core/patches/*auto-routing*"],
+      "entrypoints": ["kabanmax/files/usr/lib/config/auto_storage.uc", "kabanmax/files/usr/lib/diagnostics/auto_routing.uc", "tests/core/auto_storage_test.go"],
+      "docs": ["docs/AUTO_ROUTING_STORAGE.md", "docs/AUTO_ROUTING_FIELD_ERRORS.md"]
+    },
+    {
+      "id": "frontend",
+      "patterns": ["fe-app-kabanmax/*", "luci-app-kabanmax/*", "assets/*"],
+      "entrypoints": ["fe-app-kabanmax/src/main.ts", "fe-app-kabanmax/package.json", "luci-app-kabanmax/htdocs/luci-static/resources/view/kabanmax/main.js"],
+      "docs": ["docs/COMPONENTS.md", "docs/ARCHITECTURE.md"]
+    },
+    {
+      "id": "configuration-routing",
+      "patterns": ["kabanmax/files/usr/lib/config/*", "kabanmax/files/usr/lib/singbox/*", "kabanmax/files/usr/lib/nft/*", "kabanmax/files/etc/config/*", "shared/*"],
+      "entrypoints": ["kabanmax/files/usr/lib/config/validator.uc", "kabanmax/files/usr/lib/singbox/generator.uc", "kabanmax/files/usr/lib/nft/sections.uc"],
+      "docs": ["docs/NETWORKING.md", "docs/COMPONENTS.md"]
+    },
+    {
+      "id": "lifecycle-rpc",
+      "patterns": ["kabanmax/files/usr/lib/service/*", "kabanmax/files/usr/lib/core/*", "kabanmax/files/usr/lib/diagnostics/*", "kabanmax/files/usr/bin/*", "kabanmax/files/etc/init.d/*"],
+      "entrypoints": ["kabanmax/files/usr/lib/service/lifecycle.uc", "kabanmax/files/usr/lib/service/state_service.uc", "kabanmax/files/usr/lib/service/cli.uc"],
+      "docs": ["docs/ARCHITECTURE.md", "docs/COMPONENTS.md", "docs/KNOWN_ISSUES.md"]
+    },
+    {
+      "id": "zapret2",
+      "patterns": ["kabanmax/files/usr/lib/zapret2/*"],
+      "entrypoints": ["kabanmax/files/usr/lib/zapret2/model.uc"],
+      "docs": ["docs/NETWORKING.md", "docs/COMPONENTS.md"]
+    },
+    {
+      "id": "patched-core",
+      "patterns": ["core/*", "tests/core/*"],
+      "entrypoints": ["core/UPSTREAM", "scripts/build-core.sh", "tests/core/run_auto_routing.sh"],
+      "docs": ["docs/ARCHITECTURE.md", "docs/COMPONENTS.md"]
+    },
+    {
+      "id": "build-and-maintenance",
+      "patterns": ["scripts/*", "install.sh", "build.sh", "*/Makefile", ".github/*", ".gitignore", ".gitattributes", ".dockerignore", "docs/package.json", "docs/package-lock.json", "docs/yarn.lock", "docs/.vitepress/*"],
+      "entrypoints": ["scripts/build-release.sh", "scripts/check-project-docs.py", ".github/workflows/docs-check.yml"],
+      "docs": ["docs/BUILD_AND_DEPLOY.md", "docs/WORKFLOW.md"]
+    },
+    {
+      "id": "testing",
+      "patterns": ["tests/*"],
+      "entrypoints": ["tests/run.sh", "tests/docs/test_project_docs.py"],
+      "docs": ["docs/TESTING.md", "docs/WORKFLOW.md"]
+    }
+  ]
+}

@@ -81,6 +81,7 @@ export function render() {
             _('Paused while text is selected'),
           ),
         ]),
+        E('p', { id: 'monitoring-limit-note', role: 'status', hidden: true }),
         E(
           'div',
           { id: 'monitoring-connections', class: 'fkp_monitoring-page__body' },

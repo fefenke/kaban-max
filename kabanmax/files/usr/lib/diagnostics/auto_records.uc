@@ -6,7 +6,7 @@ let store = require("config.auto_registry");
 let cached = null;
 let cached_at = 0;
 function invalidate() { cached=null; }
-function select(snapshot, exclusions, query, saved) {
+function select(snapshot, exclusions, query, saved, selected_ids) {
     let source = query.source_section;
     let status = query.status ?? "pending";
     let size = query.page_size ?? 25;
@@ -19,6 +19,7 @@ function select(snapshot, exclusions, query, saved) {
         index(["newest","oldest","ip","ip_desc"],order)<0) die("Invalid automatic routing page query");
     let configured = filter(snapshot.sources ?? [],(s)=>s.id==source)[0];
     let tag = configured?.outbound;
+    let runtime_disabled=tag!=null && index(snapshot.disabled_sources ?? [],tag)>=0;
     let manual = snapshot.registry_version==3 && snapshot.manual_apply_supported==true;
     let available_targets=[];
     if(configured?.direct==true)push(available_targets,{tag:"direct-out",name:"Direct"});
@@ -40,10 +41,15 @@ function select(snapshot, exclusions, query, saved) {
     function scope(row) { return row.ip; }
     function domains(row) { return uniq(filter([...(row.domains ?? []),row.domain ?? "",row.observed_domain ?? ""],(name)=>name!="")); }
     let grouped={};
+    function covered(row) {
+        return length(filter(snapshot.leases ?? [],(lease)=>owned(lease) && lease.status=="applied" &&
+            lease.ip==row.ip && (lease.all_devices==true || (lease.source_ip==row.source_ip && lease.inbound==row.inbound)) &&
+            (lease.all_ports==true || store.key({...lease,source_id:source})==store.key({...row,source_id:source}))))>0;
+    }
     // Prefer a live event to a decision whose failure event has been evicted.
     let live={};for(let row in snapshot.candidates ?? [])live[row.id]=true;
     for(let row in [...(snapshot.decisions ?? []),...(snapshot.candidates ?? [])]) {
-        if(!failed_here(row) || row.status=="applied" || row.status=="suppressed")continue;
+        if(!failed_here(row) || row.status=="applied" || row.status=="suppressed" || covered(row))continue;
         let old=grouped[row.ip];let names=uniq([...(old?.domains ?? []),...domains(row)]);
         let members=[...(old?.members ?? []),row];
         if(old==null || (live[row.id] && (!live[old.id] || common.as_string(row.updated ?? row.created)>common.as_string(old.updated ?? old.created))) || (!live[row.id] && !live[old.id] && common.as_string(row.updated ?? row.created)>common.as_string(old.updated ?? old.created)))grouped[row.ip]={...row,domains:names,members};
@@ -54,9 +60,8 @@ function select(snapshot, exclusions, query, saved) {
         let decisions=filter(snapshot.decisions ?? [],(d)=>failed_here(d) && d.failure?.id==row.id && d.ip==row.ip && d.source_ip==row.source_ip && d.inbound==row.inbound && d.port==row.port && (configured?.mode=="web" || (d.failure?.at==row.failure.at && d.failure?.message==row.failure.message && d.domain==row.domain)) && (d.status!="proposed" || length(filter(available_targets,(target)=>target.tag==d.target))>0));
         sort(decisions,(a,b)=>common.as_string(a.created)>common.as_string(b.created) ? -1 : 1);
         let decision=decisions[0];
-        if(decision!=null && row.status!="checking")grouped[row.ip]={...decision,...current,status:decision.status,reason:decision.reason,target:decision.target,target_section:decision.target_section,attempts:decision.attempts,id:row.id,domains:current.domains};
+        if(decision!=null && row.status!="checking")grouped[row.ip]={...decision,...current,status:decision.status,reason:decision.reason,target:decision.target,target_section:decision.target_section,attempts:decision.attempts,checked_at:decision.created,id:row.id,domains:current.domains};
     }
-    for (let row in snapshot.leases ?? []) if (owned(row)) seen[scope(row)]=true;
     let pending=[];
     for (let row in values(grouped)) {
         if (!failed_here(row) || row.status=="applied" || row.status=="suppressed") continue;
@@ -64,9 +69,10 @@ function select(snapshot, exclusions, query, saved) {
         if (seen[id]) continue;
         seen[id]=true;push(pending,row);
     }
-    let applied=filter(snapshot.leases ?? [],owned);
+    let enrich=require("config.auto_diagnostics").enricher();
+    let applied=map(filter(snapshot.leases ?? [],owned),enrich);
     let active={};for(let row in applied)active[store.key(row)]=true;
-    for(let entry in saved ?? [])if(common.parse_json(entry.scope)[0]==source && !denied[entry.scope] && !active[entry.scope] && length(filter(applied,(lease)=>lease.all_ports==true && lease.ip==entry.record.ip && lease.source_ip==entry.record.source_ip && lease.inbound==entry.record.inbound))==0)push(applied,{...entry.record,id:"saved:"+entry.scope,status:"saved",apply_allowed:false});
+    for(let entry in saved ?? [])if(common.parse_json(entry.scope)[0]==source && !denied[entry.scope] && !active[entry.scope] && length(filter(applied,(lease)=>lease.all_ports==true && lease.ip==entry.record.ip && lease.source_ip==entry.record.source_ip && lease.inbound==entry.record.inbound))==0)push(applied,{...enrich(entry.record),id:"saved:"+entry.scope,status:"saved",apply_allowed:false});
     let applied_by_ip={};for(let row in applied) {
         let old=applied_by_ip[row.ip];let names=uniq([...(old?.domains ?? []),...domains(row),...(grouped[row.ip]?.domains ?? [])]);
         let members=[...(old?.members ?? []),row];
@@ -78,7 +84,7 @@ function select(snapshot, exclusions, query, saved) {
     for(let row in applied) {
         let uncovered=filter(grouped[row.ip]?.members ?? [],(event)=>
             event.id==event.failure?.id && length(filter(row.members ?? [row],(lease)=>
-                lease.status=="applied" && lease.source_ip==event.source_ip && lease.inbound==event.inbound &&
+                lease.status=="applied" && (lease.all_devices==true || (lease.source_ip==event.source_ip && lease.inbound==event.inbound)) &&
                 (lease.all_ports==true || lease.port==event.port)))==0);
         row.uncovered_connections=length(uncovered);
         if(length(uncovered)>0)row.failure=uncovered[0].failure;
@@ -87,10 +93,7 @@ function select(snapshot, exclusions, query, saved) {
         if(length(errors)>0){row.error_port=errors[0].error_port;row.failure=errors[0].failure;}
         row.all_ports=length(filter(row.members ?? [row],(lease)=>lease.status=="applied" && lease.all_ports!=true))==0;
     }
-    let applied_ips={};for(let row in applied)applied_ips[row.ip]=true;
-    pending=filter(pending,(row)=>!applied_ips[row.ip]);
     sort(pending,(a,b)=>{let left=common.as_string(a.updated ?? a.created);let right=common.as_string(b.updated ?? b.created);return left==right ? (common.as_string(a.id)<common.as_string(b.id) ? -1 : 1) : left>right ? -1 : 1;});
-    pending=slice(pending,0,64);
     let excluded=[];
     for (let entry in exclusions) {
         let key=common.parse_json(entry.scope);
@@ -120,15 +123,16 @@ function select(snapshot, exclusions, query, saved) {
         if(order=="newest" || order=="ip_desc")cmp=-cmp;
         return cmp || (common.as_string(a.id)<common.as_string(b.id) ? -1 : 1);
     });
+    if(selected_ids!=null)rows=filter(rows,(row)=>index(selected_ids,row.id)>=0);
     rows=map(rows,(row)=>({...row,target_name:filter(snapshot.warp_sections ?? [],(s)=>s.id==row.target_section)[0]?.name ?? row.target}));
     let total=length(rows);
     page=min(page,max(1,int((total+size-1)/size)));
     return {rows:slice(rows,(page-1)*size,page*size),total,page,page_size:size,
         counts:{pending:length(pending),applied:length(applied),excluded:length(excluded)},
-        snapshot_limited:snapshot.registry_version!=2 && snapshot.registry_version!=3,version:snapshot.version ?? 0,reason:snapshot.reason ?? "",warning:snapshot.registry_error ?? "",registry_overflow:length(filter(snapshot.candidates ?? [],(row)=>row.status!="applied" && row.status!="suppressed"))>=64 ? snapshot.registry_overflow ?? 0 : 0,
+        snapshot_limited:snapshot.registry_version!=2 && snapshot.registry_version!=3,version:snapshot.version ?? 0,reason:runtime_disabled ? "automatic_routing_unavailable: runtime_source_disabled" : snapshot.reason ?? "",warning:snapshot.registry_error ?? "",registry_overflow:snapshot.registry_overflow ?? 0,memory_bytes:snapshot.memory_bytes ?? 0,memory_limit:snapshot.memory_limit ?? 0,
         bulk_supported:snapshot.registry_version==2 || snapshot.registry_version==3,individual_reset_supported:snapshot.registry_version==2 || snapshot.registry_version==3,
-        manual_apply_supported:manual,available_targets,
-        legacy_overflow:length(rows)>64,selection:map(slice(rows,0,64),(row)=>({id:row.id,eligible:status=="pending" && (manual ? length(available_targets)>0 && failed_here(row) && model.valid_scope(store.key({...row,source_id:source})) : row.status=="proposed" && row.apply_allowed==true && (row.domain_known==true || row.ip_only==true))}))};
+        manual_apply_supported:manual,available_targets,memory_pressure:snapshot.memory_pressure==true,
+        legacy_overflow:false,selection:map(slice(rows,(page-1)*size,page*size),(row)=>({id:row.id,eligible:status=="pending" && (manual ? length(available_targets)>0 && failed_here(row) && model.valid_scope(store.key({...row,source_id:source})) : row.status=="proposed" && row.apply_allowed==true && (row.domain_known==true || row.ip_only==true))}))};
 }
 function page(query) {
     // Reject invalid queries before querying the core. Share a two-second read
@@ -139,6 +143,10 @@ function page(query) {
         cached={snapshot:require("diagnostics.auto_routing").state(),exclusions:require("config.auto_routing").suppression().entries,saved:require("config.auto_registry").load().entries};
         cached_at=now;
     }
-    return select(cached.snapshot,cached.exclusions,query,cached.saved);
+    let result=select(cached.snapshot,cached.exclusions,query,cached.saved);
+    if(cached.snapshot.diagnostics_error)result.warning=join(filter([result.warning,cached.snapshot.diagnostics_error],(s)=>s),"; ");
+    // Members are private mutation context; a single IP can have many devices.
+    result.rows=map(result.rows,(row)=>{let copy={...row};delete copy.members;return copy;});
+    return result;
 }
 return {select,page,invalidate};

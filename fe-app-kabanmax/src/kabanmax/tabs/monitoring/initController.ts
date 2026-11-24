@@ -61,6 +61,8 @@ interface ClashConnection {
 
 interface ClashConnectionsPayload {
   connections?: ClashConnection[];
+  connectionsTotal?: number;
+  truncated?: boolean;
 }
 
 interface MonitoredConnection extends ClashConnection {
@@ -86,6 +88,7 @@ const CONNECTIONS_POLL_DUTY_MAX_MS = 15000;
 // timeout, so after this the poll covers the wait.
 const CONNECTIONS_SOCKET_GRACE_MS = 2000;
 const CLOSED_CONNECTION_LIMIT = 300;
+const ACTIVE_CONNECTION_LIMIT = 200;
 const ALL_FILTER_VALUE = '';
 const DIRECT_ROUTE_TAG = 'direct-out';
 
@@ -119,11 +122,14 @@ let serverClientNames: Record<string, Record<string, string>> = {};
 let filterSignatures: Record<string, string> = {};
 let loading = true;
 let failed = false;
+let failedReason = '';
 let closingAll = false;
 let monitoringPaused = false;
 let selectionHeld = false;
 let monitoringPausedAt: number | null = null;
 let consecutivePollFailures = 0;
+let connectionsTotal = 0;
+let partialSnapshot = false;
 
 const activeConnections = new Map<string, MonitoredConnection>();
 const closedConnections = new Map<string, MonitoredConnection>();
@@ -494,9 +500,17 @@ function applyConnectionsPayload(payload: ClashConnectionsPayload) {
   const mountId = monitoringMountId;
   const now = Date.now();
   const incomingIds = new Set<string>();
-  const rawConnections = Array.isArray(payload.connections)
+  const allConnections = Array.isArray(payload.connections)
     ? payload.connections
     : [];
+  const wasPartial = partialSnapshot;
+  connectionsTotal = Math.max(
+    allConnections.length,
+    Number(payload.connectionsTotal) || 0,
+  );
+  partialSnapshot =
+    payload.truncated === true || connectionsTotal > ACTIVE_CONNECTION_LIMIT;
+  const rawConnections = allConnections.slice(0, ACTIVE_CONNECTION_LIMIT);
 
   rawConnections.forEach((rawConnection) => {
     const id = normalizeString(rawConnection.id);
@@ -516,13 +530,16 @@ function applyConnectionsPayload(payload: ClashConnectionsPayload) {
   Array.from(activeConnections.entries()).forEach(([id, connection]) => {
     if (!incomingIds.has(id)) {
       activeConnections.delete(id);
-      moveConnectionToClosed(connection, now);
+      // Absence from a bounded sample is not evidence of a closed connection.
+      if (!partialSnapshot && !wasPartial)
+        moveConnectionToClosed(connection, now);
     }
   });
 
   trimClosedConnections();
   loading = false;
   failed = false;
+  failedReason = '';
 
   if (monitoringMounted && mountId === monitoringMountId) {
     renderControls();
@@ -702,6 +719,16 @@ function renderControls() {
     pauseNote.hidden = !selectionHeld || monitoringPaused;
   }
 
+  const limitNote = document.getElementById('monitoring-limit-note');
+  if (limitNote) {
+    limitNote.hidden = !partialSnapshot;
+    limitNote.textContent = _(
+      'Showing %s of %s active connections. Filters apply to the displayed connections.',
+    )
+      .replace('%s', String(activeConnections.size))
+      .replace('%s', String(connectionsTotal));
+  }
+
   const searchIcon = document.querySelector(
     '.fkp_monitoring-page__search-icon',
   );
@@ -769,11 +796,16 @@ function renderConnections(options: { force?: boolean } = {}) {
 
   if (failed) {
     container.replaceChildren(
-      renderConnectionListState(_('Connections are unavailable'), {
-        closable,
-        sort,
-        className: 'fkp_monitoring-page__state--error',
-      }),
+      renderConnectionListState(
+        failedReason
+          ? `${_('Connections are unavailable')}: ${failedReason}`
+          : _('Connections are unavailable'),
+        {
+          closable,
+          sort,
+          className: 'fkp_monitoring-page__state--error',
+        },
+      ),
     );
     return;
   }
@@ -1121,9 +1153,10 @@ async function loadRouteDisplayNames() {
   }
 }
 
-function reportPollFailure() {
+function reportPollFailure(reason = '') {
   consecutivePollFailures += 1;
   failed = true;
+  failedReason = reason;
   loading = false;
   renderConnections();
 }
@@ -1150,7 +1183,7 @@ async function pollConnectionsSnapshot() {
     }
 
     if (!response.success) {
-      reportPollFailure();
+      reportPollFailure(response.error);
       return;
     }
 
@@ -1166,7 +1199,7 @@ async function pollConnectionsSnapshot() {
     }
 
     logger.error('[MONITORING]', 'connections polling failed', error);
-    reportPollFailure();
+    reportPollFailure(error instanceof Error ? error.message : '');
   }
 }
 
@@ -1285,12 +1318,15 @@ function resetMonitoringState() {
   filterSignatures = {};
   loading = true;
   failed = false;
+  failedReason = '';
   closingAll = false;
   monitoringPaused = false;
   selectionHeld = false;
   monitoringPausedAt = null;
   consecutivePollFailures = 0;
   lastConnectionsPollDurationMs = 0;
+  connectionsTotal = 0;
+  partialSnapshot = false;
   pendingConnectionsPayload = null;
   activeConnections.clear();
   closedConnections.clear();

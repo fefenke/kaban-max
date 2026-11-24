@@ -1,147 +1,72 @@
-# Текущее состояние
+# Текущее состояние проекта
 
-## Опубликовано 0.2.0 / r14 — 2026-11-16
+Актуализировано **2026-11-24**. Короткий вход для следующего чата; история — в [архиве](archive/README.md). Читать с [AGENTS](../AGENTS.md) и [навигатором](DEVELOPMENT_INDEX.md).
 
-Выпущен [0.2.0 prerelease](https://github.com/fefenke/kaban-max/releases/tag/0.2.0), source/tag commit `42937680d66c03788975f7362a2e41fd4e1a6741`, ядро **1.14.4-r14**. Обновлять приложение, LuCI и ядро вместе. Исправлены actual IP при mixed DNS, domain/IP либо IP-only предложения, последовательность Zapret → Direct → настроенный выход выбранной секции, dismiss без IP, вложенный флаг/отступы/подтверждения и чтение журнала после clear. [Контракт и границы](AUTO_ROUTING_IP_FIX.md).
+## Рабочее дерево и выпуск
 
-Все шесть CI успешны: [пакеты](https://github.com/fefenke/kaban-max/actions/runs/43949269956), [ядро Go1.26.10](https://github.com/fefenke/kaban-max/actions/runs/43949270446), [frontend](https://github.com/fefenke/kaban-max/actions/runs/43949270341), [backend](https://github.com/fefenke/kaban-max/actions/runs/43949270179), [ShellCheck](https://github.com/fefenke/kaban-max/actions/runs/43949270602), [документация](https://github.com/fefenke/kaban-max/actions/runs/43949270503). Локальные frontend **176/1690**, backend **92/92**, Go race и mixed A/AAAA binary scenario, browser 320/375/768/1280 + dark375 PASS. Pre-release review исправил shared dial attribution и потерю network strategy; новые sibling/strategy tests включены в CI.
+- **Установлен 0.2.3/core r40**, stock installer exit 0, running. Applied original/target diagnostics и domain labels сохраняются в bounded RAM отдельно от компактных разрешений; native fresh-process restore PASS. Оба WARP HTTPS 34/48ms, fallback 42ms. Source/package privacy audit PASS; публикация явно разрешена и подготовлена, remote release ещё не подтверждён. [Команды и границы](RELEASE_023.md).
 
-Проверены все **10 APK/IPK**, source payload/RU catalog, ARM64 Go1.26.10 trimpath/версии/лицензии, все **14 публичных загрузок**, API/local/download SHA256 и размеры, **13 SHA256SUMS**, manifests, draft=false/prerelease=true и точный tag ref. Mock upgrade 0.1.9/r13→0.2.0/r14 прошёл для base/tiny. Evidence: ignored `.local/audit/release-0.2.0/`. История и прежние releases сохранены. На роутеры/VPS ничего не устанавливалось; физическая приёмка остаётся открытой. Команды — TESTING.
+- **Предыдущая приёмка 0.2.9/r39, section-wide applied IP:** устранена device-привязка persistent web approvals и удалён uncovered UI status, старые записи мигрируют; core 14 race packages, backend 99/99, frontend 14/14 + build/lint PASS. Оба старых Applied мигрировали на all_devices/all_ports и сохранены в RAM; collector включён, registry errors нет. WARP HTTPS 35/38ms, fallback 34ms; flash used 33352/free 58492 KiB. [Установка](PREVIEW_029.md), [контракт](AUTO_ROUTING_SECTION_IP.md).
 
-## Опубликовано 0.1.9 / r13 — error-first, 2026-11-16
+- **WARP port hints, введены в 0.2.8/r38 и сохранены в текущем r39:** отдельная подсказка на профиль, 10 минут подтверждённой работы, максимум одно сохранение за router boot. Подошедший старый порт закрывает окно без flash write; поздние изменения RAM-only. Оба WARP/fallback прошли HTTPS 36/35/34ms, binary SHA совпал. Native capture видит два профиля, resident timer обновляет RAM checkpoint; до 10 минут конфиг побайтно совпадает с backup. При последующей установке r39 native UCI уже содержит оба hint 38071/42987, пережившие restart. Непрерывный десятиминутный аппаратный soak/полный reboot не заявляются. [Установка](PREVIEW_028.md), [контракт](WARP_PORT_HINTS.md).
 
-После претензий к 0.1.8 пользователь уточнил: адрес должен принадлежать этой Zapret-секции и иметь настоящую ошибку в журнале; no-progress и чужой WARP недопустимы. Реализован отдельный patch 0009: error-first queue, корреляция с log ID, web auto-apply по явному флагу, IP-only с IP-сертификатом, dismiss без исключения. Исправлены клики/порядок флагов, нативное правое выравнивание, номера страниц, JSON и мигание. [Контракт, свежие проверки и границы](AUTO_ROUTING_019.md).
+- Базовый локальный commit: `98e5605`, описание Git — release 0.2.2; локальные теги включают 0.2.2. Это сведения Git/README, **не свежая проверка GitHub release**.
+- Поверх базы есть незакоммиченные изменения r23–r40, документация, тесты и LuCI bundle. Они сохранены; не откатывать ради чистого дерева.
+- **Предыдущая аппаратная приёмка 0.2.7 / core r37:** Финальная r37 серия: **5/5 реальных restart**, оба WARP и fallback прошли HTTPS после каждого. Последняя проба после UI update: 33/35ms, fallback 34ms. Подтверждённый UDP path сохраняется как мягкий cache hint; external UDP outage cause не объявляется доказанной. [Полная приёмка](PREVIEW_027.md).
+- **Flash приведена к норме:** после 0.2.8 used 33312 KiB (~33 MiB), free 58528 KiB, 36%. Первичная r37 установка заполнила flash из-за собственных APK/backups ассистента и повредила partial binary; рабочий r36 восстановлен, затем r37 штатно установлен с LAN mirror компьютера. Дубликаты удалены после SHA сверки уже имеющихся PC copies. Собственные staging/test каталоги и LAN mirror убраны. Tailscale/настройки/результаты не удалялись. [Авария и уборка](PREVIEW_027.md).
+- **Журнал активного авторутинга r33:** каждый новый принятый source failure, ранее скрытый в Debug, получает Warn, включая повторные отказы существующей Pending записи. Общие refused/no-route остаются Debug, TLS/auth Error не дублируются. Targeted autoroute/route race PASS. Docker/live доступ восстановлен. [Контракт](LOGGING.md).
 
-Выпущен [0.1.9 prerelease](https://github.com/fefenke/kaban-max/releases/tag/0.1.9), source/tag commit `52bfd1b1a00669df99216aeabc868b40e15baa54`, ядро **1.14.4-r13**. Обновлять приложение и ядро вместе. Все шесть CI workflows успешны; свежие 5 Go race suites, executable HTTPS-сценарии, frontend **176/1686**, browser matrix на Bootstrap и сравнение всех 10 APK/IPK PASS. После нехватки C: и I/O ошибки Docker пакеты собраны в чистом CI; с отдельного разрешения пользователя Docker Desktop перезапущен, точные артефакты повторно проверены локально. Source Git/старые releases сохранены, аппаратура не использовалась.
+- **Публикация 0.2.3 разрешена пользователем:** до её завершения remote status не заявляется; новая чистая версия сохраняет старую опубликованную историю и теги. Нынешний active autoroute source — 1 (изменение пользователя), hardware flow/WAN-loss/reboot/load soak не заявляются. Публикация только после приёмки и нового запроса. История 0.2.3 — [PREVIEW_023](PREVIEW_023.md).
 
-Публичная проверка: **14/14 загрузок**, API/local/download SHA256 и размеры, 13 строк SHA256SUMS и manifests PASS; draft=false/prerelease=true и точный ref тега подтверждены. Evidence: ignored `.local/audit/auto-routing-repair/public-verification.json`. На устройства ничего не устанавливалось.
+## Факты из исходников
 
-## Опубликовано 0.1.8 / r12 — восстановление оформления, 2026-11-16
+<!-- BEGIN GENERATED PROJECT FACTS -->
+| Факт из исходников | Значение |
+| --- | --- |
+| Upstream | `https://github.com/ushan0v/sing-box-forkop.git` |
+| Закреплённый commit | `60d96c99815a672712915a5c00114bf0f690ad80` |
+| Версия локального ядра | `1.14.4-r40` |
+| Go toolchain | `1.26.10` |
+| Количество core patches | 40 |
+| Общий minimum core | `1.14.4-r10` |
+| Minimum core авторутинга | `1.14.4-r24` |
+<!-- END GENERATED PROJECT FACTS -->
 
-Пользователь утвердил стиль с уменьшенными стрелками и распространением на настройки/общие формы; уточнил удаление записей только выбранного списка/фильтра и затем разрешил публикацию по готовности. Реализованы синяя справка у подписей, единая колонка контролов без лишних отступов, снятие сохранённого auto-apply без strict, массовое удаление applied через существующий `forget`. Справка реестра перенесена под вопросик, временная stop-кнопка удалена; ошибки/overflow/результаты сохранены.
+Обновление таблицы: `python scripts/check-project-docs.py --write-facts`. Источники — UPSTREAM, серия patches, валидатор/константы. Таблица не подтверждает установку, публикацию или тесты.
 
-Свежие проверки: frontend **176/1686**, tsc/lint/build, backend **92/92** (включая mixed live/saved/partial-error forget), браузер **320/375/768/1280 + dark 375**, 10 APK/IPK / 13 SHA256 / 14 assets и payload-сверка PASS. Ядро **1.14.4-r12** используется побайтно из 0.1.7; Go suites не запускались заново. Аппаратная LuCI/theme/Save & Apply приёмка остаётся UNVERIFIED. [Причины, реализация и проверки](audits/UI_STYLE_PROPOSAL.md).
+## Последние изменения поведения
 
-Выпущен [0.1.8 prerelease](https://github.com/fefenke/kaban-max/releases/tag/0.1.8), source/tag commit `1d0dd86d36119d651c589aad8d840113773eda90`. Frontend CI, Backend CI и Documentation — success. Проверены draft=false/prerelease=true, точный ref тега, все **14 публичных загрузок** (API/local/download SHA256 и размеры), **13 записей SHA256SUMS** и manifests. Evidence — ignored `.local/audit/ui-style-proposal/public-verification.json`. На устройства ничего не устанавливалось.
+- **r35–r37 / app 0.2.7:** успешный Pending сохраняется до разбора без протухания/повторного probe; восстановление через private checkpoint. Поле 1h убрано, ограничение — общий memory budget. Dirty-only flash по умолчанию 1d не изменён: новые два применения ещё в RAM, flash applied entries=0, mtime 20 ноября. WARP cold recovery имеет максимум три быстрых rotations до первого handshake, затем прежний 90s backoff; cache hint переиспользует подтверждённый порт, explicit bind и busy fallback защищены. [Контракт и tests](PREVIEW_027.md).
 
-## Опубликовано 0.1.7 prerelease / r12 — 2026-11-16
+- **r23:** EAGAIN/EWOULDBLOCK не запускают авторутинг; source не показывается как альтернатива; отзыв отсутствующего lease идемпотентен; сбой private checkpoint после сохранения intent не выключает секцию. [Разбор №2–4](AUTO_ROUTING_FIELD_ERRORS.md).
+- **r24:** компактные routes/exclusions в RAM; dirty-only atomic flash checkpoint `1d` (`12h` допустим); retention `1h`; accounted budget `4 МиБ`. Вместо 64 записей — byte admission; pressure checkpoint не чаще 15 минут; grants/denies сохраняются. Учтены in-flight context и быстрый путь успешных соединений. [Контракт](AUTO_ROUTING_STORAGE.md).
+- **Документация:** актуальный вход, машинная карта компонентов, журнал контекста, один ассистент и обязательное обновление документов. [WORKFLOW](WORKFLOW.md).
+- **Диагностика:** журнал до 256 КиБ/2048 записей, bounded input/RPC; core `/connections` до 200 строк с реальным total. Replay VmHWM 26776 → 6064 kB не диагностирует весь аппаратный OOM. Copy/close, routine transport, refused/timeout, FakeIP, malformed/service DNS и fallback suspect/probe-only — Debug. DNS: первый отказ Warn, повторы только server+domain+type+class, bounded windows. TLS/auth и confirmed fallback остаются; при подтверждённом WAN-loss сетевой шум gated между одной записью причины и одной recovery. [LOGGING](LOGGING.md), [WAN](NETWORK_AVAILABILITY.md).
+- **IPv6 FakeIP:** `2001:2::/112`, прежний размер пула; generator/nft/forecast/public-IP/autoroute guard согласованы. Store migration сохраняет IPv4 и отбрасывает старые IPv6-соответствия без удаления общего cache. Chromium/runtime hardware не проверялся. [Причина и миграция](NETWORK_AVAILABILITY.md).
 
-Выпущен [0.1.7](https://github.com/fefenke/kaban-max/releases/tag/0.1.7), source/tag commit `e5dd33bb7f1f3dada87af6672e815f89b54308e3`, core **1.14.4-r12**. Проверены draft=false/prerelease=true, точный ref тега, 14 публичных загрузок и их API/local/download SHA256/размеры, 13 строк SHA256SUMS и manifests. Evidence — ignored `.local/audit/task017/public-verification.json`.
+## Доказательства и пределы
 
-Frontend, Documentation, ShellCheck и Patched core CI прошли для основного изменения `bd7db41`; следующий `e5dd33b` меняет только изоляцию тестовых файлов и имеет успешный Backend CI. Дополнительно весь backend прошёл локально без root: **92/92**. Тег до публикации release перенесён на исправленный коммит с прямого разрешения пользователя; история коммитов сохранена. На устройства ничего не устанавливалось. Ограничения fresh restore, ordinary/IP-only и hardware UNVERIFIED сохраняются.
+| Работа | Результат (дата в отчёте) | Источник |
+| --- | --- | --- |
+| Preview 0.2.4/r31 · 24 ноября | Lifecycle и scope RED/GREEN, backend 97/97, core race/HUP, 10 APK/IPK PASS; install exit 0. Synthetic live reset PASS; WARP1 снова отказал, WARP2 доступен | [точные команды](PREVIEW_024.md) |
+| Полный preview 0.2.3 | Свежие frontend 177/1701, backend 97/97, core race scope, syntax/lint/build; 10 APK/IPK и 13 SHA256 records PASS. Штатная ARM64 установка exit 0; версии/WARP/HTTPS и сохранность registry/credentials проверены; приёмка пользователем впереди | [точные команды и границы](PREVIEW_023.md) |
+| WARP recovery r29 | RED/GREEN; 29 patches, 4 race packages + cmd compile; generator/packaging по 1/1, 4 logging suites, оба syntax режима, docs gate PASS. ARM64 manual install + HTTPS/YouTube smoke, видеоданные и подтверждение пользователя; повторный reload/WAN soak не выполнен | [команды и границы](WARP_RECOVERY.md) |
+| Авторутинг r24 | frontend 177 файлов / 1697 тестов; backend 97/97; TypeScript, целевой lint, bundle PASS | [точные команды](AUTO_ROUTING_STORAGE.md) |
+| Ядро r24 | clean apply 24 patches, семь Go race suites, compile check PASS; 2000 synthetic routes при 8 МиБ | [метод и ограничения](AUTO_ROUTING_STORAGE.md) |
+| Документация | отдельная текущая проверка; runtime suites не выдаются за повторные | [аудит](DOCUMENTATION_AUDIT.md) |
+| Журнал/мониторинг | frontend 177 файлов / 1701 тест; backend 97/97; clean apply 25 patches + Go race clashapi/trafficcontrol + cmd compile; replay 16000 строк; TypeScript/lint/bundle, docs 9 tests/gate PASS | [точные команды и пределы](LOGGING.md) |
+| Уровни core-логов | clean apply 26 patches; race route/DNS/fallback + cmd compile PASS; packaging 1/1. Предыдущие frontend/backend suites не выдаются за свежие | [точные команды и границы](LOGGING.md) |
+| WAN/DNS/FakeIPv6 | clean apply 28 patches; 7 Go race packages + cmd compile PASS; backend 97/97 после IPv6 changes. Внешние WAN-пробы в тестах не запускались; frontend/RSS старые | [точные команды, upstream и пределы](NETWORK_AVAILABILITY.md) |
 
-## Подготовка 0.1.7 / r12 — 2026-11-16
+## Открыто
 
-Новое принятое ТЗ разрешило core/API и выпуск 0.1.7. Реализованы bounded реестры 64, отдельные applied intents, безопасный strict restore после свежего flow/verifier, exact suppression reset, scoped bulk с partial outcomes и UI-доработки. [Контракт и ограничения](AUTO_REGISTRY_017.md), [проверки](TESTING.md). Предыдущая отмена публикации ниже относится к этапу UI v2. Публичный выпуск подтверждён выше; устройства не использовались.
 
-## UI v2 — подготовлено локально, публикация отменена 2026-11-16
 
-Общий CBI help/layout, компактный VPN editor, Диагностика со скрытым read-only forecast и LAN chooser, исходная Zapret2-вкладка и серверные страницы ограниченного runtime-снимка. Полная реализация 5000 live records, filtered bulk/exact-scope reset и IP-only/generic HTTPS auto-apply упираются в запрещённые этим ТЗ изменения core API. [Постатейный отчёт и глобальный UX-аудит](audits/UI_FIXES_V2.md). Пользователь отозвал публикацию: новых коммитов/push/тегов/releases нет; версия и пакеты 0.1.6 не заменялись. Аппаратная LuCI/theme/Save & Apply приёмка остаётся открытой.
 
-## Локально после 0.1.6 — boolean attributes LuCI, 2026-11-16
+1. Общий OOM при **выключенном авторутинге**: причина не установлена. Не приписывать авторутингу или Tailscale без данных. [KNOWN_ISSUES](KNOWN_ISSUES.md).
+2. Исторический отказ удаления исключений на конкретном роутере полностью не воспроизведён. Cleanup при disabled source проверен локально, а не на всех семи устройствах.
+3. Длительная приёмка OpenWrt/LuCI, ARM64 runtime, реальных WARP/VPN/DNS/NFQUEUE/PBR/mwan3 и reboot/power loss не выполнялась в r23/r24 задачах.
+4. Шумные «no route to host»/«endpoint not connected»/refused/timeout в ConnectionManager — Debug, не исправление сети. WAN two-event suppression и DNS per-question реализованы локально; hardware WAN-loss/PBR/IPv6-only/Edge ещё не проверены. Анимация отложена; TLS-разбиение на три записи не реализовано.
+5. r37 прошёл 5/5 restart/HTTPS; pending результата не протухают и не перепроверяются автоматически, поле 1h удалено в 0.2.7. Открыты многодневная приёмка, полный power loss, hardware WAN-loss и пользовательский UI Delete. Не выдавать ограниченный smoke за эти проверки.
 
-Исправлены два воспроизведённых UI-дефекта: результат проверки обновлений оставался скрытым из-за `hidden="false"`, кнопки Refresh/Check/Apply/Delete автосписка блокировались `disabled="false"`. Теперь используются DOM properties; mocks учитывают setAttribute-семантику LuCI. Оба RED → GREEN, 4 файла / 11 целевых тестов, tsc/lint/bundle PASS. Исправление только локальное, в опубликованных пакетах 0.1.6 его нет. [Команды](TESTING.md).
-
-## Опубликовано 2026-11-16: 0.1.6 prerelease
-
-Выпущен [0.1.6](https://github.com/fefenke/kaban-max/releases/tag/0.1.6), source/tag commit `4445219fa62eac084143620a35bb58d34b704008`, core 1.14.4-r11. Пять GitHub Actions завершились success. Независимо скачаны все 14 публичных assets: SHA256/размеры, 13 записей SHA256SUMS, manifests и точный commit тега совпали; draft=false, prerelease=true. Evidence сохранено локально в `.local/audit/final-qa-publish/public-verification.json`. На оборудование ничего не устанавливалось; аппаратные UNVERIFIED ниже сохраняются. Следующий блок описывает предшествующий локальный GO.
-
-## Финальная QA 2026-11-16 — кандидат 0.1.6
-
-Локальный GO для prerelease: frontend 175 файлов / 1682 теста, TypeScript/lint/bundle, backend 91/91, installer smoke/migration, po2lmo, clean apply 0001–0007 и пять Go race suites PASS. Чисто собраны 10 IPK/APK приложения/LuCI/RU и ARM64 base/tiny 1.14.4-r11; manifests, 13 SHA256 и payload APK/IPK проверены. Свежий x86_64 executable прошёл synthetic HTTPS/FakeIP/CDN/first-match/TTL smoke. Исправлены reserved tag LuCI и сравнение minimum core с поставляемой версией в release checker. Это локальная приёмка, не аппаратная; публикация фиксируется отдельно после проверки GitHub. [Команды и ограничения](TESTING.md).
-
-OpenWrt logread/TZ, физические NFQUEUE/PBR/mwan3/WARP/VPN, DNS/Direct egress, LuCI на устройстве и ARM64 runtime остаются UNVERIFIED. Установок и подключений к устройствам не было. №05/06/08/09 не выполнялись.
-
-## Локально 2026-11-16: №04Б-ФИНАЛ
-
-Добавлен ordinary HTTPS verifier без nonce для конкретного IP реального TCP-потока. По умолчанию web GET /:443; старые nonce JSON остаются strict. Web даёт только ручное scoped предложение после 2 transport failures исходного + 2 валидных ответов альтернативы; автоматическое применение остаётся strict-only. IP-only видим и допускает bounded TCP diagnostic, но не lease. Сохранены две галочки/permissions, first-match и suppression. Patch 0007 поверх неизменённого 0006; новый test build r11 отдельно от audited r11. [Контракт](AUTO_ROUTING_IMPLEMENTATION_04B.md), [свежие 31 backend / 121 frontend / core race / executable результаты и SHA](TESTING.md). Не универсальная автоматика для игр/UDP; OpenWrt/real WARP/egress не проверялись. Старые записи ниже исторические.
-
-
-## Локально 2026-11-15: ТЗ №04Б
-
-Реализован opt-in verifier и узкие runtime leases поверх r10 отдельным patch 0006, test core r11. Приложение без opt-in сохраняет минимум r10. Есть IP-first наблюдения, независимый HTTPS nonce-контракт, first-match/CDN/FakeIP guards, TTL/откат, persistent suppression и LuCI-списки. Это поддержка проверяемого endpoint-контракта, не обещание доступности произвольных сайтов. Новые x86_64/ARM64 binary-only сборки изолированы от r10; аппаратная приёмка не выполнена. [Реализация и ограничения](AUTO_ROUTING_IMPLEMENTATION_04B.md), [свежие проверки](TESTING.md). Ниже запись №04 о первоначальном read-only этапе историческая.
-
-
-ТЗ №04, 2026-11-15: реализован read-only прогноз маршрута (LuCI/CLI), без активных проб и изменения правил. Полная автоматика, managed IP-списки в секциях и TTL/suppression/rollback отложены из-за недостаточного probe evidence API r10 и недоказанного narrow CDN scope. Это безопасная часть по разрешению пользователя, не завершённое ТЗ. [Границы и продолжение](AUTO_ROUTING_DIAGNOSTICS_04.md), свежие целевые команды — TESTING. Изменения №01–03 и ядро сохранены.
-
-## ТЗ №03 — локально 2026-11-15
-
-Проверены все пять patches на pinned upstream; отдельно собраны base r10 x86_64/ARM64, без замены dist/r9. Core race suites и 39 backend-файлов прошли. Проверен сам x86_64 executable: mixed DNS→FakeIP, per-address route isolation, unavailable-provider fail-closed, FakeIP после штатного restart. Холодный новый Box восстанавливает pins только из сохранившегося cache; стандартный `/tmp` после reboot их теряет. Обычный Fallback сохраняет TCP, общий JSON reload их закрывает. Production-код не изменён, добавлены тесты. [Результаты, SHA256 и оставшаяся аппаратная приёмка](LIFECYCLE_FALLBACK_03.md), [точные команды](TESTING.md). Без коммитов/установки/публикации.
-
-## Локально 2026-11-15: ТЗ №02 и смешанный DNS (не выпущено)
-
-Добавлены dnsmasq local/server zones, mark-маски KABANMAX с сохранением чужих битов, регрессии устройств/паузы/системного трафика. Частичный IP-Bypass DNS сохраняет FakeIP; resolve в позиции секции и per-address фильтрация core не позволяют одному совпавшему адресу авторизовать Direct для остальных. Missing remote set сохраняет сервис/retry, но удерживает область секции fail-closed через nft pending и core guard. No-op Save сохранён.
-
-Локальный core/minimum **1.14.4-r10**, pinned commit прежний, patches 0001–0005. Пакеты, установка и полная финальная приёмка не выполнялись. Доказательства, ограничения и передача №03: [ТЗ №02](STARTUP_DNS_DEVICES_02.md), [TESTING](TESTING.md). Прежние изменения сохранены; старые результаты ниже не выдаются за текущие.
-
-## ???????? 2026-11-15: DNS / UCI / GeoIP (?? ????????)
-
-????????? ???????? [????? Forkop ? ??](audits/README.md), ?????? [???????? ?????????? ????](AI_HANDOFF.md). Backend config/cache paths ????? ?????? defaults, ??????? ????????? ????? LuCI Save ?????; ????? ???? ???????????. ???????????????? resolver ?????????? ???????? DNS, ???????????????? endpoint/???????? ??? DNS detour ? ????? bootstrap ??? ????????????????? ??????? fallback. ??? SRS query-?????? ?????????? ???????? ?????, IP Bypass ??? ?????? ???????????? ???????? DNS-????? ????? evaluate/respond ?? ??????? FakeIP ? ??????????? source/System ? ???????. nft production ?? ???????: community IPv4/IPv6, mixed SRS ? IP-literal ??????????? ??????.
-
-38 ??????? backend-?????? passed; DNS walker ? loopback DNS/SOCKS core dialer ?????? ?????? offline race-????? ?? UPSTREAM+patches. ????/patches/frontend/?????? ?? ????????. ??????????? multi-address DNS, managed subscription resolver override ? ???????? ???????????? ? AI_HANDOFF ? TESTING. ?????? ???????, ???????? ??????, ??????????? ? ????????/VPS, ???????? ? ?????????? ?? ????.
-
-## Локально 2026-11-15: задачи №2/3/4, WARP (не выпущено)
-
-Исправлены два дефекта генерации маршрута Cloudflare API: прямые запросы теперь используют `direct-out` с core dialer/default_mark, автоматическая регистрация без реквизитов также получает выбранный `profile.detour`. Раньше первая ветка использовала немаркированный HTTP transport, вторая игнорировала настройку секции. Это подтверждённые дефекты, но не доказательство причины всех полевых TLS timeout. Каскад/пользовательские маршруты/nft и ядро не менялись.
-
-No-op Save и не влияющие на JSON правки не требуют reload; реальные изменения любого runtime JSON пересоздают весь core, сохраняя техническое ограничение по старым соединениям. Отдельный дефект сериализации обфускации не воспроизведён. Кэш WARP в `/tmp` не переживает reboot; существующие API retries не изменены. Регрессии, цепочки событий, точные проверки и сценарии WR3000S/U — [TESTING](TESTING.md), раздел WARP. Роутеры/VPS, релизная сборка, установка, коммиты и публикация не выполнялись.
-
-## Локально 2026-11-15: дополнение №12, uTLS (не выпущено)
-
-Единый каталог `shared/tls-fingerprints.json`: TS читает напрямую, backend использует генерируемый `singbox/fingerprints.uc`; frontend build проверяет отсутствие расхождения. В VPN-редакторе семейство Chrome + версии 133/155, добавлены Randomized, QQ 11.1 и 360 7.5. Остальные настоящие профили: Firefox 148, Safari 26.3, Edge 85, iOS 14, Android/OkHttp 11, Random. Версии стандартных семейств не менялись. Пять специальных chrome_* — те же Chrome 133, остаются только совместимыми входными именами: не предлагаются новым выбором и не переписываются при no-op. Наследование снимает override, экспорт учитывает эффективный вариант, постоянный ID сохраняется.
-
-Android/360 запрещены для REALITY; Edge/iOS/QQ требуют совместимых старых серверов. Raw/TLS/QUIC/with_utls ограничения сохранены; учтён REALITY, выводимый из pbk при security=tls. 187 frontend-тестов, 3 backend-файла, сборка/lint/po2lmo passed; common/tls и protocol/parser race tests на чистом UPSTREAM+patches passed. Все 16 входных имён проверены локальным TLS-handshake и parser override; в UI только 11 различных вариантов (два Chrome в одном семействе). Ядро/patches/зависимости не менялись. Инвентаризация: [FINGERPRINTS](../core/FINGERPRINTS.md), команды/неудачные эксперименты: [TESTING](TESTING.md). Полевых измерений блокировок и публикаций не было.
-
-## Локально 2026-11-15: редактор VPN и проверка старых сессий (не выпущено)
-
-Задача №9: LuCI разбирает VLESS/Trojan/AnyTLS и основные HTTP(S)/SOCKS-поля, сохраняет правки в URI той же записи `connection_link`. Виртуальные поля формы в UCI не попадают. Просмотр/сохранение без правок сохраняют байты URI; неизвестные query и fragment сохраняются при точечных правках. У VLESS/Trojan доступны TCP/WS/gRPC/HTTPUpgrade/HTTP/XHTTP. Остальные форматы, в том числе VMess base64/JSON, остаются raw. Эффективный экспорт учитывает отдельный fingerprint для VLESS/Trojan/AnyTLS; непереносимый override в других форматах даёт явный отказ. Fragmentation/classical/каскад остаются отдельными настройками. При rename/delete ручного сервера обновляются точные фильтры Fallback и URLTest своей секции, включая ещё не сохранённые черновики URLTest.
-
-Отдельные проверки reload на чистом UPSTREAM+patches: loopback TCP-сессия закрывается при Close/Create старого core, новая идёт к новому endpoint; смена URI/имён меняет fingerprint и не переносит старые наблюдения. Невалидная конфигурация до reload оставляет прежний core работающим (backend regression). Ручной выбор selector имеет приоритет, пока выбранный тег существует: пересоздание Fallback его не отменяет. Это наблюдения исходников и локальных тестов, не установленная причина всех ошибок пользователя. Ядро/patches не менялись, роутеры/VPS не использовались.
-
-Команды, результаты, ограничения и неудачные запуски окружения: [TESTING](TESTING.md), раздел редактора VPN. Дальнейшая проверка UI и reload на устройстве — отдельная задача.
-
-## Локально 2026-11-15: ссылки Fallback (не выпущено)
-
-Воспроизведены два дефекта frontend: переименование `connection_link` оставляло старое имя в точных фильтрах уровней Fallback; удаление сохраняло ссылки, способные выбрать новое одноимённое подключение. `links.ts` синхронизирует include/exclude в группах только своей секции; `form.ts` подключает очистку при удалении. Схема UCI, ядро, URLTest, подписки и regex не менялись. Суффикс `#1` при повторном добавлении одинакового имени — штатное поведение; непреднамеренные дубли и сбой только от смены URI не воспроизведены. Проверки и ограничения: [TESTING](TESTING.md), раздел 2026-11-15. Публикаций/подключений к оборудованию не было.
-
-Снимок: 13 ноября 2026. Источник текущего продукта — независимый Git-репозиторий в корне KABANMAX. Исходная точка реорганизации: commit `fe4cde6` (0.1.3). По отдельному запросу опубликован prerelease [0.1.4](https://github.com/fefenke/kaban-max/releases/tag/0.1.4), commit `d370c504f0acc4bc08488c5fe5b9331f9aad6e7f` в main и теге 0.1.4. Установка на действующее оборудование не выполнялась.
-
-## Подтверждено исходниками
-- Backend ucode формирует sing-box и nftables, управляет жизненным циклом с lock и проверкой готовности.
-- Zapret2: собственные очереди/mark на секцию, проверка стратегий, загрузка kmod и проверка PID привязок; обновление компонента отдельно от приложения.
-- Stable fallback: две стадии подтверждения с настраиваемой паузой 3s по умолчанию, свежие пользовательские TCP-данные могут отменить подозрение; автоматический возврат после серии успехов.
-- TLS: отдельные опции на сервер — две примерно равные TLS-записи ClientHello и классический обмен ключами. Опции используются и проверками через соответствующий outbound.
-- Статистика последних 24 часов в RAM; максимум 50 событий группы; перенос неизменённых наблюдений при reload в том же процессе.
-- LuCI-компоненты: проверка/установка обновлений, импорт/экспорт; dashboard использует CLI на холодном чтении вместо ожидания недоступного browser API.
-
-## Ограничения
-- Опции TLS не гарантируют доступность у любого провайдера. Причина всех исторических таймаутов не доказана.
-- Успех контрольного URL не равен доступности каждого сайта; время выбранного сервера не является доказанным uptime.
-- Новая анимация и полноценная переработка игры отложены. Приватные наброски не включены в 0.1.3.
-- Проверка с тремя TLS-записями оставлена идеей; не реализована.
-- Фактическая доступность серверов, состояние действующих роутеров и серверного RU blackhole в этой задаче не проверяются.
-
-## Проверки
-Исторический выпуск 0.1.3: frontend 164 файла/1590 тестов, backend 79 файлов, core race-тесты и сборка base/tiny были выполнены при выпуске. Это исторические результаты, а не результат сегодняшнего переноса.
-
-Свежие проверки после изоляции: frontend 164 файла/1590 тестов, lint/build; backend 79/79; чистое применение patch и 4 Go race-пакета; VitePress build; упаковка 6 APK/IPK приложения; проверка 13 записей сохранённого SHA256SUMS. Результаты и ограничения — [TESTING](TESTING.md) и `.local/audit/verification.json`. Полная ARM64 пересборка и live-тесты не выполнялись.
-
-Изменения 0.1.4 от 13 ноября 2026: режимы резолва перед правилами всех секций disabled/all/selected, suffix/full синтаксис без отдельного переключателя поддоменов; журнал приложения в `/tmp` на 24 часа по монотонным часам с лимитом всего архива 2 МиБ и write-RPC очистки; исправления оформления fallback/кнопок конфигурации и уведомление «Обновлений нет». Статистика fallback в Go не менялась. Резолв по умолчанию выключен. Сбор журнала каждые 1.5s не гарантирует отсутствие потерь при переполнении системного кольца между чтениями; перезагрузка роутера очищает RAM-архив.
-
-Свежие проверки функциональных изменений: frontend 167 файлов / 1607 тестов, lint/build; backend 82/82 файла. Команды, регрессии и ограничения — в [TESTING](TESTING.md). Ревью выявило и помогло исправить возвращение старых строк при неудачном чтении перед очисткой и сохранение удалённого текста в метаданных.
-
-Проверки перед выпуском повторены: frontend 167/1607, backend 82/82, lint, сборки UI и docs. Упакованы 6 новых APK/IPK приложения/LuCI/RU; 4 пакета ядра 1.14.4-r8 сохранены без изменения и сверены с GitHub SHA256 выпуска 0.1.3. Опубликованы 14 assets, включая 13 записей SHA256SUMS. GitHub Actions Frontend CI, Backend CI и Documentation завершились успешно. Инженерные документы реорганизации и её локальные изменения сохранены отдельно от release-коммита.
-
-Следующий шаг: развёртывание/live UI и проверка маршрутов только по отдельному запросу; остальные задачи ROADMAP сохраняются.
-
-## Локально после 0.1.4: Chrome 155 (не выпущено)
-Добавлен отдельный `chrome_155`, обычный `chrome` остаётся 133. Ядро r9 воспроизводится из того же pinned upstream с двумя patches; uTLS-lx закреплён на `47b8493a47af` точной Go pseudo-version. Парсер подписок/ссылок и schema сохраняют значение, LuCI предлагает его отдельно. Backend minimum и release manifests согласованы с r9. Точные источники, wire-отличия, лицензия и ограничения ML-DSA/trust anchors — `core/CHROME155.md`.
-
-Свежие проверки: uTLS браузерный fixture и GREASE/ML-DSA/trust-anchor tests; Go race — 12 пакетов passed, parser/xhttp без тестов; frontend 167/1609, lint/build; backend 83/83. ARM64 base/tiny собраны из публичного upstream+patches в APK/IPK, build-info подтверждает зависимость, IPK payload/version/лицензия проверены. Пакеты находятся в игнорируемом `dist/core-chrome155-r9`; raw исходный `.local/core-src` не менялся. Ни публикации r9, ни установки/live-тестов не выполнялось.
-
-## Подготовка 0.1.5
-По прямому запросу разрешена публикация r9/Chrome155, отдельных TLS-отпечатков по ID подключения и единого оформления результатов обновлений. Свежие проверки: frontend 170/1616, lint/build; backend 84/84 после последней валидации; Go race 13 пакетов с тестами (tlsfragment проверен отдельно с доступом к публичному TLS endpoint), VitePress build. ARM64 base/tiny заново собраны из UPSTREAM+patches, IPK payload/version/license проверены. Пакеты приложения пересобраны после исправления Android+REALITY. Окончательное состояние публикации будет записано после GitHub-проверки. Live-устройства не использовались.
-
-Исходники 0.1.5 отправлены в main: `24d225c03eb9c26591a9a2fa3e97e8029cad90e2`. Документация и frontend/backend CI прошли. 14 assets загружены в черновик; 13 SHA256 и manifests проверены. После полного backend84/84 заменены только три адреса в диагностических fixtures на документальные/явно синтетический CGNAT; целевой diagnostics/checks прошёл 1/1. Неподтверждённые предположения о принадлежности исходных fixture-адресов пользователю не считаются доказанными.
-
-Завершено 14 ноября 2026: опубликован prerelease [0.1.5](https://github.com/fefenke/kaban-max/releases/tag/0.1.5), ядро 1.14.4-r9. Все четыре GitHub Actions (Frontend CI, Backend CI, Documentation, Patched core fallback) завершились success. Проверка публичного релиза подтвердила draft=false, prerelease=true, точный commit тега и SHA256/размеры всех 14 assets. Доказательство публикации: `.local/audit/release-0.1.5-publication.json`. Последняя опубликованная версия теперь 0.1.5; упоминания 0.1.4 выше относятся к предыдущему выпуску. Развёртываний на устройства не выполнялось.
+Далее — пользовательская приёмка preview несколько дней. Новые установки/публикация/live доступ вне текущего разрешённого scope автоматически не разрешены. [ROADMAP](ROADMAP.md).

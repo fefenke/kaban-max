@@ -4,17 +4,18 @@ registry.paths.applied=stub.tmpdir()+"/applied.json";registry.paths.budget=stub.
 registry.paths.pending=null;
 let now=1000;registry.io.now=()=>now;
 function record(i) {return {id:"l"+i,owner:"auto-routing",source_id:"zap",source:"zap",ip:"203.0.113."+i,domain:"one.test",domain_known:true,source_ip:"192.0.2.8",inbound:"tproxy-in",port:443,target:"direct-out",created:"2026-11-16T00:00:00Z",expires:"2026-11-16T00:01:00Z",status:"applied",failure:{id:"error"+i,source_id:"zap",message:"synthetic dial timeout"}};}
-t.test("saved leases reload as intents, never as active runtime state; limit preserves existing entries",()=>{
+t.test("saved leases reload beyond 64 entries without truncation",()=>{
  let rows=[];for(let i=1;i<=64;i++)push(rows,{owner:"auto-routing",scope:registry.key(record(i)),record:record(i)});
  registry.save("applied",rows);t.eq(length(registry.load().entries),64);
  let before=fs.readfile(registry.paths.applied);push(rows,{owner:"auto-routing",scope:registry.key(record(65)),record:record(65)});
- t.throws(()=>registry.save("applied",rows));t.eq(fs.readfile(registry.paths.applied),before);
+ registry.save("applied",rows);t.eq(length(registry.load().entries),65);
  t.eq(registry.load().entries[0].record.id,"l1");
 });
 t.test("atomic persistent exclusions and write budget reject growth without erasing data",()=>{
+ fs.unlink(registry.paths.budget);
  let row={owner:"auto-routing",scope:registry.key(record(1)),created:now};registry.save("excluded",[row]);
  t.eq(model.suppression().entries[0].scope,row.scope);
- for(let i=0;i<10;i++){row={...row,created:++now};registry.save("excluded",[row]);}
+ for(let i=0;i<11;i++){row={...row,created:++now};registry.save("excluded",[row]);}
  let before=fs.readfile(model.paths.suppression);t.throws(()=>registry.save("excluded",[{...row,created:++now}]));t.eq(fs.readfile(model.paths.suppression),before);
  now+=61;registry.save("excluded",[]);t.eq(model.suppression().entries,[]);
  fs.writefile(registry.paths.applied,"corrupt");t.throws(()=>registry.load());t.throws(()=>registry.save("applied",[]));t.eq(fs.readfile(registry.paths.applied),"corrupt");
@@ -85,4 +86,32 @@ t.test("dismiss accepts logged source-owned failures with unknown IP but apply s
  t.eq(registry.load().entries,[]);t.eq(model.suppression().entries,[]);
 });
 
+t.test("removing one excluded identity accepts compact and spaced JSON without touching neighbours",()=>{
+ fs.unlink(registry.paths.applied);fs.unlink(registry.paths.budget);fs.unlink(model.paths.suppression);
+ let actions=require("diagnostics.auto_registry");let row=record(41);
+ let spaced=registry.key(row);let compact='["zap","203.0.113.41","one.test","192.0.2.8","tproxy-in",443]';
+ let neighbour=registry.key({...record(42),source_ip:"192.0.2.99"});
+ registry.save("excluded",[{owner:"auto-routing",scope:spaced,created:now},{owner:"auto-routing",scope:compact,created:now},{owner:"auto-routing",scope:neighbour,created:now}]);
+ actions.io.state=()=>({registry_version:3,sources:[{id:"zap",outbound:"zap"}],candidates:[],decisions:[],leases:[]});
+ let calls=[];actions.io.request=(op,payload)=>{push(calls,{op,...payload});return {};};
+ let result=actions.run(sprintf("%J",{source_section:"zap",status:"excluded",action:"remove",ids:[compact]}));
+ t.eq(result.done,1);t.eq(result.failed,0);
+ t.eq(map(model.suppression().entries,(entry)=>entry.scope),[neighbour]);
+ t.eq(calls,[{op:"registry_reset",source_id:"zap",scope:spaced}]);
+});
+
+t.test("section-wide grants persist the flag and replace old device approvals only in their section",()=>{
+ registry.paths.applied=stub.tmpdir()+"/section-wide-applied.json";
+ registry.paths.budget=stub.tmpdir()+"/section-wide-budget.json";
+ let old=record(1);old.persistent_ip=true;old.all_ports=true;
+ let other={...old,id:"foreign",source_id:"other",source:"other"};
+ registry.save("applied",map([old,other],(r)=>({owner:"auto-routing",scope:registry.key(r),record:r})));
+ let current={...old,id:"global",source_ip:"192.0.2.99",all_devices:true};
+ registry.remember([current]);
+ let rows=registry.load().entries;
+ t.eq(length(rows),2);
+ t.eq(length(filter(rows,(e)=>e.record.source_id=="zap")),1);
+ t.eq(filter(rows,(e)=>e.record.source_id=="zap")[0].record.all_devices,true);
+ t.eq(filter(rows,(e)=>e.record.source_id=="other")[0].record.id,"foreign");
+});
 t.done();

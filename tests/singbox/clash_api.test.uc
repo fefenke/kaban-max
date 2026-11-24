@@ -178,6 +178,20 @@ t.test("the summary carries the totals and the count, never the connection list"
     t.eq(received()[0].line, "GET /connections HTTP/1.0");
 });
 
+t.test("a bounded core snapshot preserves the real total in the Dashboard", () => {
+    config(controller.endpoint);
+    controller.reply({ status: 200, body: '{"connections":[{"id":"shown"}],"connectionsTotal":10000,"truncated":true}' });
+    t.eq(json(clash.summary().body).connections, 10000);
+});
+
+t.test("oversized connections fail with an explicit size error before parsing the whole body", () => {
+    config(controller.endpoint);
+    controller.reply({ status: 200, body: join("", map(numbers(20000), () => "0123456789")) });
+    let reply = clash.request("GET", "/connections", "");
+    t.eq(reply.status, 413);
+    t.contains(reply.body, "safe size limit");
+});
+
 t.test("read deadlines are short while probes through an outbound and updates retain their budget", () => {
     for (let pair in [
         [ "GET", "/proxies", 5 ],

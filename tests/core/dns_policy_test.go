@@ -95,7 +95,7 @@ func TestKabanmaxGeneratedDNSBypass(t *testing.T) {
 			main := &fakeDNSTransport{tag: "dns-server", address: netip.MustParseAddr(scenario.address)}
 			fake := &fakeDNSTransport{tag: "fakeip-server", address: netip.MustParseAddr("198.18.0.7")}
 			if scenario.qtype == mDNS.TypeAAAA {
-				fake.address = netip.MustParseAddr("fc00::7")
+				fake.address = netip.MustParseAddr("2001:2::7")
 			}
 			local := &fakeDNSTransport{tag: "dnsmasq-server", address: netip.MustParseAddr("192.0.2.1")}
 			bootstrap := &fakeDNSTransport{tag: "bootstrap-dns-server", address: netip.MustParseAddr("198.51.100.99")}

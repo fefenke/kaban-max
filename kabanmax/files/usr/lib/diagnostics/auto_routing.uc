@@ -4,6 +4,7 @@ let lock = require("service.lock");
 let model = require("config.auto_routing");
 let paths = { lock: "/var/run/kabanmax.reload.lock",pending:"/var/run/kabanmax/auto-routing-events.json" };
 let capture_error = "";
+let pressure=false;
 
 function request(op, payload) {
     let api = require("singbox.clash_api");
@@ -15,9 +16,9 @@ function request(op, payload) {
     return value;
 }
 let io = { request };
-function checkpoint(leases) {
+function checkpoint(leases, remembered) {
     if(leases==null)leases=io.request("state",{}).leases ?? [];
-    require("config.auto_registry").remember(leases);
+    if(remembered!=true)require("config.auto_registry").remember(leases);
     let rows;
     try { rows=io.request("checkpoint",{}); }
     catch(e) {
@@ -29,8 +30,8 @@ function checkpoint(leases) {
         let old=io.request("state",{});if(old.registry_version!=3)die(e.message);
         rows=old.candidates ?? [];
     }
-    if(type(rows)!="array" || length(rows)>64)die("Invalid private registry checkpoint");
-    let text=sprintf("%J",rows);if(length(text)>2097152)die("Private registry checkpoint exceeds RAM limit");
+    if(type(rows)!="array")die("Invalid private registry checkpoint");
+    let text=sprintf("%J",rows);if(length(text)>int(require("config.auto_storage").settings().memory_bytes/2))die("Private registry checkpoint exceeds RAM limit");
     if(!common.write_file_atomic(paths.pending,text))die("Cannot save pending registry in RAM");
     require("fs").chmod(paths.pending,0600);
     return true;
@@ -44,9 +45,12 @@ function state() {
     // Generic logs and connection counters cannot establish section ownership.
     answer.unattributed = [];
     answer.registry_error = capture_error;
+    let diagnostics=require("config.auto_diagnostics");
+    answer.leases=map(answer.leases ?? [],diagnostics.enricher());
+    answer.diagnostics_error=diagnostics.error();
     let settings = uci.get_all("kabanmax", "settings") ?? {};
     let config = common.read_json_file(require("singbox.constants").config_path(settings));
-    answer.sources = map(config?.route?.kabanmax_auto ?? [], (s) => ({ id: s.id, outbound: s.outbound, domain: s.domain, auto_apply: s.auto_apply, direct: s.direct, warp: s.warp, warp_section: s.warp_section }));
+    answer.sources = map(config?.route?.kabanmax_auto ?? [], (s) => ({ id: s.id, outbound: s.outbound, domain: s.domain, mode: s.mode, auto_apply: s.auto_apply, direct: s.direct, warp: s.warp, warp_section: s.warp_section }));
     answer.warp_profiles = map(filter(config?.endpoints ?? [], (e) => e.type == "warp" && (e.detour == null || e.detour == "direct-out")), (e) => e.tag);
     answer.warp_sections=model.warp_sections(config ?? {},uci.section_objects("kabanmax","section"),(id)=>require("singbox.constants").outbound_tag(require("config.connections").section_display_name(id)));
     answer.suppressed_counts = {};
@@ -101,19 +105,30 @@ function action(op, id, session) {
     return response;
 }
 function capture() {
+    pressure=false;
     let owner=common.own_pid();if(!lock.acquire(paths.lock,owner))return false;
-    let answer;
+    let answer;let grants_saved=false;
     try {
         answer=io.request("state",{});
+        pressure=answer.memory_pressure==true;
         if(answer.registry_version==2)require("config.auto_registry").remember(answer.leases);
-        if(answer.registry_version==3)checkpoint(answer.leases ?? []);
+        if(answer.registry_version==3) {
+            require("config.auto_registry").remember(answer.leases ?? []);
+            grants_saved=true;
+            checkpoint(answer.leases ?? [],true);
+        }
+        // Use the same lifecycle lock as mutations: a checkpoint must never
+        // race with a newer applied/excluded RAM snapshot from another worker.
+        require("config.auto_registry").flush(pressure);
         capture_error="";
     } catch(e) {
         capture_error=e.message;
         // If durable capture fails, withdraw only grants absent from the saved
         // registry. Never silently advertise an unpersisted automatic approval.
         let entries;try {entries=require("config.auto_registry").load().entries;}catch(_){entries=[];}
-        for(let row in answer?.leases ?? []) {
+        // Private flow metadata is recoverable on the next sweep. Its failure
+        // must not withdraw approvals already recorded in the intent store.
+        for(let row in grants_saved ? [] : answer?.leases ?? []) {
             let key=require("config.auto_registry").key(row);
             if(length(filter(entries,(entry)=>entry.scope==key && entry.record.target==row.target))>0)continue;
             try{io.request("registry_withdraw",{source_id:row.source_id,id:row.id});}catch(_){try{io.request("disable",{id:row.source_id});}catch(__){}}
@@ -122,4 +137,4 @@ function capture() {
     }
     require("diagnostics.auto_records").invalidate();lock.release(paths.lock,owner);return true;
 }
-return { state, action, persist, capture, checkpoint, paths, io };
+return { state, action, persist, capture, checkpoint, paths, io, memory_pressure:()=>pressure };

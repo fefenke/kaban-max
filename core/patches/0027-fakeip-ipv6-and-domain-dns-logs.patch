@@ -1,0 +1,201 @@
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -177,7 +177,7 @@
+ }
+ func (m *Manager) protected(q Query) bool {
+ 	a, e := netip.ParseAddr(q.IP)
+-	if e != nil || !a.IsGlobalUnicast() || a.IsPrivate() || a.IsLoopback() || netip.MustParsePrefix("198.18.0.0/15").Contains(a) {
++	if e != nil || !a.IsGlobalUnicast() || a.IsPrivate() || a.IsLoopback() || netip.MustParsePrefix("198.18.0.0/15").Contains(a) || netip.MustParsePrefix("2001:2::/48").Contains(a) {
+ 		return true
+ 	}
+ 	d := q.Domain
+diff --git a/dns/client_failure_log.go b/dns/client_failure_log.go
+--- a/dns/client_failure_log.go
++++ b/dns/client_failure_log.go
+@@ -3,100 +3,100 @@
+ import (
+ 	"context"
+ 	"errors"
++	"github.com/miekg/dns"
++	E "github.com/sagernet/sing/common/exceptions"
++	"github.com/sagernet/sing/common/logger"
+ 	"strings"
+ 	"sync"
+ 	"time"
+-
+-	E "github.com/sagernet/sing/common/exceptions"
+-	"github.com/sagernet/sing/common/logger"
+-
+-	"github.com/miekg/dns"
+ )
+ 
+-// Failed exchanges are logged here, by server (podkop-engine). The first failure of a
+-// server is logged at once with its query; while the server goes on failing, one line
+-// every failureLogInterval counts the failures in between and shows the last one. A
+-// timeout is a failure; a query its caller gave up (context.Canceled) is not. Upstream
+-// logged nothing for most failures (the rule path of 1.14, and timeouts or closed
+-// connections on the path of clients) or one line per query, which floods the log of
+-// a router when a server is down.
+ var failureLogInterval = 10 * time.Second
+ 
++const maxFailureWindows = 256
++
++type failureKey struct {
++	server, name  string
++	qtype, qclass uint16
++}
+ type failureLog struct {
+-	access  sync.Mutex
+-	windows map[string]*failureWindow
++	access   sync.Mutex
++	windows  map[failureKey]*failureWindow
++	overflow bool
+ }
+-
+ type failureWindow struct {
+ 	count    int
+ 	question string
+ 	err      error
+ }
+ 
+-// loggedFailure marks an error that the failure log has taken: callers do not log it
+-// again.
+-type loggedFailure struct {
+-	error
++func boundedFailure(err error) error {
++	detail := err.Error()
++	if len(detail) > 1024 {
++		detail = detail[:1024] + " [truncated]"
++	}
++	return errors.New(strings.Clone(detail))
+ }
+ 
+-func (e *loggedFailure) Unwrap() error {
+-	return e.error
+-}
++type loggedFailure struct{ error }
+ 
+-// IsLoggedFailure tells whether the failure log has taken the error.
+-func IsLoggedFailure(err error) bool {
+-	var logged *loggedFailure
+-	return errors.As(err, &logged)
+-}
++func (e *loggedFailure) Unwrap() error { return e.error }
++func IsLoggedFailure(err error) bool   { var logged *loggedFailure; return errors.As(err, &logged) }
+ 
+ func (l *failureLog) failed(ctx context.Context, logger logger.ContextLogger, server string, message *dns.Msg, err error) error {
+ 	if logger == nil || errors.Is(err, context.Canceled) || IsLoggedFailure(err) {
+ 		return err
+ 	}
++	key := failureKey{server: server}
+ 	question := "<empty query>"
+ 	if len(message.Question) > 0 {
+-		question = FormatQuestion(message.Question[0].String())
+-	}
+-	// A refused CHAOS/TXT server-identification query is not a failure
+-	// to resolve a site's address. Do not contaminate its server error window.
+-	if len(message.Question) == 1 {
+ 		q := message.Question[0]
+-		name := strings.ToLower(dns.Fqdn(q.Name))
+-		service := name == "version.bind." || name == "version.maradns." || name == "version.pdns." || name == "hostname.bind." || name == "id.server."
+-		if service && q.Qclass == dns.ClassCHAOS && q.Qtype == dns.TypeTXT && errors.Is(err, RcodeRefused) {
++		key.name, key.qtype, key.qclass = strings.ToLower(dns.Fqdn(q.Name)), q.Qtype, q.Qclass
++		question = FormatQuestion(q.String())
++		service := key.name == "version.bind." || key.name == "version.maradns." || key.name == "version.pdns." || key.name == "hostname.bind." || key.name == "id.server."
++		if len(message.Question) == 1 && service && q.Qclass == dns.ClassCHAOS && q.Qtype == dns.TypeTXT && errors.Is(err, RcodeRefused) {
+ 			logger.DebugContext(ctx, E.Cause(err, "server ", server, ": exchange failed for ", question))
+ 			return &loggedFailure{err}
+ 		}
+ 	}
+ 	l.access.Lock()
+ 	if l.windows == nil {
+-		l.windows = make(map[string]*failureWindow)
++		l.windows = make(map[failureKey]*failureWindow)
+ 	}
+-	window, open := l.windows[server]
+-	if open {
++	if window, open := l.windows[key]; open {
+ 		window.count++
+-		window.question, window.err = question, err
++		window.question, window.err = question, boundedFailure(err)
+ 		l.access.Unlock()
+ 		return &loggedFailure{err}
+ 	}
+-	l.windows[server] = &failureWindow{}
++	if len(l.windows) >= maxFailureWindows {
++		notify := !l.overflow
++		l.overflow = true
++		l.access.Unlock()
++		if notify {
++			logger.Warn("DNS failure grouping limit reached (256 active questions); additional question details are available at Debug")
++			time.AfterFunc(failureLogInterval, func() { l.access.Lock(); l.overflow = false; l.access.Unlock() })
++		}
++		logger.DebugContext(ctx, E.Cause(err, "server ", server, ": exchange failed for ", question))
++		return &loggedFailure{err}
++	}
++	l.windows[key] = &failureWindow{}
+ 	l.access.Unlock()
+-	logger.DebugContext(ctx, E.Cause(err, "server ", server, ": exchange failed for ", question))
+-	time.AfterFunc(failureLogInterval, func() { l.flush(logger, server) })
++	logger.WarnContext(ctx, E.Cause(err, "server ", server, ": exchange failed for ", question))
++	time.AfterFunc(failureLogInterval, func() { l.flush(logger, key) })
+ 	return &loggedFailure{err}
+ }
+-
+-func (l *failureLog) flush(logger logger.ContextLogger, server string) {
++func (l *failureLog) flush(logger logger.ContextLogger, key failureKey) {
+ 	l.access.Lock()
+-	window := l.windows[server]
+-	if window.count == 0 {
+-		delete(l.windows, server)
++	window := l.windows[key]
++	if window == nil || window.count == 0 {
++		delete(l.windows, key)
+ 		l.access.Unlock()
+ 		return
+ 	}
+ 	count, question, err := window.count, window.question, window.err
+ 	window.count = 0
+ 	l.access.Unlock()
+-	logger.Warn(E.Cause(err, "server ", server, ": ", count, " more exchanges failed in ", failureLogInterval, ", the last for ", question))
+-	time.AfterFunc(failureLogInterval, func() { l.flush(logger, server) })
++	logger.Warn(E.Cause(err, "server ", key.server, ": ", count, " more exchanges failed in ", failureLogInterval, " for ", question))
++	time.AfterFunc(failureLogInterval, func() { l.flush(logger, key) })
+ }
+diff --git a/dns/client_failure_log_test.go b/dns/client_failure_log_test.go
+--- a/dns/client_failure_log_test.go
++++ b/dns/client_failure_log_test.go
+@@ -80,7 +80,7 @@
+ 	}
+ 	if !strings.Contains(lines[0], "server doh: exchange failed for example.com. IN A: dial: context deadline exceeded") ||
+ 		!strings.Contains(lines[1], "server dot: exchange failed for") ||
+-		!strings.Contains(lines[2], "server doh: 5 more exchanges failed in 100ms, the last for example.com. IN A") {
++		!strings.Contains(lines[2], "server doh: 5 more exchanges failed in 100ms for example.com. IN A") {
+ 		t.Fatalf("unexpected lines: %q", lines)
+ 	}
+ }
+diff --git a/route/connection_log.go b/route/connection_log.go
+--- a/route/connection_log.go
++++ b/route/connection_log.go
+@@ -12,13 +12,17 @@
+ // These per-flow transport failures do not identify a configuration fix. Keep
+ // their original cause for diagnostics and routing evidence, but below Warn.
+ func (m *ConnectionManager) logConnectionFailure(ctx context.Context, err error) {
+-	routine := errors.Is(err, context.Canceled) || errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF)
+-	for _, cause := range []error{syscall.EHOSTUNREACH, syscall.ENETUNREACH, syscall.ENOTCONN, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE} {
++	routine := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF)
++	for _, cause := range []error{syscall.EHOSTUNREACH, syscall.ENETUNREACH, syscall.ENOTCONN, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE, syscall.ECONNREFUSED, syscall.ETIMEDOUT} {
+ 		routine = routine || errors.Is(err, cause)
++	}
++	var timeout net.Error
++	if errors.As(err, &timeout) && timeout.Timeout() {
++		routine = true
+ 	}
+ 	// Userspace network stacks do not always wrap a syscall.Errno.
+ 	detail := err.Error()
+-	for _, text := range []string{"no route to host", "network is unreachable", "endpoint not connected", "connection reset by peer", "broken pipe"} {
++	for _, text := range []string{"no route to host", "network is unreachable", "endpoint not connected", "connection reset by peer", "broken pipe", "connection refused", "connection timed out", "i/o timeout", "context deadline exceeded"} {
+ 		routine = routine || detail == text || strings.HasSuffix(detail, ": "+text)
+ 	}
+ 	if routine {

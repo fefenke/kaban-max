@@ -1,0 +1,289 @@
+diff --git a/route/conn.go b/route/conn.go
+--- a/route/conn.go
++++ b/route/conn.go
+@@ -126,7 +126,7 @@
+ 		err = E.Cause(err, "open connection to ", remoteString, dialerString)
+ 		m.deleteURLTestHistory(metadata.OutboundChain)
+ 		N.CloseOnHandshakeFailure(conn, onClose, err)
+-		m.logger.ErrorContext(ctx, err)
++		m.logConnectionFailure(ctx, err)
+ 		return
+ 	}
+ 	err = N.ReportConnHandshakeSuccess(conn, remoteConn)
+@@ -134,7 +134,7 @@
+ 		err = E.Cause(err, "report handshake success")
+ 		remoteConn.Close()
+ 		N.CloseOnHandshakeFailure(conn, onClose, err)
+-		m.logger.ErrorContext(ctx, err)
++		m.logConnectionFailure(ctx, err)
+ 		return
+ 	}
+ 	if metadata.TLSFragment || metadata.TLSRecordFragment {
+@@ -202,7 +202,7 @@
+ 			err = E.Cause(err, "open packet connection to ", remoteString, dialerString)
+ 			m.deleteURLTestHistory(metadata.OutboundChain)
+ 			N.CloseOnHandshakeFailure(conn, onClose, err)
+-			m.logger.ErrorContext(ctx, err)
++			m.logConnectionFailure(ctx, err)
+ 			return
+ 		}
+ 		remotePacketConn = bufio.NewUnbindPacketConn(remoteConn)
+@@ -226,7 +226,7 @@
+ 			err = E.Cause(err, "listen packet connection using ", dialerString)
+ 			m.deleteURLTestHistory(metadata.OutboundChain)
+ 			N.CloseOnHandshakeFailure(conn, onClose, err)
+-			m.logger.ErrorContext(ctx, err)
++			m.logConnectionFailure(ctx, err)
+ 			return
+ 		}
+ 	}
+@@ -235,7 +235,7 @@
+ 		err = E.Cause(err, "report handshake success")
+ 		remotePacketConn.Close()
+ 		N.CloseOnHandshakeFailure(conn, onClose, err)
+-		m.logger.ErrorContext(ctx, err)
++		m.logConnectionFailure(ctx, err)
+ 		return
+ 	}
+ 	if destinationAddress.IsValid() {
+@@ -318,7 +318,7 @@
+ 		if err == nil {
+ 			m.logger.DebugContext(ctx, "connection upload finished")
+ 		} else if !E.IsClosedOrCanceled(err) && !strings.Contains(err.Error(), "NO_ERROR") && !strings.Contains(err.Error(), "CANCEL") && !strings.Contains(err.Error(), "body closed") {
+-			m.logger.ErrorContext(ctx, "connection upload closed: ", err)
++			m.logger.DebugContext(ctx, "connection upload closed: ", err)
+ 		} else {
+ 			m.logger.TraceContext(ctx, "connection upload closed")
+ 		}
+@@ -326,7 +326,7 @@
+ 		if err == nil {
+ 			m.logger.DebugContext(ctx, "connection download finished")
+ 		} else if !E.IsClosedOrCanceled(err) && !strings.Contains(err.Error(), "NO_ERROR") && !strings.Contains(err.Error(), "response body closed") {
+-			m.logger.ErrorContext(ctx, "connection download closed: ", err)
++			m.logger.DebugContext(ctx, "connection download closed: ", err)
+ 		} else {
+ 			m.logger.TraceContext(ctx, "connection download closed")
+ 		}
+@@ -384,9 +384,9 @@
+ 	}
+ 	common.Close(source, destination)
+ 	if !direction {
+-		m.logger.ErrorContext(ctx, "connection upload handshake: ", err)
+-	} else {
+-		m.logger.ErrorContext(ctx, "connection download handshake: ", err)
++		m.logConnectionFailure(ctx, E.Cause(err, "connection upload handshake"))
++	} else {
++		m.logConnectionFailure(ctx, E.Cause(err, "connection download handshake"))
+ 	}
+ 	return true
+ }
+diff --git a/route/connection_log.go b/route/connection_log.go
+new file mode 100644
+--- /dev/null
++++ b/route/connection_log.go
+@@ -0,0 +1,29 @@
++package route
++
++import (
++	"context"
++	"errors"
++	"io"
++	"net"
++	"strings"
++	"syscall"
++)
++
++// These per-flow transport failures do not identify a configuration fix. Keep
++// their original cause for diagnostics and routing evidence, but below Warn.
++func (m *ConnectionManager) logConnectionFailure(ctx context.Context, err error) {
++	routine := errors.Is(err, context.Canceled) || errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF)
++	for _, cause := range []error{syscall.EHOSTUNREACH, syscall.ENETUNREACH, syscall.ENOTCONN, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE} {
++		routine = routine || errors.Is(err, cause)
++	}
++	// Userspace network stacks do not always wrap a syscall.Errno.
++	detail := err.Error()
++	for _, text := range []string{"no route to host", "network is unreachable", "endpoint not connected", "connection reset by peer", "broken pipe"} {
++		routine = routine || detail == text || strings.HasSuffix(detail, ": "+text)
++	}
++	if routine {
++		m.logger.DebugContext(ctx, err)
++	} else {
++		m.logger.ErrorContext(ctx, err)
++	}
++}
+diff --git a/dns/client.go b/dns/client.go
+--- a/dns/client.go
++++ b/dns/client.go
+@@ -268,7 +268,7 @@
+ 	}
+ 	if len(message.Question) == 0 {
+ 		if c.logger != nil {
+-			c.logger.WarnContext(ctx, "bad question size: ", len(message.Question))
++			c.logger.DebugContext(ctx, "bad question size: ", len(message.Question))
+ 		}
+ 		return nil, FixedResponseStatus(message, dns.RcodeFormatError), exchangeDone, nil
+ 	}
+diff --git a/dns/router.go b/dns/router.go
+--- a/dns/router.go
++++ b/dns/router.go
+@@ -1062,7 +1062,7 @@
+ 		}
+ 	}
+ 	if len(message.Question) != 1 {
+-		r.logger.WarnContext(ctx, "bad question size: ", len(message.Question))
++		r.logger.DebugContext(ctx, "bad question size: ", len(message.Question))
+ 		return nil, &mDNS.Msg{
+ 			MsgHdr: mDNS.MsgHdr{
+ 				Id:       message.Id,
+diff --git a/dns/client_failure_log.go b/dns/client_failure_log.go
+--- a/dns/client_failure_log.go
++++ b/dns/client_failure_log.go
+@@ -3,6 +3,7 @@
+ import (
+ 	"context"
+ 	"errors"
++	"strings"
+ 	"sync"
+ 	"time"
+ 
+@@ -56,6 +57,17 @@
+ 	if len(message.Question) > 0 {
+ 		question = FormatQuestion(message.Question[0].String())
+ 	}
++	// A refused CHAOS/TXT server-identification query is not a failure
++	// to resolve a site's address. Do not contaminate its server error window.
++	if len(message.Question) == 1 {
++		q := message.Question[0]
++		name := strings.ToLower(dns.Fqdn(q.Name))
++		service := name == "version.bind." || name == "version.maradns." || name == "version.pdns." || name == "hostname.bind." || name == "id.server."
++		if service && q.Qclass == dns.ClassCHAOS && q.Qtype == dns.TypeTXT && errors.Is(err, RcodeRefused) {
++			logger.DebugContext(ctx, E.Cause(err, "server ", server, ": exchange failed for ", question))
++			return &loggedFailure{err}
++		}
++	}
+ 	l.access.Lock()
+ 	if l.windows == nil {
+ 		l.windows = make(map[string]*failureWindow)
+@@ -69,7 +81,7 @@
+ 	}
+ 	l.windows[server] = &failureWindow{}
+ 	l.access.Unlock()
+-	logger.ErrorContext(ctx, E.Cause(err, "server ", server, ": exchange failed for ", question))
++	logger.DebugContext(ctx, E.Cause(err, "server ", server, ": exchange failed for ", question))
+ 	time.AfterFunc(failureLogInterval, func() { l.flush(logger, server) })
+ 	return &loggedFailure{err}
+ }
+@@ -85,6 +97,6 @@
+ 	count, question, err := window.count, window.question, window.err
+ 	window.count = 0
+ 	l.access.Unlock()
+-	logger.Error(E.Cause(err, "server ", server, ": ", count, " more exchanges failed in ", failureLogInterval, ", the last for ", question))
++	logger.Warn(E.Cause(err, "server ", server, ": ", count, " more exchanges failed in ", failureLogInterval, ", the last for ", question))
+ 	time.AfterFunc(failureLogInterval, func() { l.flush(logger, server) })
+ }
+diff --git a/route/route.go b/route/route.go
+--- a/route/route.go
++++ b/route/route.go
+@@ -352,10 +352,12 @@
+ 	if r.autoRouting != nil {
+ 		r.initKabanmaxAuto()
+ 		event := r.autoRouting.Observe(&metadata, selectedOutbound.Tag())
+-        target := r.autoRouting.SelectForEvent(ctx, selectedOutbound.Tag(), &metadata, event)
+-        if target != selectedOutbound.Tag() {
+-            if alternative, ok := r.outbound.Outbound(target); ok { selectedOutbound = alternative }
+-        }
++		target := r.autoRouting.SelectForEvent(ctx, selectedOutbound.Tag(), &metadata, event)
++		if target != selectedOutbound.Tag() {
++			if alternative, ok := r.outbound.Outbound(target); ok {
++				selectedOutbound = alternative
++			}
++		}
+ 		onClose = N.AppendClose(onClose, func(err error) { r.autoRouting.Failed(event, err) })
+ 	}
+ 	chain, err := resolveOutbound(selectedOutbound, N.NetworkUDP)
+@@ -628,7 +630,7 @@
+ // came in for.
+ func (r *Router) logRefused(ctx context.Context, destination M.Socksaddr, err error) bool {
+ 	if errors.Is(err, errMissingFakeIPRecord) {
+-		r.logger.WarnContext(ctx, "connection to ", destination, " refused: no fakeip record (the address was given out shortly before a crash, was flushed, or was unused for a long time); the client gets a new one when it resolves the name again")
++		r.logger.DebugContext(ctx, "connection to ", destination, " refused: no fakeip record (the address was given out shortly before a crash, was flushed, or was unused for a long time); the client gets a new one when it resolves the name again")
+ 		return true
+ 	}
+ 	return false
+@@ -844,9 +846,11 @@
+ 				r.logger.InfoContext(ctx, "missing fakeip record, sniffed domain used: ", metadata.Domain)
+ 			}
+ 		case *R.RuleActionResolve:
+-            // A guard replays one actual failed dial, not a new DNS choice.
+-            // Match IP rules against that pinned address even if CDN DNS rotated.
+-            if autoroute.HasOriginalMetadata(ctx) && len(metadata.DestinationAddresses) == 1 { continue match }
++			// A guard replays one actual failed dial, not a new DNS choice.
++			// Match IP rules against that pinned address even if CDN DNS rotated.
++			if autoroute.HasOriginalMetadata(ctx) && len(metadata.DestinationAddresses) == 1 {
++				continue match
++			}
+ 			fatalErr = r.actionResolve(ctx, metadata, action)
+ 			if fatalErr != nil {
+ 				return
+diff --git a/route/route_log_test.go b/route/route_log_test.go
+--- a/route/route_log_test.go
++++ b/route/route_log_test.go
+@@ -110,8 +110,8 @@
+ }
+ 
+ // A connection to a FakeIP address the store has no record for is refused by design: the
+-// log says so at the warn level, with the address, not as an error of the router.
+-func TestMissingFakeIPRecordIsLoggedAsWarning(t *testing.T) {
++// log says so at the debug level, with the address, not as an error of the router.
++func TestMissingFakeIPRecordIsLoggedAsDebug(t *testing.T) {
+ 	router, output := newLoggedRouter(t)
+ 	router.dnsTransport = fakeDNSTransportManager{fakeIP: fakeFakeIPTransport{store: fakeFakeIPStore{prefix: netip.MustParsePrefix("198.18.0.0/15")}}}
+ 	metadata := adapter.InboundContext{
+@@ -129,14 +129,14 @@
+ 	go func() {
+ 		returned <- router.RoutePacketConnection(context.Background(), closedPacketConn{}, metadata)
+ 	}()
+-	require.Eventually(t, func() bool { return len(output.lines()) == 3 }, 3*time.Second, time.Millisecond, output.String())
++	require.Eventually(t, func() bool { return strings.Count(output.String(), "no fakeip record") == 3 }, 3*time.Second, time.Millisecond, output.String())
+ 	stopRouter()
+ 	require.NoError(t, <-returned)
+ 
+-	lines := output.lines()
++	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+ 	require.Len(t, lines, 3, output.String())
+ 	for _, line := range lines {
+-		require.True(t, strings.HasPrefix(line, "WARN"), line)
++		require.True(t, strings.HasPrefix(line, "DEBUG"), line)
+ 		require.Contains(t, line, "no fakeip record")
+ 		require.Contains(t, line, "198.18.0.5:22")
+ 	}
+diff --git a/protocol/group/fallback_stable.go b/protocol/group/fallback_stable.go
+--- a/protocol/group/fallback_stable.go
++++ b/protocol/group/fallback_stable.go
+@@ -379,7 +379,7 @@
+ 			detail := "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(err)
+ 			s.vetoStableProbeFailureLocked(c, at, probeReason, detail)
+ 			s.access.Unlock()
+-			s.logger.Warn("fallback health test probe-only failure [", probeReason, "] ", c.tag, ": ", detail, "; fresh received data on a new user connection, selection unchanged")
++			s.logger.Debug("fallback health test probe-only failure [", probeReason, "] ", c.tag, ": ", detail, "; fresh received data on a new user connection, selection unchanged")
+ 			return true
+ 		}
+ 		if c.tag == selected && err != nil {
+@@ -391,7 +391,7 @@
+ 				s.health[c.tag] = h
+ 				s.appendStableEventLocked(StableFallbackEvent{At: time.Now(), From: c.tag, To: c.tag, Reason: "Suspected check failure: " + h.lastError, CheckReason: probeReason})
+ 				s.access.Unlock()
+-				s.logger.Warn("fallback health test suspect [", probeReason, "] ", c.tag, ": ", h.lastError, "; repeating in ", s.stable.failureRetryDelay(), ", traffic selection unchanged")
++				s.logger.Debug("fallback health test suspect [", probeReason, "] ", c.tag, ": ", h.lastError, "; repeating in ", s.stable.failureRetryDelay(), ", traffic selection unchanged")
+ 				return false
+ 			}
+ 			s.stable.suspect = ""
+@@ -513,7 +513,7 @@
+ 		detail := s.health[candidates[active].tag].lastError
+ 		s.vetoStableProbeFailureLocked(candidates[active], time.Now(), checkReason, detail)
+ 		s.access.Unlock()
+-		s.logger.Warn("fallback health test probe-only failure [", checkReason, "] ", selected, "; fresh received data during this round, selection unchanged")
++		s.logger.Debug("fallback health test probe-only failure [", checkReason, "] ", selected, "; fresh received data during this round, selection unchanged")
+ 		return result
+ 	}
+ 	old := s.selected

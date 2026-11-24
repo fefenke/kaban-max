@@ -55,6 +55,12 @@ for package in sorted(root.glob('*.ipk')):
         assert 'usr/lib/kabanmax/diagnostics/auto_routing.uc' in files
         assert 'usr/lib/kabanmax/diagnostics/auto_records.uc' in files
         assert 'usr/lib/kabanmax/singbox/fingerprints.uc' in files
+        source_root = repo / 'kabanmax/files/usr/lib'
+        for source in source_root.rglob('*'):
+            if source.is_file():
+                name = 'usr/lib/kabanmax/' + source.relative_to(source_root).as_posix()
+                expected = source.read_bytes().replace(b'__COMPILED_VERSION_VARIABLE__', version.encode())
+                assert files.get(name) == expected, 'Backend package differs from source: ' + name
     if is_core:
         variant = 'tiny' if '_tiny_' in package.name else 'base'
         binary = root / f'build/arm64/{variant}/sing-box'

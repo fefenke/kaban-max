@@ -1,0 +1,21 @@
+{
+  "purpose": "Exact allowlist of public synthetic self-signed test PKI; never used by production packages",
+  "pem_sha256": {
+    "fe-app-kabanmax/src/helpers/tests/openvpnFixtures.ts": [
+      "a1bb609b6e3eb1b2ca97659843431b7434e2c52b45d4d7006f9f507cc0fef35f",
+      "8116c45120350c6cf245350b90d91b9cab2d37f27e894f3b4f37a34c5b8cd50d",
+      "a638a6677e07d2dd58dac3bad94ca474ae2888094578ed4c8d19fb9a898059e7",
+      "d0f203934274ea905a0355d5c6250c8e43f622bf45eda68e5975b9f027f7fe1d"
+    ]
+  },
+  "public_upstream_email_sha256": {
+    "usr/bin/sing-box": [
+      "074684e897dc2c785d579022bdb1a7a9bb7cc11f8c46c56ca6b812c2226e2429",
+      "3055c9465f2327cc4e42b0c28b68b38e151f3097d9425ac79e18e54804ed52a8"
+    ],
+    "usr/share/licenses/sing-box/LICENSE": [
+      "8a3e05dcb939dbcedc0ab7a088b39b9f18b50bb398a80184bcc0970a75a1d71c"
+    ]
+  },
+  "upstream_email_provenance": "Reviewed public upstream license attribution and embedded public CA/WireGuard notices. Keep legal attribution intact; no router credential exemption."
+}

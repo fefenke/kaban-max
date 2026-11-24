@@ -1,0 +1,40 @@
+diff --git a/common/autoroute/storage.go b/common/autoroute/storage.go
+--- a/common/autoroute/storage.go
++++ b/common/autoroute/storage.go
+@@ -150,8 +150,10 @@
+ 			}
+ 		}
+ 	}
++	// Keep the last probe diagnostic for the configured retention.
++	// Deadline only limits authorization to grant a route.
+ 	for id, d := range m.decisions {
+-		if !now.Before(d.Deadline) {
++		if now.Sub(d.Created) > retention {
+ 			delete(m.decisions, id)
+ 		}
+ 	}
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -73,7 +73,7 @@
+ 
+ 	RegistryOverflow uint64
+ 	LogFailure       func(Event, error) bool
+-	LogSourceFailure  func(Event, error)
++	LogSourceFailure func(Event, error)
+ 	mu               sync.Mutex
+ 	job              sync.Mutex
+ 	sources          map[string]option.KabanmaxAutoSource
+@@ -693,6 +693,12 @@
+ 		events = append(events, copy)
+ 	}
+ 	for _, d := range m.decisions {
++		if !now.Before(d.Deadline) {
++			d.ApplyAllowed, d.AutoApplyEligible = false, false
++			if d.Status == "proposed" {
++				d.Status, d.Reason = "expired", "check_expired"
++			}
++		}
+ 		decisions = append(decisions, d)
+ 	}
+ 	sort.Slice(events, func(i, j int) bool { return events[i].Updated.After(events[j].Updated) })

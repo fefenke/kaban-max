@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go r11 test core, ucode, TypeScript/LuCI, network-none Docker.
 
-**Spec:** пользовательский KABANMAX_development_04B_FINISH_REAL_IP_CHECKS.md и дополнение к design №04.
+**Spec:** пользовательский KABANMAX_FINISH_REAL_IP_CHECKS.md и дополнение к design №04.
 
 ## Constraints / review focus
 

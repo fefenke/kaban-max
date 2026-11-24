@@ -1,47 +1,59 @@
-# Сборка, установка и откат
+# Сборка, версии и внешние действия
 
-## Источник
-Работать из корня KABANMAX. Node.js 22+, npm, Python 3, Bash/Git; backend tests требуют ucode. Полный packaging: Alpine apk v3/mkpkg, GNU tar/zstd, Go toolchain и официальный LuCI po2lmo. `scripts/release.Dockerfile` закрепляет базовый образ и source po2lmo; Go version/commit ядра — в `core/UPSTREAM`.
+Локальная сборка не означает разрешение на установку/публикацию. Статус версии — [PROJECT_STATE](PROJECT_STATE.md), ограничения — [SECURITY](SECURITY.md), проверки — [TESTING](TESTING.md).
+
+## Источники и версии
+
+| Что | Источник истины |
+| --- | --- |
+| Upstream repo/commit/tag, local core package version, Go toolchain | `core/UPSTREAM` |
+| Изменения Go | все `core/patches/*.patch` по имени |
+| Branding | `scripts/brand-core.py`, после patches |
+| Версия приложения/LuCI | аргумент release build / package variables; placeholder в `core/constants.uc` подставляется сборкой |
+| Core compatibility floor | `core/constants.uc` + дополнительные проверки `config/validator.uc` |
+| Формат/содержимое packages | package Makefiles, `scripts/build-release.sh`, `check-release.sh` |
+
+Номер core не равен номеру приложения. Локальный tag/README не подтверждает GitHub release. Для нового patch проверять source minimum и включение тестов в runner/CI.
+
+Защита формирования снимка мониторинга требует core с `0025-bounded-connection-snapshots.patch` вместе с backend/LuCI; обновление только UI не ограничивает аллокации прежнего core. Порог совместимости авторутинга остаётся r24, общий — r10. Проверка clean apply и race — `tests/core/run_connections_snapshot.sh`; [контракт диагностики](LOGGING.md).
+
+## Локальная подготовка
+
+Работать из корня. Frontend/сайт: Node.js 22+ и соответствующий lockfile/package manager. Backend tests: Bash, ucode с модулями. Core: Git, Python 3 и Go из UPSTREAM. Полная упаковка: инструменты pinned [release Dockerfile](../scripts/release.Dockerfile), официальный LuCI po2lmo, tar/zstd и package tools.
+
+Сборка интерфейса: из `fe-app-kabanmax` выполнить `npm ci --ignore-scripts --no-audit --no-fund`, `npm run build`. Переводы: `node sync-locales.js`, сохранить существующие RU и заполнить новые; проверить localization tests. Не править генерируемый bundle вручную.
+
+## Core
+
+Уровни сетевого шума меняет patch `0026-actionable-log-levels.patch` у источника. Для этой политики нужен core с данным patch; одного обновления LuCI недостаточно. Regression runner — `sh tests/core/run_log_policy.sh SOURCE_GIT PROJECT`, без сети при заполненном Go module cache.
+
+WAN two-event gate/per-question DNS/IPv6 FakeIP требуют текущей серии до `0028-wan-outage-log-gate.patch` и согласованного backend с новым диапазоном. Частичная установка только core или только generator не обеспечивает новый контракт. Проверка — `tests/core/run_network_availability.sh`. Новых packages/установки в этой задаче не было; source compatibility floors не означают наличие этих исправлений в старом core.
+
+Локальная команда из корня, с загрузкой upstream/modules при пустом кэше:
 
 ```sh
-cd fe-app-kabanmax
-npm ci --ignore-scripts --no-audit --no-fund
-npm run lint
-npm test -- --run --maxWorkers=2
-npm run build
-cd ..
-bash tests/run.sh
+bash scripts/build-core.sh base x86_64 dist/core-review
 ```
 
-Для документации: `cd docs && npm ci --ignore-scripts && npm run build`. Это локальные сборки; скачивание зависимостей обращается к реестрам, но не к роутерам/VPS.
+Другие допустимые variant/architecture сверять со скриптом. `CORE_SOURCE` может дать локальные Git-объекты, но сборка всё равно checkout-ит pinned commit и применяет всю серию patches. Нельзя считать произвольный изменённый checkout источником воспроизводимого release.
 
-`release.Dockerfile` предназначен для packaging и не устанавливает интерпретатор ucode: backend-тесты требуют отдельного локального окружения с ucode и его модулями. Не считать отсутствие интерпретатора успешным пропуском тестов. Для Intl-тестов Node необходимы полные ICU-локали (`icu-data-full` в Alpine); текущий Dockerfile их устанавливает, старый кэшированный образ может отличаться.
+## Release packages
 
-## Пакеты
-```sh
-docker build -f scripts/release.Dockerfile -t kabanmax-build .
-docker run --rm -e GOFLAGS=-p=2 -v "$PWD:/work" -w /work kabanmax-build   bash scripts/build-release.sh 0.1.4 /work/dist/release
-bash scripts/check-release.sh dist/release
-```
+Public 0.2.3 содержит текущий r40, а не ранний private preview того же номера. Перед публикацией проверять все backend payload files, privacy source/packages и точные SHA; GPL corresponding source публикуется отдельным архивом с checksum. Публикация новой чистой версии сохраняет старую историю/теги по выбору пользователя. [Команды, native install и границы](RELEASE_023.md).
 
-В PowerShell путь bind передавать отдельным аргументом, например `--mount "type=bind,source=$($PWD.Path),target=/work"`. Не использовать старый контейнер с mount соседнего checkout.
+Точная процедура — [build workflow](../.github/workflows/build.yml), [build-release](../scripts/build-release.sh), [check-release](../scripts/check-release.sh). Вызов `scripts/build-release.sh` принимает **согласованную версию приложения x.y.z** и output directory; не копировать старый номер из отчёта. Результаты складывать в ignored `dist/`, не в исходники и не в соседний проект.
 
-Core build получает точный upstream commit, применяет все `core/patches/*.patch` в порядке имён, затем `brand-core.py`. `CORE_SOURCE` — необязательный локальный Git-источник для объектов, всё равно checkout pinned commit + всю серию patches. Нужен доступ к upstream/Go modules при отсутствии кэша. Пакеты base/tiny, app/LuCI/RU в APK/IPK, manifests, install.sh, SHA256SUMS — содержимое выпуска. Внутренний package version ядра не равен версии приложения. Для r9 добавлен закреплённый uTLS-lx; точная версия/checksums находятся во втором patch, лицензия входит в пакет.
+Перед выпуском: требуемые suites, чистая source preparation, package payload/version/license checks, согласованность app/LuCI/core/RU, manifests и SHA256. Cross-build ARM64 не равен запуску на ARM64. Все проверки фиксировать с их фактическим scope.
 
-## Подготовка исходников ядра для разработки
-```sh
-git clone <repository-из-core/UPSTREAM> .local/core-clean
-git -C .local/core-clean checkout --detach <commit-из-core/UPSTREAM>
-for patch in "$PWD"/core/patches/*.patch; do
-  git -C .local/core-clean apply --check "$patch"
-  git -C .local/core-clean apply "$patch"
-done
-```
-Угловые значения — обозначения, не готовая команда. Отсчитывать patch относительно `git -C` каталога. Локальный `.local/core-src` сохранён как рабочая история и проверяется отдельно.
+## Установка, публикация, откат
 
-## Установка/обновление — только отдельным действием
-Пользовательские инструкции: [установка](guide/install.md). На целевом устройстве определить OpenWrt, архитектуру, opkg/apk и свободное место; использовать соответствующие пакеты. Через LuCI «Компоненты» проверить обновление и установить выбранную версию. На 0.1.0 без новой кнопки возможен ручной установщик. Конфигурация устройства не должна копироваться с другого роутера ради обновления приложения.
+- Только новый явный запрос на соответствующее внешнее действие. Сначала подготовить конкретные проверяемые artifacts; не запрашивать разрешение на абстрактную будущую сборку вместо выполнения локальной работы.
+- Сверить устройство, architecture, OpenWrt/opkg/apk, свободное место и сохранённую собственную конфигурацию. Не переносить чужой router config.
+- Сохранять известный рабочий комплект и историю. Downgrade/несовместимость схем требуют оценки; старый APK сам по себе не гарантирует откат.
+- Для согласованного обновления использовать **штатный install.sh/встроенный updater**, включая поддерживаемый local mirror для unpublished preview. Не подменять его ручными stop/reload и отдельной deployment-обвязкой: installer уже проверяет память, зависимости, checksum/config и возвращает службу. Заранее предупредить о паузе и учитывать зависимость внешнего доступа ассистента от KabanMax; выполнение/восстановление должно жить на роутере. Для отдельной диагностики с остановкой нужен автономный запуск либо заранее оговорённое действие пользователя. Не складывать большое ядро и backup одновременно в tmpfs при малой RAM; private backup держать на компьютере/flash с проверкой места. Эти требования не заменяют отдельное разрешение на доступ/установку.
+- Не загружать `.local/`, всю папку `dist/`, ключи, конфиги и журналы. Проверить состав assets, исходники GPL, checksums и точный source commit.
+- Отдельно подтвердить публикацию и отдельно установку. Успешный CI не доказывает аппаратную приёмку.
 
-До изменения сохранить собственную конфигурацию и известные рабочие пакеты; при отказе вернуть согласованный комплект app/UI/core и собственный конфиг. Пакетный downgrade и несовместимость схем требуют отдельной проверки; наличия старого APK недостаточно. Возврат локальной реорганизации описан в [аудите](ISOLATION_AUDIT.md).
+Пользовательская инструкция: [guide/install](guide/install.md). Политика обновления инженерных документов: [WORKFLOW](WORKFLOW.md).
 
-Публикация: только по явному запросу; проверить metadata версии, prerelease, checksums и исходники GPL. Не загружать `.local`, весь dist или исследовательский архив. Публикация пакетов не означает установку на оборудование.
+Текущий preview **0.2.3/r29**: все 10 APK/IPK собраны/проверены; на один локальный ARM64 роутер полный base-комплект установлен штатным install.sh через loopback mirror (exit 0), без GitHub публикации. Это заменило первоначальную ручную logging-only установку. Неудачная отдельная deployment-обвязка, сохранность данных, команды, hashes и пределы smoke — [PREVIEW_023](PREVIEW_023.md); история WARP — [WARP_RECOVERY](WARP_RECOVERY.md).

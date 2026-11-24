@@ -51,4 +51,14 @@ t.test("WARP API bootstrap does not depend on DNS through this same WARP", () =>
     }
 });
 
+t.test("durable local port belongs to the generated WARP profile and is a soft hint", () => {
+    fixture.seed({ settings: fixture.settings(), section: [{".name":"vpn", enabled:"1", action:"connection"}], tunnel: [
+        {".name":"first", section:"vpn", kind:"warp", name:"first", warp_port:"2408", warp_profile_id:"p1", warp_profile_auth_token:"t", warp_profile_private_key:"k", warp_local_port_hint:"42000", warp_local_port_profile:"p1"},
+        {".name":"second", section:"vpn", kind:"warp", name:"second", warp_profile_id:"p2", warp_profile_auth_token:"t", warp_profile_private_key:"k2", warp_local_port_hint:"43000", warp_local_port_profile:"old-profile"}
+    ] });
+    let config = generator.build({service_address:"127.0.0.1"});
+    let first = q.endpoint(config,"vpn/first");
+    t.eq(first.listen_port_hint,42000); t.eq(first.listen_port,null); t.eq(first.port,2408);
+    t.eq(q.endpoint(config,"vpn/second").listen_port_hint,null);
+});
 t.done();

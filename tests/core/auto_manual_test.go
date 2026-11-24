@@ -150,9 +150,7 @@ func TestManualApplyCancellationAndRegistryBudget(t *testing.T) {
 			m, q, _, _ := testManager(t, "fail:")
 			event := manualEvent(m)
 			if kind == "budget" {
-				for i := 0; i < 64; i++ {
-					m.reserved[string(rune(i))] = true
-				}
+				fillEssentialBudget(m)
 			} else {
 				lookup := m.Lookup
 				m.Lookup = func(ctx context.Context, name string) ([]netip.Addr, uint32, error) {

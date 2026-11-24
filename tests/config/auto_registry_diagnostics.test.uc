@@ -1,0 +1,24 @@
+let t=require("t");let fs=require("fs");let tmp=require("stub").tmpdir();
+let store=require("config.auto_registry");let diag=require("config.auto_diagnostics");
+store.paths.pending=tmp+"/intent.json";store.paths.applied=tmp+"/flash.json";store.paths.flushed=tmp+"/clock.json";
+require("config.auto_routing").paths.suppression=tmp+"/excluded.json";
+diag.paths.state=tmp+"/details.json";diag.paths.error=tmp+"/details.error";
+let now=1000;store.io.monotonic=()=>now;
+let original={id:"event",source_id:"source",message:"splice read: connection timed out",at:"2026-11-24T12:00:00Z"};
+let row={id:"route",owner:"auto-routing",source_id:"source",source:"META",ip:"203.0.113.8",domain:"one.example",domain_known:true,source_ip:"192.0.2.1",inbound:"tproxy-in",port:443,target:"WARP",status:"applied",persistent_ip:true,all_devices:true,all_ports:true,failure:original,domains:["observed.example"]};
+t.test("compact intent restores full Applied view from RAM without making diagnostics flash intent",()=>{
+ store.save("applied",[{owner:"auto-routing",scope:store.key(row),record:row}]);
+ let compact=store.load().entries[0].record;
+ t.eq(compact.failure.message,null);t.eq(compact.domains,null);
+ let restored=diag.enrich(compact);t.eq(restored.original_failure,original);t.ok(index(restored.domains,"observed.example")>=0);
+ now+=86400;t.ok(store.flush());
+ let flash=fs.readfile(store.paths.applied);t.eq(index(flash,original.message),-1);
+ let latest={...original,id:"later",message:"new route timeout"};
+ store.remember([{...row,original_failure:original,failure:latest,new_error:true,error_port:5222}]);
+ now+=86400;t.eq(store.flush(),false);t.eq(fs.readfile(store.paths.applied),flash);
+ restored=diag.enrich(store.load().entries[0].record);
+ t.eq(restored.original_failure,original);t.eq(restored.failure,latest);t.eq(restored.error_port,5222);
+ let page=require("diagnostics.auto_records").select({registry_version:3,manual_apply_supported:true,sources:[{id:"source",outbound:"META",warp:"WARP"}],leases:[]},[],{source_section:"source",status:"applied"},store.load().entries);
+ t.eq(page.rows[0].status,"saved");t.eq(page.rows[0].original_failure,original);
+});
+t.done();

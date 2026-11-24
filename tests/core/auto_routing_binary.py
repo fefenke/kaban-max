@@ -201,7 +201,7 @@ try:
                 assert invalid["status"] == "inconclusive" and COUNTS == before, "unrelated DNS owner authorized HTTPS"
             DNS_WRONG_OWNER = False
             fake_config = copy.deepcopy(config)
-            fake_config["dns"]["servers"].append({"type": "fakeip", "tag": "fake", "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/112"})
+            fake_config["dns"]["servers"].append({"type": "fakeip", "tag": "fake", "inet4_range": "198.18.0.0/15", "inet6_range": "2001:2::/112"})
             fake_config["dns"]["rules"] = [{"domain_suffix": ["example.test"], "action": "route", "server": "fake"}]
             with running(fake_config):
                 def fake_address(domain):

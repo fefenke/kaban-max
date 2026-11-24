@@ -1,0 +1,609 @@
+diff --git a/log/observable.go b/log/observable.go
+--- a/log/observable.go
++++ b/log/observable.go
+@@ -8,6 +8,7 @@
+ 	"sync/atomic"
+ 	"time"
+ 
++	"github.com/sagernet/sing-box/common/wanstate"
+ 	"github.com/sagernet/sing/common"
+ 	F "github.com/sagernet/sing/common/format"
+ 	"github.com/sagernet/sing/common/observable"
+@@ -160,6 +161,9 @@
+ }
+ 
+ func (f *defaultFactory) output(ctx context.Context, level Level, tag string, message string, timestamp time.Time) {
++	if (level == LevelWarn || level == LevelError) && wanstate.Suppress(tag, message) {
++		return
++	}
+ 	if level <= f.level && (f.needConsole || level == LevelPanic || level == LevelFatal) {
+ 		formatted := f.formatter.Format(ctx, level, tag, message, timestamp)
+ 		if level == LevelPanic {
+diff --git a/route/router.go b/route/router.go
+--- a/route/router.go
++++ b/route/router.go
+@@ -11,6 +11,7 @@
+ 	"github.com/sagernet/sing-box/common/autoroute"
+ 	"github.com/sagernet/sing-box/common/process"
+ 	"github.com/sagernet/sing-box/common/taskmonitor"
++	"github.com/sagernet/sing-box/common/wanstate"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/experimental/clashmode"
+ 	"github.com/sagernet/sing-box/log"
+@@ -243,6 +244,7 @@
+ 			r.defaultOutbound = r.outbound.Default()
+ 		}
+ 		close(r.started)
++		scope.Add(wanstate.Start(r.ctx, func(message string) { r.logger.Warn(message) }))
+ 		return nil
+ 	case adapter.StartStateStarted:
+ 		if r.autoRouting != nil {
+diff --git a/route/conn.go b/route/conn.go
+--- a/route/conn.go
++++ b/route/conn.go
+@@ -19,6 +19,7 @@
+ 	tf "github.com/sagernet/sing-box/common/tlsfragment"
+ 	"github.com/sagernet/sing-box/common/tlsspoof"
+ 	"github.com/sagernet/sing-box/common/urltest"
++	"github.com/sagernet/sing-box/common/wanstate"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing/common"
+ 	"github.com/sagernet/sing/common/buf"
+@@ -124,6 +125,7 @@
+ 			dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
+ 		}
+ 		err = E.Cause(err, "open connection to ", remoteString, dialerString)
++		wanstate.RequestCheck()
+ 		m.deleteURLTestHistory(metadata.OutboundChain)
+ 		N.CloseOnHandshakeFailure(conn, onClose, err)
+ 		m.logConnectionFailure(ctx, err)
+@@ -200,6 +202,7 @@
+ 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
+ 			}
+ 			err = E.Cause(err, "open packet connection to ", remoteString, dialerString)
++			wanstate.RequestCheck()
+ 			m.deleteURLTestHistory(metadata.OutboundChain)
+ 			N.CloseOnHandshakeFailure(conn, onClose, err)
+ 			m.logConnectionFailure(ctx, err)
+@@ -224,6 +227,7 @@
+ 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
+ 			}
+ 			err = E.Cause(err, "listen packet connection using ", dialerString)
++			wanstate.RequestCheck()
+ 			m.deleteURLTestHistory(metadata.OutboundChain)
+ 			N.CloseOnHandshakeFailure(conn, onClose, err)
+ 			m.logConnectionFailure(ctx, err)
+@@ -295,6 +299,7 @@
+ func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn, destination net.Conn, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) {
+ 	_, err := bufio.CopyWithIncreateBuffer(destination, source, bufio.DefaultIncreaseBufferAfter, bufio.DefaultBatchSize)
+ 	if err != nil {
++		wanstate.RequestCheck()
+ 		common.Close(source, destination)
+ 	} else {
+ 		destinationWriter, _ := N.UnwrapCountWriter(destination, nil)
+diff --git a/common/wanstate/state.go b/common/wanstate/state.go
+new file mode 100644
+--- /dev/null
++++ b/common/wanstate/state.go
+@@ -0,0 +1,174 @@
++package wanstate
++
++import (
++	"context"
++	"fmt"
++	"os"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"time"
++)
++
++type Sample struct {
++	Available, Unknown bool
++	Reason             string
++}
++type Monitor struct {
++	mu            sync.Mutex
++	offline       bool
++	failures      int
++	downAt        time.Time
++	suppressed    uint64
++	unknownWarned bool
++	emit          func(string)
++	wake          chan struct{}
++}
++
++var active atomic.Pointer[Monitor]
++
++func New(emit func(string)) *Monitor { return &Monitor{emit: emit, wake: make(chan struct{}, 1)} }
++func Install(m *Monitor) func() {
++	old := active.Swap(m)
++	return func() { active.CompareAndSwap(m, old) }
++}
++
++// Error paths may request an early check even when their own log level is Debug.
++func RequestCheck() {
++	if m := active.Load(); m != nil {
++		select {
++		case m.wake <- struct{}{}:
++		default:
++		}
++	}
++}
++
++func (m *Monitor) Observe(sample Sample) {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	reason := sample.Reason
++	if len(reason) > 1536 {
++		reason = reason[:1536] + " [truncated]"
++	}
++	if sample.Unknown {
++		m.failures = 0
++		if !m.offline && !m.unknownWarned {
++			m.unknownWarned = true
++			m.emit("WAN monitoring unavailable: " + reason + "; no outage assumed, network error logging remains enabled")
++		}
++		return
++	}
++	if sample.Available {
++		m.failures = 0
++		m.unknownWarned = false
++		if m.offline {
++			// Keep the gate closed until the recovery event has actually been emitted.
++			m.emit(fmt.Sprintf("WAN restored: %s; downtime=%s; suppressed=%d network messages", reason, time.Since(m.downAt).Round(time.Second), m.suppressed))
++			m.offline = false
++			m.suppressed = 0
++		}
++		return
++	}
++	m.failures++
++	if !m.offline && m.failures >= 2 {
++		m.offline = true
++		m.downAt = time.Now()
++		m.suppressed = 0
++		m.emit("WAN unavailable: " + reason + "; confirmed by two failed rounds; dependent network errors are suppressed until a verified response returns")
++	}
++}
++
++func Suppress(tag, message string) bool {
++	lower := strings.ToLower(message)
++	if strings.HasPrefix(lower, "wan ") {
++		return false
++	}
++	m := active.Load()
++	if m == nil {
++		return false
++	}
++	network := strings.Contains(lower, "exchange failed for") || strings.Contains(lower, "exchanges failed") || strings.Contains(lower, "dns failure grouping limit reached") || strings.Contains(lower, "fallback health test confirmed failure")
++	lowerTag := strings.ToLower(tag)
++	for _, kind := range []string{"connection", "outbound", "vless", "vmess", "trojan", "wireguard", "warp", "hysteria", "tuic"} {
++		network = network || strings.Contains(lowerTag, kind)
++	}
++	// A domain named classroom.example must not accidentally match an OOM exemption.
++	for _, word := range []string{"parse configuration", "invalid configuration", "decode configuration", "load certificate", "read certificate", "permission denied", "address already in use", "out of memory", "panic", "checkpoint", "cache file", "failed to start", "save "} {
++		if strings.Contains(lower, word) {
++			return false
++		}
++	}
++	for _, word := range []string{"no route to host", "network is unreachable", "endpoint not connected", "connection reset by peer", "connection refused", "broken pipe", "timeout", "timed out", "deadline exceeded", "handshake did not complete"} {
++		network = network || strings.Contains(lower, word)
++	}
++	if strings.Contains(strings.ToLower(tag), "wireguard") || strings.Contains(strings.ToLower(tag), "warp") || strings.Contains(strings.ToLower(tag), "vless") {
++		network = network || strings.Contains(lower, "handshake") || strings.Contains(lower, "connection closed")
++	}
++	if !network {
++		return false
++	}
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	if m.offline {
++		m.suppressed++
++		return true
++	}
++	select {
++	case m.wake <- struct{}{}:
++	default:
++	}
++	return false
++}
++
++// OpenWrt only. Tests and other platforms never start external probes implicitly.
++func Start(ctx context.Context, emit func(string)) func() error {
++	if _, err := os.Stat("/etc/openwrt_release"); err != nil {
++		return func() error { return nil }
++	}
++	child, cancel := context.WithCancel(ctx)
++	m := New(emit)
++	restore := Install(m)
++	done := make(chan struct{})
++	go func() { defer close(done); m.run(child) }()
++	return func() error { cancel(); <-done; restore(); return nil }
++}
++func (m *Monitor) run(ctx context.Context) {
++	var lastInterfaces []string
++	lastRound := time.Time{}
++	for {
++		if elapsed := time.Since(lastRound); elapsed < 5*time.Second {
++			timer := time.NewTimer(5*time.Second - elapsed)
++			select {
++			case <-ctx.Done():
++				timer.Stop()
++				return
++			case <-timer.C:
++			}
++		}
++		if ctx.Err() != nil {
++			return
++		}
++		lastRound = time.Now()
++		sample, interfaces := measure(ctx, lastInterfaces)
++		if ctx.Err() != nil {
++			return
++		}
++		if len(interfaces) > 0 {
++			lastInterfaces = interfaces
++		}
++		m.Observe(sample)
++		delay := 5 * time.Second
++		if sample.Available {
++			delay = 30 * time.Second
++		}
++		timer := time.NewTimer(delay)
++		select {
++		case <-ctx.Done():
++			timer.Stop()
++			return
++		case <-m.wake:
++			timer.Stop()
++		case <-timer.C:
++		}
++	}
++}
+diff --git a/common/wanstate/probe.go b/common/wanstate/probe.go
+new file mode 100644
+--- /dev/null
++++ b/common/wanstate/probe.go
+@@ -0,0 +1,207 @@
++package wanstate
++
++import (
++	"context"
++	"crypto/tls"
++	"crypto/x509"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"os"
++	"sort"
++	"strconv"
++	"strings"
++	"sync"
++	"time"
++)
++
++type endpoint struct {
++	host, path string
++	addresses  []string
++}
++
++var endpoints = []endpoint{
++	{"cloudflare-dns.com", "/dns-query?name=example.com&type=A", []string{"1.1.1.1", "2606:4700:4700::1111"}},
++	{"dns.google", "/resolve?name=example.com&type=A", []string{"8.8.8.8", "2001:4860:4860::8888"}},
++}
++
++func readBounded(path string, limit int64) (string, error) {
++	file, err := os.Open(path)
++	if err != nil {
++		return "", err
++	}
++	defer file.Close()
++	data, err := io.ReadAll(io.LimitReader(file, limit+1))
++	if len(data) > int(limit) {
++		return "", fmt.Errorf("file exceeds diagnostic limit")
++	}
++	return string(data), err
++}
++func routeInterfaces(v4, v6 string) []string {
++	names := map[string]bool{}
++	for _, line := range strings.Split(v4, "\n") {
++		f := strings.Fields(line)
++		if len(f) < 8 || f[1] != "00000000" || f[7] != "00000000" {
++			continue
++		}
++		flags, _ := strconv.ParseUint(f[3], 16, 32)
++		if flags&1 != 0 && flags&0x200 == 0 && f[0] != "lo" {
++			names[f[0]] = true
++		}
++	}
++	for _, line := range strings.Split(v6, "\n") {
++		f := strings.Fields(line)
++		if len(f) < 10 || f[0] != strings.Repeat("0", 32) || f[1] != "00" {
++			continue
++		}
++		flags, _ := strconv.ParseUint(f[8], 16, 32)
++		if flags&1 != 0 && flags&0x200 == 0 && f[9] != "lo" {
++			names[f[9]] = true
++		}
++	}
++	var result []string
++	for name := range names {
++		result = append(result, name)
++	}
++	sort.Strings(result)
++	if len(result) > 16 {
++		result = result[:16]
++	}
++	return result
++}
++func linkReason(names, previous []string) string {
++	reason := "default-route=" + strings.Join(names, ",")
++	if len(names) == 0 {
++		reason = "main-table default-route=none"
++		names = previous
++	}
++	for _, name := range names {
++		if strings.ContainsAny(name, "/\\") || len(name) > 32 {
++			continue
++		}
++		device, err := net.InterfaceByName(name)
++		if err != nil {
++			reason += "; " + name + " interface=missing"
++			continue
++		}
++		state := "down"
++		if device.Flags&net.FlagUp != 0 {
++			state = "up"
++		}
++		carrier, err := readBounded("/sys/class/net/"+name+"/carrier", 32)
++		if err != nil {
++			carrier = "unknown"
++		}
++		address := "none"
++		addrs, _ := device.Addrs()
++		for _, a := range addrs {
++			ip := net.ParseIP(strings.Split(a.String(), "/")[0])
++			if ip != nil && !ip.IsLoopback() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() {
++				address = "present"
++				break
++			}
++		}
++		reason += fmt.Sprintf("; %s interface=%s carrier=%s address=%s", name, state, strings.TrimSpace(carrier), address)
++	}
++	return reason
++}
++func verifyBody(response *http.Response) error {
++	if response.StatusCode != http.StatusOK {
++		return fmt.Errorf("HTTP status %d", response.StatusCode)
++	}
++	data, err := io.ReadAll(io.LimitReader(response.Body, 4097))
++	if err != nil {
++		return err
++	}
++	if len(data) > 4096 {
++		return fmt.Errorf("response exceeds 4096-byte limit")
++	}
++	var body struct {
++		Status *int `json:"Status"`
++	}
++	if json.Unmarshal(data, &body) != nil || body.Status == nil {
++		return fmt.Errorf("invalid DNS JSON response")
++	}
++	return nil // Any DNS rcode is verified received data, not proof a queried name exists.
++}
++func trustError(err error) bool {
++	var authority x509.UnknownAuthorityError
++	var hostname x509.HostnameError
++	var cert x509.CertificateInvalidError
++	return errors.As(err, &authority) || errors.As(err, &hostname) || errors.As(err, &cert)
++}
++func probe(ctx context.Context, target endpoint) Sample {
++	var reasons []string
++	unknown := false
++	for _, address := range target.addresses {
++		if ctx.Err() != nil {
++			break
++		}
++		attempt, cancel := context.WithTimeout(ctx, 2*time.Second)
++		dialer := &net.Dialer{Timeout: 1500 * time.Millisecond, Control: control}
++		transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, TLSHandshakeTimeout: 1500 * time.Millisecond, ResponseHeaderTimeout: 1500 * time.Millisecond, MaxResponseHeaderBytes: 8192,
++			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
++			DialContext: func(c context.Context, network, ignored string) (net.Conn, error) {
++				return dialer.DialContext(c, "tcp", net.JoinHostPort(address, "443"))
++			},
++		}
++		client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
++		request, _ := http.NewRequestWithContext(attempt, http.MethodGet, "https://"+target.host+target.path, nil)
++		request.Header.Set("Accept", "application/dns-json")
++		response, err := client.Do(request)
++		if err == nil {
++			err = verifyBody(response)
++			response.Body.Close()
++		}
++		transport.CloseIdleConnections()
++		cancel()
++		if err == nil {
++			return Sample{Available: true, Reason: target.host + " verified HTTPS response"}
++		}
++		unknown = unknown || trustError(err) || errors.Is(err, os.ErrPermission)
++		detail := err.Error()
++		if len(detail) > 256 {
++			detail = detail[:256]
++		}
++		reasons = append(reasons, address+": "+detail)
++	}
++	return Sample{Unknown: unknown, Reason: target.host + " [" + strings.Join(reasons, "; ") + "]"}
++}
++func measure(ctx context.Context, previous []string) (Sample, []string) {
++	v4, e4 := readBounded("/proc/net/route", 65536)
++	v6, e6 := readBounded("/proc/net/ipv6_route", 65536)
++	names := routeInterfaces(v4, v6)
++	reason := linkReason(names, previous)
++	devices := names
++	if len(devices) == 0 {
++		devices = previous
++	}
++	if detail := netifdReason(ctx, devices); detail != "" {
++		reason += "; " + detail
++	}
++	if e4 != nil && e6 != nil {
++		reason = "route state unavailable; " + reason
++	}
++	child, cancel := context.WithTimeout(ctx, 5*time.Second)
++	defer cancel()
++	results := make([]Sample, len(endpoints))
++	var wait sync.WaitGroup
++	for i, target := range endpoints {
++		wait.Add(1)
++		go func(i int, target endpoint) { defer wait.Done(); results[i] = probe(child, target) }(i, target)
++	}
++	wait.Wait()
++	unknown := false
++	var failures []string
++	for _, result := range results {
++		if result.Available {
++			return Sample{Available: true, Reason: reason + "; " + result.Reason}, names
++		}
++		unknown = unknown || result.Unknown
++		failures = append(failures, result.Reason)
++	}
++	return Sample{Unknown: unknown, Reason: reason + "; external checks failed: " + strings.Join(failures, " | ") + "; upstream/ISP cause is not established"}, names
++}
+diff --git a/common/wanstate/netifd.go b/common/wanstate/netifd.go
+new file mode 100644
+--- /dev/null
++++ b/common/wanstate/netifd.go
+@@ -0,0 +1,97 @@
++package wanstate
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"os/exec"
++	"strings"
++	"time"
++)
++
++// Only status/error codes are retained. Never print raw netifd data or credentials.
++func formatNetifd(data []byte, devices []string) string {
++	var payload struct {
++		Interface []struct {
++			Name      string `json:"interface"`
++			Device    string `json:"device"`
++			L3        string `json:"l3_device"`
++			Up        *bool  `json:"up"`
++			Pending   *bool  `json:"pending"`
++			Available *bool  `json:"available"`
++			Errors    []struct {
++				Subsystem string `json:"subsystem"`
++				Code      string `json:"code"`
++			} `json:"errors"`
++		} `json:"interface"`
++	}
++	if len(data) > 65536 || json.Unmarshal(data, &payload) != nil {
++		return ""
++	}
++	boolean := func(value *bool) string {
++		if value == nil {
++			return "unknown"
++		}
++		if *value {
++			return "true"
++		}
++		return "false"
++	}
++	safe := func(value string) string {
++		if len(value) > 64 {
++			value = value[:64]
++		}
++		return strings.Map(func(r rune) rune {
++			if r < ' ' || r == 127 {
++				return -1
++			}
++			return r
++		}, value)
++	}
++	var parts []string
++	for _, network := range payload.Interface {
++		selected := network.Name == "wan" || network.Name == "wan6"
++		for _, device := range devices {
++			selected = selected || network.Device == device || network.L3 == device
++		}
++		if !selected {
++			continue
++		}
++		part := fmt.Sprintf("netifd %s up=%s pending=%s available=%s device=%s l3=%s", safe(network.Name), boolean(network.Up), boolean(network.Pending), boolean(network.Available), safe(network.Device), safe(network.L3))
++		for i, failure := range network.Errors {
++			if i == 4 {
++				break
++			}
++			part += " error=" + safe(failure.Subsystem) + ":" + safe(failure.Code)
++		}
++		parts = append(parts, part)
++		if len(parts) == 4 {
++			break
++		}
++	}
++	return strings.Join(parts, "; ")
++}
++func netifdReason(ctx context.Context, devices []string) string {
++	child, cancel := context.WithTimeout(ctx, 700*time.Millisecond)
++	defer cancel()
++	command := exec.CommandContext(child, "ubus", "call", "network.interface", "dump")
++	pipe, err := command.StdoutPipe()
++	if err != nil {
++		return ""
++	}
++	if command.Start() != nil {
++		pipe.Close()
++		return ""
++	}
++	data, readErr := io.ReadAll(io.LimitReader(pipe, 65537))
++	if len(data) > 65536 || readErr != nil {
++		command.Process.Kill()
++	}
++	pipe.Close()
++	err = command.Wait()
++	if err != nil || readErr != nil {
++		return ""
++	}
++	return formatNetifd(data, devices)
++}
+diff --git a/common/wanstate/control_linux.go b/common/wanstate/control_linux.go
+new file mode 100644
+--- /dev/null
++++ b/common/wanstate/control_linux.go
+@@ -0,0 +1,16 @@
++//go:build linux
++
++package wanstate
++
++import "syscall"
++
++// The core's own direct probes must bypass KabanMax capture, just like generated outbounds.
++func control(network, address string, raw syscall.RawConn) error {
++	var failure error
++	if err := raw.Control(func(fd uintptr) {
++		failure = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_MARK, 0x08000000)
++	}); err != nil {
++		return err
++	}
++	return failure
++}
+diff --git a/common/wanstate/control_other.go b/common/wanstate/control_other.go
+new file mode 100644
+--- /dev/null
++++ b/common/wanstate/control_other.go
+@@ -0,0 +1,7 @@
++//go:build !linux
++
++package wanstate
++
++import "syscall"
++
++func control(network, address string, raw syscall.RawConn) error { return nil }

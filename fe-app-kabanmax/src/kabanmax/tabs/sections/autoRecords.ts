@@ -1,6 +1,12 @@
 import { E } from '../../../helpers/element';
 import { callUbus } from '../../../helpers/callUbus';
-import { canApply, recordStateText, type AutoEntry } from './autoRouting';
+import {
+  canApply,
+  failureText,
+  recordFailures,
+  recordStateText,
+  type AutoEntry,
+} from './autoRouting';
 
 export interface RecordQuery {
   source_section: string;
@@ -33,6 +39,7 @@ interface RecordPage {
   warning?: string;
   error?: string;
   registry_overflow?: number;
+  memory_pressure?: boolean;
   legacy_overflow?: boolean;
   bulk_supported?: boolean;
   manual_apply_supported?: boolean;
@@ -114,7 +121,6 @@ export async function registryAction(
   const selected = [...new Set(ids)];
   const frozenQuery = { ...query };
   const frozenTargets = targets ? { ...targets } : undefined;
-  if (selected.length > 64) throw new Error(_('Select at most 64 records'));
   const result: BatchResult = { done: 0, skipped: 0, failed: 0, results: [] };
   for (let offset = 0; offset < selected.length; offset += 8) {
     const chunk = selected.slice(offset, offset + 8);
@@ -164,8 +170,21 @@ export async function registryAction(
   }
   return result;
 }
+export async function collectRecordSelection(query: RecordQuery) {
+  const frozen = { ...query, page: 1, page_size: 100 };
+  const first = await autoRecords(frozen);
+  const selected = new Map((first.selection || []).map((row) => [row.id, row]));
+  const pages = Math.ceil(first.total / 100);
+  for (let page = 2; page <= pages; page++) {
+    const next = await autoRecords({ ...frozen, page });
+    for (const row of next.selection || []) selected.set(row.id, row);
+  }
+  return [...selected.values()];
+}
 export function renderAutoRecords(sectionId: string) {
   const root = E('div', { class: 'km-records' }, []);
+  const notice = E('p', { role: 'status' }, []);
+  notice.setAttribute('aria-live', 'polite');
   const tabs = E(
     'ul',
     { class: 'cbi-tabmenu km-records__tabs', role: 'tablist' },
@@ -206,14 +225,37 @@ export function renderAutoRecords(sectionId: string) {
     node.disabled = disabled;
     return node;
   };
-  const mutate = async (action: RecordAction, ids: string[]) => {
-    if (busy || !ids.length) return;
+  const mutate = async (action: RecordAction, ids: string[], all = false) => {
+    if (busy || (!all && !ids.length)) return;
     const frozenQuery = { ...query };
+    busy = true;
+    if (all) {
+      try {
+        ids = (await collectRecordSelection(frozenQuery)).map((row) => row.id);
+      } catch (error) {
+        notice.textContent =
+          error instanceof Error ? error.message : String(error);
+        notice.hidden = false;
+        busy = false;
+        return;
+      }
+    }
+    if (!ids.length) {
+      busy = false;
+      return;
+    }
     const frozenIds = [...ids];
     const frozenTargets =
       action === 'apply' && manualSupported
         ? Object.fromEntries(
-            frozenIds.map((id) => [id, directions.get(id) || '']),
+            frozenIds.map((id) => [
+              id,
+              directions.get(id) ||
+                availableTargets.find((target) => target.tag !== 'direct-out')
+                  ?.tag ||
+                availableTargets[0]?.tag ||
+                '',
+            ]),
           )
         : undefined;
     busy = true;
@@ -285,6 +327,19 @@ export function renderAutoRecords(sectionId: string) {
       recordPages.set(JSON.stringify(query), data);
       while (recordPages.size > 16)
         recordPages.delete(recordPages.keys().next().value!);
+      if (data.registry_overflow && data.memory_pressure)
+        data.warning = [
+          data.warning,
+          _(
+            'Automatic routing memory budget reached. Existing routes are kept; remove old entries or increase the budget.',
+          ),
+        ]
+          .filter(Boolean)
+          .join(' ');
+      notice.textContent = [registryNotice(data.reason), data.warning]
+        .filter(Boolean)
+        .join(' ');
+      notice.hidden = !notice.textContent;
       const signature = JSON.stringify({ query, data });
       if (signature === rendered) return;
       rendered = signature;
@@ -372,36 +427,39 @@ export function renderAutoRecords(sectionId: string) {
           ]),
           E('td', {}, [
             recordStateText(row),
-            ...(row.expires && !row.persistent_ip && query.status === 'pending'
-              ? [E('div', {}, new Date(row.expires).toLocaleString())]
+            ...(row.checked_at && query.status === 'pending'
+              ? [E('div', {}, new Date(row.checked_at).toLocaleString())]
               : []),
-            ...(row.failure
-              ? [
-                  E(
-                    'details',
-                    {
-                      ...(openDetails.has(row.id) ? { open: true } : {}),
-                    },
-                    [
-                      E('summary', {}, _('Error')),
-                      E('p', {}, row.failure.message),
-                      E('p', {}, new Date(row.failure.at).toLocaleString()),
-                      ...[
-                        ...new Set(
-                          (row.attempts || []).map(
-                            (attempt) => attempt.outbound,
-                          ),
-                        ),
-                      ].map((target) =>
-                        E(
-                          'div',
-                          {},
-                          `${target === row.source ? _('Current route') : target === 'direct-out' ? 'Direct' : target}: ${(row.attempts || []).filter((attempt) => attempt.outbound === target).every((attempt) => attempt.status === 'verified') ? _('Verified') : _('Error')} ${(row.attempts || []).find((attempt) => attempt.outbound === target && attempt.reason && attempt.status !== 'verified')?.reason || ''}`,
-                        ),
-                      ),
-                    ],
+            ...recordFailures(row).map(({ failure, title }) =>
+              E(
+                'details',
+                {
+                  ...(openDetails.has(row.id) ? { open: true } : {}),
+                },
+                [
+                  E('summary', {}, title),
+                  E('p', {}, failureText(failure.message)),
+                  E('p', {}, failure.message),
+                  ...(Number.isFinite(Date.parse(failure.at)) &&
+                  !failure.at.startsWith('0001-')
+                    ? [E('p', {}, new Date(failure.at).toLocaleString())]
+                    : []),
+                  ...[
+                    ...new Set(
+                      (row.attempts || []).map((attempt) => attempt.outbound),
+                    ),
+                  ].map((target) =>
+                    E(
+                      'div',
+                      {},
+                      `${target === row.source ? _('Current route') : target === 'direct-out' ? 'Direct' : target}: ${(row.attempts || []).filter((attempt) => attempt.outbound === target).every((attempt) => attempt.status === 'verified') ? _('Verified') : _('Error')} ${(row.attempts || []).find((attempt) => attempt.outbound === target && attempt.reason && attempt.status !== 'verified')?.reason || ''}`,
+                    ),
                   ),
-                ]
+                ],
+              ),
+            ),
+            ...(row.status === 'applied' && !recordFailures(row).length
+              ? [E('div', {}, _('Original error details are unavailable'))]
               : []),
           ]),
           E('td', {}, [
@@ -539,15 +597,14 @@ export function renderAutoRecords(sectionId: string) {
       void load();
     }, 300);
   });
-  const selectedIds = () => selection.map((row) => row.id).filter(Boolean);
   const applyAll = button(
     _('Apply all'),
-    () => mutate('apply', selectedIds()),
+    () => mutate('apply', [], true),
     true,
   );
   const excludeAll = button(
     _('Exclude all'),
-    () => mutate('exclude', selectedIds()),
+    () => mutate('exclude', [], true),
     true,
   );
   const removeAll = button(
@@ -559,7 +616,8 @@ export function renderAutoRecords(sectionId: string) {
           : query.status === 'applied'
             ? 'forget'
             : 'dismiss',
-        selectedIds(),
+        [],
+        true,
       ),
     true,
   );
@@ -705,6 +763,7 @@ export function renderAutoRecords(sectionId: string) {
   root.append(
     E('div', { class: 'km-records__toolbar' }, [search, actions]),
     tabs,
+    notice,
     body,
     pages,
   );

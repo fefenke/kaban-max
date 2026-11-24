@@ -47,7 +47,9 @@ t.test("DNS and FakeIP are never silently treated as real addresses", () => {
     let resolve = { action: "resolve", server: "dns-server" };
     t.eq(policy.predict(config([resolve, zap]), query({ destination: "example.test" })).predicted.status, "unknown");
     t.eq(policy.predict(config([zap]), query({ destination: "198.18.0.7" })).predicted.status, "unknown");
-    t.eq(policy.predict(config([zap]), query({ destination: "fc00::7" })).predicted.status, "unknown");
+    t.eq(policy.predict(config([zap]), query({ destination: "2001:2::7" })).predicted.reason, "fakeip_requires_core_mapping");
+    let legacy = { ...config([zap]), dns: {servers:[{type:"fakeip",inet6_range:"fc00::/112"}]} };
+    t.eq(policy.predict(legacy, query({ destination: "fc00::7" })).predicted.reason, "fakeip_requires_core_mapping");
     t.eq(policy.predict(config([zap]), query({ destination: "example.test" })).predicted.status, "unknown");
     t.eq(policy.predict(null, query()).predicted.status, "unknown");
 });

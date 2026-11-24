@@ -1,0 +1,30 @@
+diff --git a/protocol/warp/endpoint.go b/protocol/warp/endpoint.go
+--- a/protocol/warp/endpoint.go
++++ b/protocol/warp/endpoint.go
+@@ -32,6 +32,7 @@ var (
+ )
+ 
+ var _ adapter.OutboundWithMultiplex = (*Endpoint)(nil)
++var _ adapter.InterfaceUpdateListener = (*Endpoint)(nil)
+ 
+ func RegisterEndpoint(registry *endpoint.Registry) {
+ 	endpoint.Register[option.WARPEndpointOptions](registry, C.TypeWARP, NewEndpoint)
+@@ -307,6 +308,18 @@ func (w *Endpoint) MultiplexEnabled() bool {
+ 	return true
+ }
+ 
++// The network manager sees the WARP wrapper, not its nested WireGuard endpoint.
++// Forward resets so the transport can replace UDP sockets after a WAN change.
++// Registration is asynchronous: never wait for it from the network manager.
++func (w *Endpoint) InterfaceUpdated(ctx context.Context) {
++	w.access.RLock()
++	transport := w.endpoint
++	w.access.RUnlock()
++	if listener, ok := transport.(adapter.InterfaceUpdateListener); ok {
++		listener.InterfaceUpdated(ctx)
++	}
++}
++
+ func (w *Endpoint) initializedEndpoint(ctx context.Context) (adapter.Endpoint, error) {
+ 	select {
+ 	case <-w.await:

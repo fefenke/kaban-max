@@ -55,4 +55,16 @@ t.test("log tags the message with its level and gives syslog the matching priori
     stub.restore();
 });
 
+t.test("bounded file-backed capture keeps the newest complete lines", () => {
+    let result = exec.capture_parallel([["printf", "%s", "old record\n" + join("", map([1,2,3,4,5,6,7,8], () => "abcdefgh")) + "\nnewest\n"]], 32)[0];
+    t.eq(result.status, 0);
+    t.ok(length(result.stdout) <= 32);
+    t.eq(result.stdout, "newest\n");
+    t.eq(result.truncated, true);
+});
+
+t.test("file-backed capture without a byte limit retains the existing API", () => {
+    t.eq(exec.capture_parallel([["printf", "%s", "unchanged API\n"]])[0], { status: 0, stdout: "unchanged API\n" });
+});
+
 t.done();

@@ -1,0 +1,32 @@
+name: Documentation integrity
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  documentation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test documentation gate
+        run: python -m unittest discover -s tests/docs -p 'test_*.py'
+      - name: Check source facts, links and change coverage
+        env:
+          BASE_REV: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -n "$BASE_REV" ] && [ "$BASE_REV" != "0000000000000000000000000000000000000000" ]; then
+            python scripts/check-project-docs.py --base "$BASE_REV"
+          else
+            python scripts/check-project-docs.py --no-diff
+          fi

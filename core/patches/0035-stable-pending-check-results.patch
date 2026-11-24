@@ -1,0 +1,158 @@
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -419,7 +419,7 @@
+ 	}
+ 	// Ephemeral error context only: no candidate exists before a logged failure.
+ 	m.mu.Lock()
+-	cost := storageBytes(pendingEvent{*e, e.originalMetadata})
++	cost := storageBytes(pendingEvent{Event: *e, Metadata: e.originalMetadata})
+ 	if !m.transientRoomLocked(cost) {
+ 		m.mu.Unlock()
+ 		return nil
+@@ -536,11 +536,14 @@
+ 			e.Count = old.Count + 1
+ 		}
+ 	}
++	if checked := m.successfulCheckLocked(e); checked != nil {
++		e.Status, e.Reason, e.attempted = "proposed", checked.Reason, true
++	}
+ 	e.Domains = appendDomain(e.Domains, e.ObservedDomain)
+ 	e.Failure = &Failure{ID: e.ID, SourceID: e.SourceID, Message: shortFailure(err), At: time.Now()}
+-	cost := storageBytes(pendingEvent{*e, e.originalMetadata})
++	cost := storageBytes(pendingEvent{Event: *e, Metadata: e.originalMetadata})
+ 	if old := m.events[e.ID]; old != nil {
+-		cost -= storageBytes(pendingEvent{*old, old.originalMetadata})
++		cost -= storageBytes(pendingEvent{Event: *old, Metadata: old.originalMetadata})
+ 	}
+ 	if !m.transientRoomLocked(cost) {
+ 		m.RegistryOverflow++
+@@ -695,9 +698,6 @@
+ 	for _, d := range m.decisions {
+ 		if !now.Before(d.Deadline) {
+ 			d.ApplyAllowed, d.AutoApplyEligible = false, false
+-			if d.Status == "proposed" {
+-				d.Status, d.Reason = "expired", "check_expired"
+-			}
+ 		}
+ 		decisions = append(decisions, d)
+ 	}
+@@ -820,7 +820,7 @@
+ 	var next *Event
+ 	if previous == nil {
+ 		for _, e := range m.events {
+-			if !m.sources[e.Source].CollectDisabled && (e.Network == "tcp" || (e.Network == "udp" && m.sources[e.Source].Mode == "web")) && e.Failure != nil && !e.attempted && now.Sub(e.lastJob) >= 5*time.Minute && (next == nil || e.lastJob.Before(next.lastJob)) {
++			if !m.sources[e.Source].CollectDisabled && (e.Network == "tcp" || (e.Network == "udp" && m.sources[e.Source].Mode == "web")) && e.Failure != nil && !e.attempted && m.successfulCheckLocked(e) == nil && now.Sub(e.lastJob) >= 5*time.Minute && (next == nil || e.lastJob.Before(next.lastJob)) {
+ 				copy := *e
+ 				next = &copy
+ 			}
+@@ -983,3 +983,13 @@
+ 	}
+ 	return nil, fmt.Errorf("unknown operation")
+ }
++
++// A successful pending check is a retained observation, not a timer to rerun.
++func (m *Manager) successfulCheckLocked(e *Event) *Decision {
++	for _, d := range m.decisions {
++		if d.Status == "proposed" && d.Target != "" && d.Target != d.Source && d.Failure != nil && d.Failure.ID == e.ID && d.SourceID == e.SourceID && d.IP == e.IP && d.SourceIP == e.SourceIP && d.Inbound == e.Inbound && d.Port == e.Port {
++			return &d
++		}
++	}
++	return nil
++}
+diff --git a/common/autoroute/storage.go b/common/autoroute/storage.go
+--- a/common/autoroute/storage.go
++++ b/common/autoroute/storage.go
+@@ -58,7 +58,7 @@
+ 	}
+ 	bytes := 0
+ 	for _, event := range m.events {
+-		bytes += storageBytes(pendingEvent{*event, event.originalMetadata})
++		bytes += storageBytes(pendingEvent{Event: *event, Metadata: event.originalMetadata})
+ 	}
+ 	for _, d := range m.decisions {
+ 		bytes += storageBytes(d)
+@@ -141,7 +141,7 @@
+ 	oldCooldown := len(m.cooldown)
+ 	for key, event := range m.events {
+ 		active := m.activeQuery != nil && m.key(*m.activeQuery) == m.key(event.Query)
+-		if !active && (event.Status == "applied" || event.Status == "suppressed" || now.Sub(event.Updated) > retention) {
++		if !active && (event.Status == "applied" || event.Status == "suppressed" || m.deniedScope(event.Query) || (event.Failure == nil && now.Sub(event.Updated) > retention)) {
+ 			delete(m.events, key)
+ 			for id, d := range m.decisions {
+ 				if d.Failure != nil && d.Failure.ID == event.ID {
+@@ -150,10 +150,10 @@
+ 			}
+ 		}
+ 	}
+-	// Keep the last probe diagnostic for the configured retention.
++	// Unreviewed errors keep their result until explicitly resolved.
+ 	// Deadline only limits authorization to grant a route.
+ 	for id, d := range m.decisions {
+-		if now.Sub(d.Created) > retention {
++		if now.Sub(d.Created) > retention && (d.Failure == nil || m.events[d.Failure.ID] == nil) {
+ 			delete(m.decisions, id)
+ 		}
+ 	}
+diff --git a/common/autoroute/checkpoint.go b/common/autoroute/checkpoint.go
+--- a/common/autoroute/checkpoint.go
++++ b/common/autoroute/checkpoint.go
+@@ -13,6 +13,7 @@
+ type pendingEvent struct {
+ 	Event
+ 	Metadata *adapter.InboundContext `json:"original_metadata"`
++	Result   *Decision               `json:"check_result,omitempty"`
+ }
+ 
+ func (m *Manager) checkpoint() []pendingEvent {
+@@ -29,7 +30,14 @@
+ 		if event.originalMetadata != nil {
+ 			metadata = snapshotOriginalMetadata(event.originalMetadata)
+ 		}
+-		result = append(result, pendingEvent{copy, metadata})
++		var checked *Decision
++		for _, d := range m.decisions {
++			if d.Failure != nil && d.Failure.ID == event.ID && d.SourceID == event.SourceID && (checked == nil || d.Created.After(checked.Created)) {
++				value := d
++				checked = &value
++			}
++		}
++		result = append(result, pendingEvent{Event: copy, Metadata: metadata, Result: checked})
+ 	}
+ 	return result
+ }
+@@ -40,9 +48,6 @@
+ 			continue
+ 		}
+ 		e := saved.Event
+-		if time.Since(e.Updated) > m.retention() {
+-			continue
+-		}
+ 		if e.Source != source.Outbound || e.SourceID != source.ID || (e.Network != "tcp" && e.Network != "udp") || e.ID == "" || e.Failure == nil || e.Failure.ID != e.ID || e.Failure.SourceID != source.ID || e.Failure.At.After(time.Now()) || !registryScope(e.Query) || sourceContext(source, e.Query) != nil || m.protected(e.Query) || m.deniedScope(e.Query) {
+ 			continue
+ 		}
+@@ -55,15 +60,22 @@
+ 		if e.ObservedDomain == "" && saved.Metadata != nil && saved.Metadata.SniffError == nil && (saved.Metadata.Protocol == "tls" || saved.Metadata.Protocol == "quic") {
+ 			e.ObservedDomain = strings.TrimSuffix(strings.ToLower(saved.Metadata.Domain), ".")
+ 		}
++		checked := saved.Result
++		validResult := checked != nil && checked.ID != "" && checked.Owner == "auto-routing" && (source.Mode == "web" || checked.Domain == e.Domain) && checked.Source == e.Source && checked.SourceID == e.SourceID && checked.Failure != nil && checked.Failure.ID == e.ID && checked.Failure.SourceID == e.SourceID && checked.IP == e.IP && checked.SourceIP == e.SourceIP && checked.Inbound == e.Inbound && checked.Port == e.Port && (checked.Target == "" || (source.Direct && checked.Target == "direct-out") || (source.WARP != "" && checked.Target == source.WARP))
+ 		e.active = 0
+ 		e.attempted = false
+ 		// No job survives a process restart. Never restore an active spinner.
+-		if e.Status == "checking" || e.Status == "proposed" || e.Reason == "cancelled_generation" {
++		if !validResult && (e.Status == "checking" || e.Status == "proposed" || e.Reason == "cancelled_generation") {
+ 			e.Status, e.Reason = "detected", "queued"
+ 		}
+-		if !m.transientRoomLocked(storageBytes(saved)) {
++		if !m.transientRoomLocked(storageBytes(saved) + 512) {
+ 			m.RegistryOverflow++
+ 			continue
++		}
++		if validResult {
++			checked.Generation = m.generation
++			e.Status, e.Reason, e.attempted = checked.Status, checked.Reason, true
++			m.decisions[checked.ID] = *checked
+ 		}
+ 		m.events[e.ID] = &e
+ 		m.transientCached = false

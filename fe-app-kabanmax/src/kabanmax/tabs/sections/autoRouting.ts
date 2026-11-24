@@ -12,6 +12,12 @@ export interface AutoEntry {
   uncovered_connections?: number;
   persistent_ip?: boolean;
   failure?: { id: string; source_id: string; message: string; at: string };
+  original_failure?: {
+    id: string;
+    source_id: string;
+    message: string;
+    at: string;
+  };
   ip_only?: boolean;
   attempts?: { outbound: string; status: string; reason?: string }[];
   id?: string;
@@ -36,7 +42,44 @@ export interface AutoEntry {
   reason?: string;
   created?: string;
   expires?: string;
+  checked_at?: string;
   count?: number;
+}
+
+export function failureText(message: string): string {
+  if (/connection timed out|i\/o timeout|deadline exceeded/i.test(message))
+    return _('Connection timed out while transferring data');
+  if (/connection reset by peer|broken pipe/i.test(message))
+    return _('Connection was interrupted while transferring data');
+  if (/connection refused/i.test(message)) return _('Connection was refused');
+  return _('Connection error');
+}
+
+export function recordFailures(row: AutoEntry) {
+  const result: {
+    failure: NonNullable<AutoEntry['failure']>;
+    title: string;
+  }[] = [];
+  if (row.original_failure?.message)
+    result.push({
+      failure: row.original_failure,
+      title: _('Original route error'),
+    });
+  if (
+    row.failure?.message &&
+    !result.some(
+      ({ failure }) =>
+        failure.id === row.failure!.id && failure.at === row.failure!.at,
+    )
+  )
+    result.push({
+      failure: row.failure,
+      title:
+        row.status === 'applied' && row.new_error
+          ? _('New error on the selected route')
+          : _('Original route error'),
+    });
+  return result;
 }
 export interface AutoState {
   version?: number;
@@ -66,6 +109,8 @@ const emptyState: AutoState = {
 export function canApply(row: AutoEntry, now = Date.now()): boolean {
   return (
     row.status === 'proposed' &&
+    !!row.target &&
+    row.target !== row.source &&
     row.apply_allowed === true &&
     ((row.domain_known === true && !!row.domain) || row.ip_only === true) &&
     Date.parse(row.expires || '') > now
@@ -73,14 +118,12 @@ export function canApply(row: AutoEntry, now = Date.now()): boolean {
 }
 
 export function routeText(row: AutoEntry): string {
-  const target = row.target || row.source;
+  const target = row.target === row.source ? undefined : row.target;
   if (target === 'direct-out') return 'Direct';
   return (row.target && row.target_name) || target || '—';
 }
 
 export function recordStateText(row: AutoEntry): string {
-  if (row.status === 'applied' && row.uncovered_connections)
-    return _('Some connections are not covered by this rule');
   if (row.status === 'applied' && row.new_error && row.error_port)
     return `${_('New connection error on port')}: ${row.error_port}`;
   if (row.status === 'applied')
@@ -90,8 +133,14 @@ export function recordStateText(row: AutoEntry): string {
   if (row.status === 'saved') return _('Saved route is not active');
   if (row.reason === 'protocol_unconfirmed')
     return _('Protocol operation is unconfirmed');
-  if (row.status === 'proposed')
+  if (row.reason === 'check_expired' && row.target)
     return `${_('Working alternative found')}: ${routeText(row)}`;
+  if (row.status === 'proposed' && !row.target)
+    return _('Check result unavailable');
+  if (row.status === 'proposed')
+    return row.target && row.target !== row.source
+      ? `${_('Working alternative found')}: ${routeText(row)}`
+      : _('No working alternative found');
   if (row.reason?.startsWith('checking:')) {
     const target = row.reason.slice('checking:'.length);
     return `${_('Checking')}: ${target === 'direct-out' ? 'Direct' : target}`;

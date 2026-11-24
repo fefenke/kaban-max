@@ -8,17 +8,127 @@ import {
   routeText,
   recordStateText,
   canApply,
+  failureText,
+  recordFailures,
   sourceRows,
   targetRows,
   type AutoState,
 } from '../autoRouting';
-import { autoRecords, registryAction, registryNotice } from '../autoRecords';
+
+describe('retained route failure details', () => {
+  it('keeps original and target failures separate and never renders an empty error', () => {
+    vi.stubGlobal('_', (text: string) => text);
+    const original = {
+      id: 'source-error',
+      source_id: 'section',
+      message: 'splice read: connection timed out',
+      at: '2026-11-24T12:00:00Z',
+    };
+    const latest = {
+      ...original,
+      id: 'target-error',
+      message: 'connection reset by peer',
+    };
+    expect(
+      recordFailures({
+        ip: '203.0.113.8',
+        status: 'applied',
+        original_failure: original,
+        failure: original,
+      }),
+    ).toHaveLength(1);
+    expect(
+      recordFailures({
+        ip: '203.0.113.8',
+        status: 'applied',
+        original_failure: original,
+        failure: latest,
+        new_error: true,
+      }).map((r) => r.title),
+    ).toEqual(['Original route error', 'New error on the selected route']);
+    expect(
+      recordFailures({
+        ip: '203.0.113.8',
+        status: 'applied',
+        failure: { ...original, message: '' },
+      }),
+    ).toEqual([]);
+    expect(failureText(original.message)).toBe(
+      'Connection timed out while transferring data',
+    );
+    expect(failureText(latest.message)).toBe(
+      'Connection was interrupted while transferring data',
+    );
+  });
+});
+import {
+  autoRecords,
+  registryAction,
+  registryNotice,
+  collectRecordSelection,
+} from '../autoRecords';
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('automatic routing lists', () => {
+  it('collects all filtered pages beyond 64 using bounded replies', async () => {
+    calls.ubus.mockImplementation(async (request) => {
+      const q = request.params;
+      return {
+        success: true,
+        data: {
+          rows: [],
+          total: 205,
+          page: q.page,
+          page_size: 100,
+          selection: Array.from({ length: q.page === 3 ? 5 : 100 }, (_, i) => ({
+            id: `r${(q.page - 1) * 100 + i}`,
+            eligible: true,
+          })),
+        },
+      };
+    });
+    const selected = await collectRecordSelection({
+      source_section: 's1',
+      status: 'pending',
+      search: '',
+      sort: 'newest',
+      page: 1,
+      page_size: 25,
+    });
+    expect(selected).toHaveLength(205);
+    expect(selected[204].id).toBe('r204');
+    calls.ubus.mockReset();
+  });
+  it('never presents the original source or a missing target as a working alternative', () => {
+    vi.stubGlobal('_', (text: string) => text);
+    for (const target of [undefined, 'META']) {
+      const row = {
+        ip: '203.0.113.7',
+        status: 'proposed',
+        source: 'META',
+        target,
+        apply_allowed: true,
+        ip_only: true,
+        expires: '2099-01-01T00:00:00Z',
+      };
+      expect(routeText(row)).toBe('—');
+      expect(recordStateText(row)).toBe(
+        target ? 'No working alternative found' : 'Check result unavailable',
+      );
+      expect(canApply(row)).toBe(false);
+    }
+  });
   it('distinguishes unknown protocols and errors on other ports', () => {
     vi.stubGlobal('_', (text: string) => text);
+    expect(
+      recordStateText({
+        ip: '203.0.113.7',
+        status: 'expired',
+        reason: 'check_expired',
+        target: 'WARP',
+      }),
+    ).toBe('Working alternative found: WARP');
     expect(
       recordStateText({
         ip: '203.0.113.7',
@@ -40,7 +150,7 @@ describe('automatic routing lists', () => {
         status: 'applied',
         uncovered_connections: 1,
       }),
-    ).toBe('Some connections are not covered by this rule');
+    ).toBe('No new errors');
   });
   it('uses alternative results for pending records and reports only new applied failures', () => {
     vi.stubGlobal('_', (text: string) => text);
@@ -158,7 +268,7 @@ describe('automatic routing lists', () => {
       routeText({ ip: '203.0.113.7', status: 'proposed', target: 'WARP' }),
     ).toBe('WARP');
     expect(routeText({ ip: '', status: 'inconclusive', source: 'META' })).toBe(
-      'META',
+      '—',
     );
     expect(
       recordStateText({
@@ -283,6 +393,7 @@ describe('automatic routing lists', () => {
       domain_known: true,
       status: 'proposed',
       apply_allowed: true,
+      target: 'direct-out',
       expires: '2099-01-01T00:00:00Z',
     };
     expect(canApply(row)).toBe(true);

@@ -1,0 +1,14 @@
+diff --git a/log/observable.go b/log/observable.go
+--- a/log/observable.go
++++ b/log/observable.go
+@@ -173,4 +173,10 @@
+ func (f *defaultFactory) output(ctx context.Context, level Level, tag string, message string, timestamp time.Time) {
++	// The run loop cancels the departing generation before closing services.
++	// Classify this lifecycle phase, not individual downstream error strings.
++	if f.ctx != nil && f.ctx.Err() != nil && (level == LevelWarn || level == LevelError) {
++		level = LevelDebug
++	}
++
+ 	if (level == LevelWarn || level == LevelError) && wanstate.Suppress(tag, message) {
+ 		return
+ 	}

@@ -1,0 +1,122 @@
+diff --git a/common/trafficcontrol/manager.go b/common/trafficcontrol/manager.go
+--- a/common/trafficcontrol/manager.go
++++ b/common/trafficcontrol/manager.go
+@@ -137,6 +137,14 @@
+ 	return m.connections.Len()
+ }
+ 
++// VisitConnections walks active trackers without constructing an unbounded slice.
++func (m *Manager) VisitConnections(visit func(*TrackerMetadata)) {
++	m.connections.Range(func(_ uuid.UUID, tracker Tracker) bool {
++		visit(tracker.Metadata())
++		return true
++	})
++}
++
+ func (m *Manager) Connections() []*TrackerMetadata {
+ 	var connections []*TrackerMetadata
+ 	m.connections.Range(func(_ uuid.UUID, tracker Tracker) bool {
+diff --git a/experimental/clashapi/connections.go b/experimental/clashapi/connections.go
+--- a/experimental/clashapi/connections.go
++++ b/experimental/clashapi/connections.go
+@@ -9,8 +9,6 @@
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/common/trafficcontrol"
+-	C "github.com/sagernet/sing-box/constant"
+-	"github.com/sagernet/sing/common"
+ 	F "github.com/sagernet/sing/common/format"
+ 	"github.com/sagernet/sing/common/json"
+ 	"github.com/sagernet/ws"
+@@ -30,18 +28,7 @@
+ }
+ 
+ func connectionsSnapshot(trafficManager *trafficcontrol.Manager) render.M {
+-	uplinkTotal, downlinkTotal := trafficManager.Total()
+-	connections := common.Filter(trafficManager.Connections(), func(metadata *trafficcontrol.TrackerMetadata) bool {
+-		return metadata.OutboundType != C.TypeDNS
+-	})
+-	return render.M{
+-		"downloadTotal": downlinkTotal,
+-		"uploadTotal":   uplinkTotal,
+-		"connections": common.Map(connections, func(metadata *trafficcontrol.TrackerMetadata) connectionObject {
+-			return connectionObject(*metadata)
+-		}),
+-		"memory": inuseMemory(),
+-	}
++	return boundedConnectionsSnapshot(trafficManager, 200)
+ }
+ 
+ type connectionObject trafficcontrol.TrackerMetadata
+diff --git a/experimental/clashapi/connections_bounded.go b/experimental/clashapi/connections_bounded.go
+new file mode 100644
+--- /dev/null
++++ b/experimental/clashapi/connections_bounded.go
+@@ -0,0 +1,67 @@
++package clashapi
++
++import (
++	"bytes"
++	"container/heap"
++	"sort"
++
++	"github.com/go-chi/render"
++	"github.com/sagernet/sing-box/common/trafficcontrol"
++	C "github.com/sagernet/sing-box/constant"
++)
++
++// Keep the newest rows without allocating a copy of every live connection.
++// A deterministic UUID tie-breaker keeps repeated snapshots stable.
++type snapshotHeap []*trafficcontrol.TrackerMetadata
++
++func newerConnection(a, b *trafficcontrol.TrackerMetadata) bool {
++	if !a.CreatedAt.Equal(b.CreatedAt) {
++		return a.CreatedAt.After(b.CreatedAt)
++	}
++	return bytes.Compare(a.ID[:], b.ID[:]) < 0
++}
++func (h snapshotHeap) Len() int           { return len(h) }
++func (h snapshotHeap) Less(i, j int) bool { return newerConnection(h[j], h[i]) }
++func (h snapshotHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
++func (h *snapshotHeap) Push(value any)    { *h = append(*h, value.(*trafficcontrol.TrackerMetadata)) }
++func (h *snapshotHeap) Pop() any {
++	old := *h
++	value := old[len(old)-1]
++	*h = old[:len(old)-1]
++	return value
++}
++
++func selectConnectionSnapshot(visit func(func(*trafficcontrol.TrackerMetadata)), limit int) ([]*trafficcontrol.TrackerMetadata, int) {
++	selected := make(snapshotHeap, 0, limit)
++	total := 0
++	visit(func(metadata *trafficcontrol.TrackerMetadata) {
++		if metadata.OutboundType == C.TypeDNS {
++			return
++		}
++		total++
++		if limit == 0 {
++			return
++		}
++		if len(selected) < limit {
++			heap.Push(&selected, metadata)
++		} else if newerConnection(metadata, selected[0]) {
++			selected[0] = metadata
++			heap.Fix(&selected, 0)
++		}
++	})
++	sort.Slice(selected, func(i, j int) bool { return newerConnection(selected[i], selected[j]) })
++	return selected, total
++}
++
++func boundedConnectionsSnapshot(manager *trafficcontrol.Manager, limit int) render.M {
++	uplink, downlink := manager.Total()
++	selected, total := selectConnectionSnapshot(manager.VisitConnections, limit)
++	connections := make([]connectionObject, len(selected))
++	for i, metadata := range selected {
++		connections[i] = connectionObject(*metadata)
++	}
++	return render.M{
++		"downloadTotal": downlink, "uploadTotal": uplink, "memory": inuseMemory(),
++		"connections": connections, "connectionsTotal": total, "truncated": total > len(connections),
++	}
++}

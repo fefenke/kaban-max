@@ -13,8 +13,10 @@ import {
   coreHas,
   validateCoreFeature,
 } from '../../../services/coreFeatures.service';
+import { addAutoStorageOptions } from './autoStorage';
 
 export function addUpdateOptions(section: CBISection) {
+  addAutoStorageOptions(section);
   let o = section.option(
     form.Flag,
     'list_update_enabled',

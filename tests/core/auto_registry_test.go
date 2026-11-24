@@ -81,9 +81,7 @@ func TestRegistryExpiredAndOrdinarySavedIntentsDoNotAuthorize(t *testing.T) {
 
 func TestRegistryReservedCapacityRejectsWithoutEviction(t *testing.T) {
 	m, q, _, _ := testManager(t, "fail:")
-	for i := 0; i < 64; i++ {
-		m.reserved[fmt.Sprint(i)] = true
-	}
+	fillEssentialBudget(m)
 	result, err := m.Probe(context.Background(), q)
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +89,7 @@ func TestRegistryReservedCapacityRejectsWithoutEviction(t *testing.T) {
 	if _, err = m.Apply(context.Background(), result.(Decision).ID); err == nil {
 		t.Fatal("persistent capacity bypassed")
 	}
-	if len(m.reserved) != 64 || len(m.leases) != 0 {
+	if m.essentialBytesLocked() < m.memoryLimit()/2 || len(m.leases) != 0 {
 		t.Fatal("capacity failure evicted or installed data")
 	}
 	for i := 0; i < 70; i++ {
@@ -101,8 +99,8 @@ func TestRegistryReservedCapacityRejectsWithoutEviction(t *testing.T) {
 		event:=m.Observe(&meta, q.Source)
 		m.Failed(event,fmt.Errorf("synthetic capacity-test connection failure"))
 	}
-	if len(m.events) != 64 {
-		t.Fatal("observation RAM limit not enforced")
+	if len(m.events) != 71 {
+		t.Fatal("byte budget still imposes the old record count")
 	}
 }
 
@@ -110,14 +108,14 @@ func TestRegistrySuppressionLimitDoesNotEvict(t *testing.T) {
 	m, q, _, _ := testManager(t, "fail:")
 	meta := metadata(q)
 	event := m.Observe(&meta, q.Source)
-	for i := 0; i < 64; i++ {
-		m.suppressed[time.Unix(int64(i), 0).String()] = true
-	}
+	m.Failed(event,fmt.Errorf("synthetic suppression-budget failure"))
+	fillEssentialBudget(m)
+	before:=len(m.suppressed)
 	raw, _ := json.Marshal(map[string]any{"op": "registry_exclude", "source_id": "s1", "id": event.ID})
 	if _, err := m.API(context.Background(), raw); err == nil {
 		t.Fatal("limit not enforced")
 	}
-	if len(m.suppressed) != 64 || m.suppressed[m.key(q)] {
+	if len(m.suppressed) != before || m.suppressed[m.key(q)] {
 		t.Fatal("limit silently evicted or inserted")
 	}
 }

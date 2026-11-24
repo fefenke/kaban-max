@@ -1,0 +1,12 @@
+diff --git a/transport/wireguard/endpoint.go b/transport/wireguard/endpoint.go
+--- a/transport/wireguard/endpoint.go
++++ b/transport/wireguard/endpoint.go
+@@ -242,5 +242,8 @@
+ 	}
+ 	wgDevice := device.NewDevice(e.options.Context, e.returnDevice, bind, logger, e.options.Workers)
++	// Retry a dead client UDP flow on a fresh port, not the same poisoned path.
++	// Listening/server and multi-peer devices must retain their bind identity.
++	wgDevice.SetGiveUpRebind(true, e.options.ListenPort == 0 && len(e.peers) == 1 && (e.peers[0].endpoint.IsValid() || e.peers[0].destination.IsDomain()))
+ 	e.tunDevice.SetDevice(wgDevice)
+ 	domainPeers := make(map[device.NoisePublicKey]*peerConfig)
+ 	for peerIndex, peer := range e.peers {

@@ -1,0 +1,42 @@
+diff --git a/common/autoroute/failure.go b/common/autoroute/failure.go
+--- a/common/autoroute/failure.go
++++ b/common/autoroute/failure.go
+@@ -7,6 +7,7 @@
+ 	"io"
+ 	"net"
+ 	"strings"
++	"syscall"
+ 	"time"
+ )
+ 
+@@ -20,6 +21,11 @@
+ }
+ 
+ func connectionFailure(err error) bool {
++	// Readiness notifications are not evidence that a route has failed.
++	// Check before net.Error.Timeout: Unix EAGAIN also reports Timeout().
++	if errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EWOULDBLOCK) {
++		return false
++	}
+ 	if errors.Is(err, context.DeadlineExceeded) {
+ 		return true
+ 	}
+diff --git a/common/autoroute/registry.go b/common/autoroute/registry.go
+--- a/common/autoroute/registry.go
++++ b/common/autoroute/registry.go
+@@ -159,7 +159,14 @@
+ 	defer m.mu.Unlock()
+ 	l, ok := m.leases[id]
+ 	if !ok {
+-		return nil, errors.New("lease_not_found")
++		// A sweep, failed connection or previous withdrawal may win the race.
++		// Absence is already the requested state; never disable the source for it.
++		for _, source := range m.sources {
++			if source.ID == sourceID {
++				return map[string]any{"source_id": sourceID}, nil
++			}
++		}
++		return nil, errors.New("source_not_found")
+ 	}
+ 	if l.SourceID != sourceID {
+ 		return nil, errors.New("source_not_found")

@@ -321,6 +321,9 @@ function tunnel_endpoint(tunnel) {
         }
         if (length(keys(profile)) > 0)
             endpoint.profile = profile;
+        let hint = int(option(tunnel, "warp_local_port_hint", "0"), 10);
+        if (profile.id && option(tunnel, "warp_local_port_profile", "") == profile.id && hint > 0 && hint <= 65535)
+            endpoint.listen_port_hint = hint;
         let one_sided = amnezia.object(tunnel, amnezia.ONE_SIDED_KEYS);
         if (one_sided)
             endpoint.amnezia = one_sided;

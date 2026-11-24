@@ -1,0 +1,109 @@
+{
+  "captured": "2026-11-23",
+  "files": [
+    {
+      "original": "AGENTS.md",
+      "snapshot": "AGENTS.md.txt",
+      "sha256": "2a3a3c1a8456cab6fcfd3a5ecfb770867f3da22f644492ab0f0087b5f0afbaea",
+      "bytes": 4350
+    },
+    {
+      "original": "docs/PROJECT_STATE.md",
+      "snapshot": "PROJECT_STATE.md.txt",
+      "sha256": "eff81af26622e577fdf2992e17926992009d0e38fcc694b3781a33ac3d5c0d34",
+      "bytes": 38431
+    },
+    {
+      "original": "docs/DEVELOPMENT_INDEX.md",
+      "snapshot": "DEVELOPMENT_INDEX.md.txt",
+      "sha256": "6f18228fd8788eb8b7697089b6e0528bfb1514c79788e91021e36ee748f7674b",
+      "bytes": 3862
+    },
+    {
+      "original": "docs/AI_HANDOFF.md",
+      "snapshot": "AI_HANDOFF.md.txt",
+      "sha256": "b57d9703d50bc6fc45e459cd625e64c5859b793a304d529df411cd2e388fcb8e",
+      "bytes": 25644
+    },
+    {
+      "original": "docs/ARCHITECTURE.md",
+      "snapshot": "ARCHITECTURE.md.txt",
+      "sha256": "354d069dde49b297241566b17bb750c381df15b740c5cb9ff229da2b293456f6",
+      "bytes": 12346
+    },
+    {
+      "original": "docs/COMPONENTS.md",
+      "snapshot": "COMPONENTS.md.txt",
+      "sha256": "c494c0b1c8f9634ea03e8fc08f155c4d239380455255d0f2f1dfb33255d36059",
+      "bytes": 12888
+    },
+    {
+      "original": "docs/DECISIONS.md",
+      "snapshot": "DECISIONS.md.txt",
+      "sha256": "00cf4fb13e2159cf0b5cbfc5382786dd1a7d4a078e41371a81b69d2842a850db",
+      "bytes": 27054
+    },
+    {
+      "original": "docs/KNOWN_ISSUES.md",
+      "snapshot": "KNOWN_ISSUES.md.txt",
+      "sha256": "fc5d36214cd5d50ef909d93546e2ff113fc33f347665f3012ccd1540bbb4995c",
+      "bytes": 19457
+    },
+    {
+      "original": "docs/PITFALLS.md",
+      "snapshot": "PITFALLS.md.txt",
+      "sha256": "eccb44b920421707a254c339e643152c52d1e9c79b4a51f9c73f988cb253b2bc",
+      "bytes": 21019
+    },
+    {
+      "original": "docs/ROADMAP.md",
+      "snapshot": "ROADMAP.md.txt",
+      "sha256": "9b5b8b3da3f965d7afe3e963250b5ac2e31501340339c6ed557aaf40cd7ab65b",
+      "bytes": 13766
+    },
+    {
+      "original": "docs/TESTING.md",
+      "snapshot": "TESTING.md.txt",
+      "sha256": "3049bfa8b9f83fda8b9816c9b5f595bc8460d6b30ddf4d181387ee41e82f8d26",
+      "bytes": 140827
+    },
+    {
+      "original": "docs/NETWORKING.md",
+      "snapshot": "NETWORKING.md.txt",
+      "sha256": "96c02fbadd5938db587057332be4ca47bdbad46722e25800bb9dfa2658c39686",
+      "bytes": 7620
+    },
+    {
+      "original": "docs/SECURITY.md",
+      "snapshot": "SECURITY.md.txt",
+      "sha256": "fde54a896494b2702c0740e4fff173cf25114eb67e48307077a97872b233c695",
+      "bytes": 6676
+    },
+    {
+      "original": "docs/BUILD_AND_DEPLOY.md",
+      "snapshot": "BUILD_AND_DEPLOY.md.txt",
+      "sha256": "089177f1da7a370cbb8b205098ea87d366e1a0d31f303dc6472aedbe3c382a05",
+      "bytes": 5279
+    },
+    {
+      "original": "docs/README.md",
+      "snapshot": "README.md.txt",
+      "sha256": "e73fc058889a96a55005d9c6e9fdff3215dd3db38ff780688de203079ade2c9e",
+      "bytes": 240
+    },
+    {
+      "original": "docs/CHANGELOG.md",
+      "snapshot": "CHANGELOG.md.txt",
+      "sha256": "f38e447cf44d9c59a43eeb0ed978f768d0926285055b4313c622d15aeb5bf617",
+      "bytes": 9216
+    },
+    {
+      "original": "docs/development.md",
+      "snapshot": "development.md.txt",
+      "sha256": "6b444c7749a6fe1db2e5dd8dcf60c1da7176a19e0f2450ef4055d8490221dfdf",
+      "bytes": 1444
+    }
+  ],
+  "sanitized": "2026-11-24",
+  "sanitization": "Publication privacy cleanup; original Git history retained separately."
+}

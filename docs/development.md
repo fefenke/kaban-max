@@ -1,28 +1,27 @@
 # Разработка и сборка
 
-## Backend и интерфейс
+Проект содержит TypeScript/LuCI интерфейс, ucode backend и собственные patches sing-box. Версия приложения задаётся сборкой; исходный commit, toolchain и версия ядра закреплены в `core/UPSTREAM`. Не подставляйте старые номера из примеров как актуальный выпуск.
 
-Нужны Bash, ucode, Node.js 22+, npm. Проверки:
+## Локальные проверки
+
+Из корня, в окружении с Bash/ucode:
 
 ```sh
 bash tests/run.sh
-cd fe-app-kabanmax
-npm ci --ignore-scripts
+```
+
+Из `fe-app-kabanmax`, Node.js 22+:
+
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
 npm test -- --run --maxWorkers=2
 npm run build
 ```
 
-Каталоги переводов обновляются `node sync-locales.js`, пакет перевода собирается официальным LuCI po2lmo. Не заменяйте конвертер самодельным генератором.
+Каталоги переводов обновляются `node sync-locales.js`; binary translation собирается официальным LuCI po2lmo. Новые строки должны иметь перевод, generated bundle менять через source build.
 
-## Полный выпуск
+## Продолжение разработки
 
-См. `.github/workflows/build.yml` и `scripts/release.Dockerfile`. Сборка выполняется в Alpine с apk v3, GNU tar, Go toolchain и официальным po2lmo.
+Для нового чата/разработчика откройте [AGENTS в репозитории](https://github.com/fefenke/kaban-max/blob/main/AGENTS.md), затем PROJECT_STATE и DEVELOPMENT_INDEX из `docs/`. Инженерные документы отдельно описывают невыпущенные изменения и границы локальных проверок.
 
-```sh
-docker build -f scripts/release.Dockerfile -t kabanmax-build .
-docker run --rm -v "$PWD:/work" -w /work kabanmax-build bash scripts/build-release.sh 0.1.5 /work/dist/release
-```
-
-В `dist/release` создаются пакеты backend, LuCI, RU и ядра base/tiny для aarch64_cortex-a53 в форматах IPK/APK, два манифеста, установщик и SHA256SUMS.
-
-Исходный commit ядра закреплён в `core/UPSTREAM`, изменения — в `core/patches/`. Номер `1.14.4-r8` принадлежит этой сборке. Проверка ядра: `go test -race ./protocol/group -run Fallback -count=1` в исходниках с применённым patch.
+Полная упаковка выполняется по `.github/workflows/build.yml` и `scripts/release.Dockerfile`. Используются pinned upstream + все patches + branding, а не произвольный приватный checkout. Выберите согласованную версию приложения и проверьте packages/manifests/SHA256. Сборка не устанавливает приложение на устройство; установка и публикация требуют отдельного решения.

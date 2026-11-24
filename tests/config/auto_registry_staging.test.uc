@@ -7,7 +7,7 @@ let entry={owner:"auto-routing",scope:registry.key(row),record:row};
 t.test("many routing changes stay in RAM and flush only one final snapshot per interval",()=>{
  for(let i=0;i<100;i++)registry.save("applied",[{...entry,record:{...row,id:"route"+i}}]);
  t.eq(fs.readfile(registry.paths.applied),null);t.eq(registry.load().entries[0].record.id,"route99");
- t.eq(registry.flush(),false);now+=899;t.eq(registry.flush(),false);t.eq(fs.readfile(registry.paths.applied),null);
+ t.eq(registry.flush(),false);now+=86399;t.eq(registry.flush(),false);t.eq(fs.readfile(registry.paths.applied),null);
  now++;t.eq(registry.flush(),true);t.eq(registry.load().entries[0].record.id,"route99");t.ok(fs.readfile(registry.paths.pending)!=null);
 });
 t.test("staged exclusions take effect before flash persistence and repeated diagnostics do not dirty routing intent",()=>{
@@ -15,8 +15,8 @@ t.test("staged exclusions take effect before flash persistence and repeated diag
  t.eq(model.suppression().entries[0].scope,entry.scope);t.eq(fs.readfile(model.paths.suppression),null);
  let before=fs.readfile(registry.paths.applied);
  registry.remember([{...registry.load().entries[0].record,new_error:true,domains:["another.example"]}]);
- t.eq(registry.load().entries[0].record.domains,["another.example"]);
- now+=900;t.eq(registry.flush(),true);t.ok(fs.readfile(model.paths.suppression)!=null);t.eq(fs.readfile(registry.paths.applied),before);
+ t.eq(registry.load().entries[0].record.domains,null);
+ now+=86400;t.eq(registry.flush(),true);t.ok(fs.readfile(model.paths.suppression)!=null);t.eq(fs.readfile(registry.paths.applied),before);
 });
 t.test("wall-clock changes cannot bypass the flash checkpoint interval",()=>{
  registry.io.now=()=>999999999;

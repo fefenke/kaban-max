@@ -101,4 +101,30 @@ t.test("unchanged system dump after clear skips fingerprinting and still expires
  t.eq(calls,before);t.eq(log.text(113),"");
 });
 
+t.test("many short lines cannot turn a small text archive into an unbounded object heap", () => {
+    let log = journal.create({ max_entries: 32 });
+    let lines = [];
+    for (let i = 0; i < 1000; i++) push(lines, "short " + i);
+    log.ingest(lines, 100);
+    t.eq(length(log.snapshot().entries), 32);
+    t.contains(log.text(100), "short 999\n");
+    t.excludes(log.text(100), "short 0\n");
+    let restored = journal.create({ max_entries: 32 }, { version: 2, entries: map(lines, (line) => ({at:100,line})) });
+    t.eq(length(restored.snapshot().entries), 32, "restored archives are bounded before the first RPC");
+    t.ok(restored.revision() > 0, "bounded restore invalidates a browser cache of the old full archive");
+});
+
+t.test("oversized individual lines are bounded without cutting UTF-8 characters", () => {
+    let log = journal.create({ max_line_bytes: 80 });
+    let line = join("", map([1,2,3,4,5,6,7,8,9,10], () => "текст-текст"));
+    log.ingest([line], 100);
+    let retained = log.snapshot().entries[0].line;
+    t.ok(length(retained) <= 80);
+    t.contains(retained, "[truncated]");
+    t.ok(match(retained, /текст/) != null);
+    log.clear(101);
+    log.ingest([line], 102);
+    t.eq(log.text(102), "", "clear dedup uses the same bounded representation");
+});
+
 t.done();

@@ -1,0 +1,35 @@
+diff --git a/common/autoroute/ip_registry.go b/common/autoroute/ip_registry.go
+index cc4befa..8536977 100644
+--- a/common/autoroute/ip_registry.go
++++ b/common/autoroute/ip_registry.go
+@@ -62,6 +62,18 @@ func (m *Manager) persistentIP(d *Decision) {
+ 	d.PersistentIP = true
+ 	d.AllPorts = true
+ 	d.AllDevices = true
++	if d.Failure != nil && d.Failure.Message != "" {
++		original := *d.Failure
++		d.OriginalFailure = &original
++	}
++	for _, old := range m.leases {
++		if old.Source == d.Source && old.IP == d.IP {
++			d.Domains = appendDomain(d.Domains, old.Domain)
++			for _, name := range old.Domains {
++				d.Domains = appendDomain(d.Domains, name)
++			}
++		}
++	}
+ 	for _, event := range m.events {
+ 		if event.Source == d.Source && event.IP == d.IP {
+ 			for _, name := range event.Domains {
+diff --git a/common/autoroute/lease.go b/common/autoroute/lease.go
+index 6bc8b24..d07a6fc 100644
+--- a/common/autoroute/lease.go
++++ b/common/autoroute/lease.go
+@@ -8,6 +8,7 @@ import (
+ )
+ 
+ type Lease struct {
++	OriginalFailure  *Failure     `json:"original_failure,omitempty"`
+ 	AllDevices       bool         `json:"all_devices,omitempty"`
+ 	AllPorts         bool         `json:"all_ports,omitempty"`
+ 	ErrorPort        uint16       `json:"error_port,omitempty"`

@@ -40,10 +40,11 @@ const LOG_PATTERN = constants.KABANMAX_LOG_PATTERN;
 const LOG_TAIL_LINES = 200;
 // Bound interpreted fingerprint work per collection on low-power routers.
 // The journal accumulates these batches independently of ring rotation.
-const LOG_JOURNAL_TAIL_LINES = 1000;
+const LOG_JOURNAL_TAIL_LINES = 200;
+const LOG_READ_BYTES = 65536;
 const LOG_BUFFER_LINES = 400;
 const LOG_POLL_MS = 1500;
-const LOG_REPLY_BYTES = 262144;
+const LOG_REPLY_BYTES = 32768;
 // Log polling stops when nobody has asked for a while.
 const LOG_INTEREST_MS = 60000;
 
@@ -96,8 +97,15 @@ let last_journal_poll_ms = null;
 let journal_transfer = null;
 
 function retained_log() {
-    if (journal == null)
-        journal = log_journal.create(null, common.read_json_file(paths.journal_dir + "/archive.json"));
+    if (journal == null) {
+        let path = paths.journal_dir + "/archive.json";
+        // Do not parse a legacy 2 MiB object graph before applying the new limits.
+        let oversized = (fs.stat(path)?.size ?? 0) > 524288;
+        let saved = !oversized ? common.parse_json(fs.readfile(path, 524288)) : null;
+        if (oversized)
+            exec.log("warn", "The previous temporary log archive exceeded the safe memory limit and was discarded; collecting the current system log tail");
+        journal = log_journal.create(null, saved);
+    }
     return journal;
 }
 
@@ -115,13 +123,15 @@ function save_journal() {
 
 function collect_logs(force) {
     let now = common.monotonic_ms();
+    if (journal_transfer != null && now - journal_transfer.at > 30000)
+        journal_transfer = null;
     if (!force && last_journal_poll_ms != null && now - last_journal_poll_ms < LOG_POLL_MS)
         return true;
     last_journal_poll_ms = now;
     let log = retained_log();
     let before = log.revision();
     // File-backed capture avoids truncation when a child exits during a pipe read.
-    let read = exec.capture_parallel([ [ "logread", "-l", LOG_JOURNAL_TAIL_LINES, "-e", LOG_PATTERN ] ])[0];
+    let read = exec.capture_parallel([ [ "logread", "-l", LOG_JOURNAL_TAIL_LINES, "-e", LOG_PATTERN ] ], LOG_READ_BYTES)[0];
     if (read.status == 0)
         log.ingest(filter(split(read.stdout, "\n"), (line) => line != ""), journal_now());
     else
@@ -132,7 +142,7 @@ function collect_logs(force) {
 }
 
 function read_log_tail() {
-    let data = exec.output([ "logread", "-l", LOG_TAIL_LINES, "-e", LOG_PATTERN ]);
+    let data = exec.capture([ "logread", "-l", LOG_TAIL_LINES, "-e", LOG_PATTERN ], LOG_READ_BYTES).stdout;
     return filter(split(data ?? "", "\n"), (line) => line != "");
 }
 
@@ -478,12 +488,13 @@ function object_methods() {
                         return {cursor:retained_log().revision(),reset:true};
                 } else collect_logs(false);
                 let log = retained_log();
-                let text = offset>0 ? journal_transfer.text : log.text(journal_now());
+                log.prune(journal_now());
                 let cursor = offset>0 ? journal_transfer.cursor : log.revision();
-                if(offset<0 || offset>length(text))return {cursor,reset:true};
-                if(offset>0 && int(request.args.cursor ?? -1)!=cursor)return {cursor,reset:true};
                 if (offset==0 && request.args.cursor != null && int(request.args.cursor)>0 && int(request.args.cursor) == cursor)
                     return { cursor, unchanged: true };
+                let text = offset>0 ? journal_transfer.text : log.text(journal_now());
+                if(offset<0 || offset>length(text))return {cursor,reset:true};
+                if(offset>0 && int(request.args.cursor ?? -1)!=cursor)return {cursor,reset:true};
                 let end=min(length(text),offset+LOG_REPLY_BYTES);
                 // Do not split a UTF-8 codepoint across JSON replies.
                 while(end>offset && end<length(text) && (ord(text,end) & 192)==128)end--;
@@ -491,7 +502,7 @@ function object_methods() {
                 if(end<length(text)) {
                     reply.next=end;
                     if(offset==0)journal_transfer={cursor,text,at:common.monotonic_ms()};
-                }
+                } else journal_transfer=null;
                 return reply;
             },
             args: { cursor: 0, offset: 0, ubus_rpc_session: "" }
@@ -591,11 +602,10 @@ function run() {
         log_tick();
     });
 
-    // Capture in RAM every minute; flush only changed routing intent every 15 minutes.
+    // Capture in RAM each minute; flush changed intent on its configured schedule.
     uloop.interval(60000, function() {
         require("diagnostics.auto_routing").capture();
-        try { require("config.auto_registry").flush(); }
-        catch(e) { exec.log("warning",e.message); }
+        require("diagnostics.warp_ports").capture();
     });
 
     // Enforced here, inside what the transport in front of a parked request will wait for.
