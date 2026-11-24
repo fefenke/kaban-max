@@ -36,6 +36,7 @@ fetch_release() { :; }
 decide_core() { :; }
 ask_translation() { :; }
 ASKED=0 TARGET_TAG=0.1.0 OPKG_FLAGS=''
+KABANMAX_REPO=example/app CORE_REPO=example/core
 resolve_release
 test "$OPKG_FLAGS" = '--force-downgrade --force-reinstall'
 echo 'Same-version pinned update refreshes backend/UI and opkg replacement flags: OK'

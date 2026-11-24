@@ -1,6 +1,6 @@
 # Текущее состояние проекта
 
-Актуализировано **2026-11-24**. История — в [архиве](archive/README.md). Читать с [AGENTS](../AGENTS.md) и [навигатором](DEVELOPMENT_INDEX.md). Повторный CI PASS: [приёмка](RELEASE_023.md).
+Актуализировано **2026-11-24**. История — в [архиве](archive/README.md). Читать с [AGENTS](../AGENTS.md) и [навигатором](DEVELOPMENT_INDEX.md). API quota hotfix 0.2.3: [приёмка](RELEASE_023.md).
 
 ## Рабочее дерево и выпуск
 

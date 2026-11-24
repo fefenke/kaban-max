@@ -14,8 +14,9 @@
 # Colors follow whether stdout is a terminal, questions whether /dev/tty opens: a page that runs it
 # on a pseudo-terminal without making it the controlling one gets colors and no questions.
 #
-# The releases come through api.github.com, which takes 60 requests an hour from an address
-# without an account; KABANMAX_DOWNLOAD_URL names a mirror with github.com's release paths instead.
+# Release metadata falls back to raw.githubusercontent.com when the API is unavailable.
+# Packages use public release URLs, preserving SHA256 checks without API quota.
+# KABANMAX_DOWNLOAD_URL names a mirror with github.com's release paths instead.
 # https_proxy and http_proxy are honored, NO_COLOR turns colors off.
 #
 # Every release carries release.json beside its packages, install.sh and SHA256SUMS:
@@ -31,7 +32,7 @@ CORE_REPO=fefenke/kaban-max
 # Explicit release pin allows installation of a reviewed prerelease; /latest
 # remains the stable channel for existing routers.
 TARGET_TAG=${KABANMAX_RELEASE:-}
-# github.com answers a release link with a header line longer than uclient-fetch reads
+# curl handles long release-asset redirects on devices whose uclient-fetch cannot.
 API_URL=https://api.github.com
 MIRROR=${KABANMAX_DOWNLOAD_URL:-}
 LOG=/tmp/kabanmax-install.log
@@ -562,6 +563,14 @@ dep_names() { # the package names a Depends field lists
 
 fetch() { # fetch URL FILE [ACCEPT]: 0; 2 when the server answered with an HTTP error, 3 when that was GitHub's rate limit; 1 when it was not reached
 	local status
+	case "$1" in https://github.com/*/releases/*)
+		if command -v curl >/dev/null 2>&1; then
+			curl --fail --location --silent --show-error --connect-timeout 15 --max-time 180 -o "$2" "$1" 2>"$WORK/fetch.log"
+			status=$?
+			cat "$WORK/fetch.log" >>"$LOG"
+			case $status in 0) return 0 ;; 22) return 2 ;; *) return 1 ;; esac
+		fi
+	;; esac
 	wget -T 30 ${3:+"--header=Accept: $3"} -O "$2" "$1" 2>"$WORK/fetch.log"
 	status=$?
 	cat "$WORK/fetch.log" >>"$LOG"
@@ -603,14 +612,14 @@ download() { # download URL FILE [ACCEPT], three tries: 0; 2 when the server has
 
 release_url() { # release_url REPO TAG FILE: FILE at the mirror, TAG empty for the latest release
 	if [ -n "$2" ]; then
-		printf '%s/%s/releases/download/%s/%s' "$MIRROR" "$1" "$2" "$3"
+		printf '%s/%s/releases/download/%s/%s' "${MIRROR:-https://github.com}" "$1" "$2" "$3"
 	else
-		printf '%s/%s/releases/latest/download/%s' "$MIRROR" "$1" "$3"
+		printf '%s/%s/releases/latest/download/%s' "${MIRROR:-https://github.com}" "$1" "$3"
 	fi
 }
 
 asset_url() { # asset_url kabanmax|core FILE: where FILE of the release is, empty when the release has none
-	if [ -n "$MIRROR" ]; then
+	if [ -n "$MIRROR" ] || { [ "$1" = core ] && [ -n "$C_TAG" ]; } || { [ "$1" = kabanmax ] && [ -n "$F_TAG" ]; }; then
 		if [ "$1" = core ]; then release_url "$CORE_REPO" "$C_TAG" "$2"; else release_url "$KABANMAX_REPO" "$F_TAG" "$2"; fi
 	else
 		jsonfilter -i "$WORK/$1.release" -e "@.assets[@.name=\"$2\"].url" 2>/dev/null
@@ -877,7 +886,7 @@ fetch_release() { # fetch_release kabanmax|core: the latest release's manifest, 
 	[ "$1" = kabanmax ] || repo=$CORE_REPO name=sing-box-kabanmax package=sing-box-kabanmax
 	[ "$1" = kabanmax ] || manifest_name=core-release.json
 	[ -z "$TARGET_TAG" ] || endpoint="tags/$TARGET_TAG"
-	if [ -z "$MIRROR" ]; then
+	if [ -z "$MIRROR" ] && [ -z "$TARGET_TAG" ]; then
 		download "$API_URL/repos/$repo/releases/$endpoint" "$WORK/$1.release"
 		status=$?
 	fi
@@ -885,6 +894,17 @@ fetch_release() { # fetch_release kabanmax|core: the latest release's manifest, 
 		url=$(asset_url "$1" "$manifest_name")
 		status=2
 		[ -z "$url" ] || { download "$url" "$manifest" application/octet-stream; status=$?; }
+	fi
+	if [ "$status" != 0 ] && [ -z "$MIRROR" ]; then
+		# The current raw channel describes only the latest published release.
+		# An explicit pin must never silently select a different tag.
+		if [ -z "$TARGET_TAG" ]; then
+			download "https://raw.githubusercontent.com/$repo/main/release/$manifest_name" "$manifest"
+			status=$?
+		else
+			download "$(release_url "$repo" "$TARGET_TAG" "$manifest_name")" "$manifest"
+			status=$?
+		fi
 	fi
 	case $status in
 	0) ;;
@@ -899,6 +919,9 @@ fetch_release() { # fetch_release kabanmax|core: the latest release's manifest, 
 	read_manifest "$manifest" "$package" >"$WORK/$1.fields" ||
 		fail 1 release "$(t 'Cannot read the information on the %s release' 'Не удалось прочитать сведения о релизе %s' "$name")" \
 			"$(t 'Download the latest install.sh' 'Скачайте свежий install.sh')"
+	if [ -n "$TARGET_TAG" ] && [ "$(sed -n '2p' "$WORK/$1.fields")" != "$TARGET_TAG" ]; then
+		fail 1 release "Selected release metadata does not match the requested tag"
+	fi
 	if [ "$1" = kabanmax ]; then
 		{
 			read -r F_VERSION
@@ -920,6 +943,9 @@ resolve_release() {
 	step release "$(t 'Looking for the latest version' 'Поиск последней версии')"
 	fetch_release kabanmax
 	fetch_release core
+	if [ "$KABANMAX_REPO" = "$CORE_REPO" ] && [ "$F_TAG" != "$C_TAG" ]; then
+		fail 1 release "Application and core release metadata refer to different tags; retry the update"
+	fi
 	decide_kabanmax
 	decide_core
 	ask_translation

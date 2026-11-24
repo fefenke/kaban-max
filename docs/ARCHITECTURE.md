@@ -4,6 +4,8 @@
 
 ## Поток управления
 
+Обновления при отказе GitHub API используют bounded/validated raw manifests из `release/` и тот же version/downgrade guard. UI bootstrap берётся из main с сохранением выбранного release pin; backend manifest для pin проверяется до запуска. Installer качает пакеты и SHA256SUMS по публичным pinned URLs, сохраняя проверку содержимого. [Транспорт и публикация](BUILD_AND_DEPLOY.md).
+
 Принятые транспортные ошибки авторутинга выводятся отдельным Warn исходного маршрута; обычный транспортный connection log остаётся Debug. Executable acceptance включает Warn. SOCKS ошибка до handshake не даёт TLS evidence: автоматическая HTTPS проверка требует подтверждённого протокола либо явно настроенного body prefix.
 
 Applied diagnostics r40: `config/auto_diagnostics.uc` хранит отдельный bounded RAM snapshot, registry пишет туда diagnostic context после успешного сохранения разрешений, UI присоединяет его только по точному binding. Compact grant/flash и authorization не зависят от диагностических текстов. Один indexed snapshot на view. [Выпуск](RELEASE_023.md).

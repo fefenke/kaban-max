@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "name": "kabanmax",
+  "version": "0.2.3",
+  "tag": "0.2.3",
+  "page": "https://github.com/fefenke/kaban-max/releases/tag/0.2.3",
+  "requires": { "sing-box-kabanmax": "1.14.4-r10" },
+  "min_config_version": "1.0.2"
+}

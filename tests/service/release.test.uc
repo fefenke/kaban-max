@@ -64,4 +64,25 @@ t.test("release checks work when the router has no timeout applet", () => {
     stub.restore();
 });
 
+t.test("API quota falls back to raw manifests without losing pinned version validation", () => {
+    let old = constants.KABANMAX_VERSION;
+    constants.KABANMAX_VERSION = "0.2.3";
+    stub.env({ KABANMAX_DOWNLOAD_URL: "" });
+    let urls = [];
+    stub.commands([ [ () => true, (argv) => {
+        let url = argv[length(argv)-1]; push(urls, url);
+        if (index(url, "https://api.github.com/") == 0) return { status: 8 };
+        let path = argv[index(argv, "-O") + 1];
+        if (index(url, "https://raw.githubusercontent.com/") != 0) return { status: 8 };
+        let core_file = index(url, "core-release.json") >= 0;
+        fs.writefile(path, sprintf("%J", { schema: 1, name: core_file ? "sing-box-kabanmax" : "kabanmax",
+            tag: "0.2.3", version: core_file ? "1.14.4-r40" : "0.2.3" }));
+        return { status: 0 };
+    } ] ]);
+    let result = release.check();
+    t.eq(result.release, "0.2.3"); t.eq(result.core_latest, "1.14.4-r40");
+    t.eq(length(filter(urls, (u) => index(u, "https://raw.githubusercontent.com/") == 0)), 2);
+    constants.KABANMAX_VERSION = old; stub.restore();
+});
+
 t.done();

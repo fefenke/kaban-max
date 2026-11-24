@@ -271,7 +271,9 @@ function asset_url(listing, file) {
 // GitHub's /rate_limit answer, which costs no request: whether the API refuses this address now.
 function raw_script_url(tag) {
     if (tag != "" && !match(tag, /^[0-9]+\.[0-9]+\.[0-9]+$/)) return null;
-    return "https://raw.githubusercontent.com/" + constants.KABANMAX_RELEASE_REPO + "/" + (tag || "main") + "/install.sh";
+    // The maintained bootstrap still installs only state.release via KABANMAX_RELEASE.
+    // Old tags may contain an installer that itself cannot survive API quota.
+    return "https://raw.githubusercontent.com/" + constants.KABANMAX_RELEASE_REPO + "/main/install.sh";
 }
 
 function rate_limited(answer) {
@@ -685,11 +687,12 @@ function run(id) {
         if (mirror_url())
             return fetch_url(release_url(file, state.release), path, null, done);
         let url = asset_url(fs.readfile(paths.listing), file);
+        let raw_manifest = () => fetch_url("https://raw.githubusercontent.com/" + constants.KABANMAX_RELEASE_REPO + "/main/release/" + file, path, null, done, 1, 15);
         if (url == null)
-            return file == "install.sh" ? fetch_raw_script(done) : done(FILE_MISSING);
+            return file == "install.sh" ? fetch_raw_script(done) : raw_manifest();
         if (file == "install.sh")
             return fetch_url(url, path, "application/octet-stream", (code) => code == 0 ? done(0) : fetch_raw_script(done), 1, 15);
-        fetch_url(url, path, "application/octet-stream", done);
+        fetch_url(url, path, "application/octet-stream", (code) => code == 0 ? done(0) : raw_manifest());
     }
 
     // As install.sh says it: a release without the file, GitHub's rate limit, a name the router

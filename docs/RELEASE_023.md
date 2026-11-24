@@ -1,5 +1,21 @@
 # Выпуск 0.2.3 / core r40 — 2026-11-24
 
+## Hotfix GitHub API quota, тот же номер 0.2.3
+
+Запрос пользователя после публикации: при обновлении всё ещё показывается API quota, также Zapret2 получает HTTP403. Причина: raw fallback покрывал только bootstrap script, а shell installer/проверка версии/ядро и Zapret2 продолжали использовать API assets. Исправлены эти пути: raw manifests из `release/`, maintained main bootstrap с прежним pin, public pinned package URLs, curl для длинных redirects (wget остаётся доступным fallback), checksum guards сохранены. Запрошенный номер 0.2.3 и core r40 сохранены. Обновляются ровно backend APK/IPK, install.sh, SHA256SUMS; прочие 12 assets и старый tag не переписываются. Source hotfix находится в отдельном обычном коммите main; ссылка добавляется в release notes.
+
+Zapret2 snapshot v1.0.7/digest `d2799bc8dffc03a21f977d3a0e2d8a8626105db630c03d9b99d5164980d5db16` проверен 2026-11-24 через official `bol-van/zapret2/releases/latest`. При fallback показывается последняя проверенная версия, не обещание свежего upstream lookup. Digest/official-host validation и archive verification не ослаблены. Нет проверки фактического обновления Zapret2 или его restart: это отдельная операция.
+
+Свежие проверки 2026-11-24, Linux Docker, исходники hotfix:
+
+- `docker exec kabanmax-autoroute-tests bash /work/tests/run.sh` — **101/101 PASS**. `ucode -c -o /dev/null FILE` и `ucode -S -c -o /dev/null FILE` для service/release, service/installer, zapret2/updater — PASS; `sh -n /work/install.sh` — PASS.
+- `docker exec kabanmax-autoroute-tests bash /work/tests/installer-api-fallback.sh` — PASS: forced API quota, оба raw manifests, explicit pins, public assets, curl HTTP/timeout classification. Новые backend tests сначала RED (без реализации), затем GREEN; async process indices обновлены под фактический manifest download.
+- С тем же `docker exec ... bash /work/`: `tests/installer-release-pin.sh`, `tests/installer-recovery-022.sh`, `tests/installer-upgrade-017.sh`, `tests/installer-translation-smoke.sh`, `tests/release-manifest-smoke.sh` — PASS.
+- Existing `kabanmax-preview-build` image, сеть отключена: `PO2LMO=/usr/local/bin/po2lmo bash /work/scripts/build-zapret2-local.sh 0.2.3 /output`; в final set взяты только два backend packages/install.sh. `bash /work/scripts/finalize-release.sh /output` и `python3 /work/scripts/inspect-release.py /output` — **10 APK/IPK + 13 SHA records PASS**, original r40 binaries read-only mounted для сверки.
+- `python -m unittest discover -s tests/docs -p 'test*.py'` — 9/9; security тем же способом — 3/3. `python scripts/audit-release-privacy.py --packages dist/release-023-r40-hotfix --report dist/release-023-r40-hotfix/privacy.json` — 1119 source/payload files, findings=[]; `python scripts/check-project-docs.py`/`git diff --check` — PASS.
+
+На момент этих проверок hotfix assets ещё не заменены и native CDN/fallback приёмка не выполнена. Публикация/установка фиксируются после фактического завершения. Поддержка длинных redirect через старый uclient-fetch без curl отдельно не подтверждена.
+
 Пользователь поручил исправить исчезновение Applied diagnostics, установить **свежий код под публичным номером 0.2.3** и опубликовать его. Предыдущий публичный выпуск — 0.2.2; более высокие номера использовались только для локальных приёмок. По отдельному ответу пользователя очищаются текущие файлы/новый выпуск; старая опубликованная история и теги не переписываются.
 
 ## Исправление

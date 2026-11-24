@@ -4,6 +4,10 @@
 
 ## Источники и версии
 
+Hotfix 0.2.3: при недоступном GitHub API установщик и проверка обновлений получают manifests из `https://raw.githubusercontent.com/fefenke/kaban-max/main/release/`. Каталог `release/` должен описывать только уже опубликованный stable выпуск и совпадать с release assets; обновлять его вместе с публикацией. Пакеты/SHA256SUMS скачиваются по публичным pinned release URLs, не asset API. Curl используется для длинных redirect headers, при его отсутствии остаётся wget. Явные pins не заменяются latest; смешанные app/core tags отклоняются. Mirror override сохраняется. Maintained raw bootstrap из main передаёт исходный pin установщику через KABANMAX_RELEASE. Для повторной установки hotfix того же номера: `KABANMAX_RELEASE=0.2.3 KABANMAX_REINSTALL=1 sh install.sh`.
+
+Пользователь запросил обновить существующий выпуск 0.2.3: меняются backend APK/IPK, install.sh и SHA256SUMS, без новой версии ядра или переписи tag/history. Source hotfix commit указывается в release notes. Остальные assets сохраняются побайтно. Hardware/публикационный результат — [отчёт](RELEASE_023.md).
+
 | Что | Источник истины |
 | --- | --- |
 | Upstream repo/commit/tag, local core package version, Go toolchain | `core/UPSTREAM` |

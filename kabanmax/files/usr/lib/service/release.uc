@@ -70,7 +70,7 @@ function select_release(listing) {
     return selected;
 }
 
-function check() {
+function check_api() {
     let url = "https://api.github.com/repos/" + constants.KABANMAX_RELEASE_REPO + "/releases?per_page=30";
     let mirror = getenv("KABANMAX_DOWNLOAD_URL");
     let listing = select_release(fetch_json(url, false, "array"));
@@ -83,6 +83,18 @@ function check() {
         asset_url(listing, file);
     return { ...evaluate(manifest("release.json"), manifest("core-release.json"), tag,
         constants.KABANMAX_VERSION, packages.sing_box_version()), prerelease: listing.prerelease === true };
+}
+
+function check() {
+    try {
+        return check_api();
+    } catch (e) {
+        // Raw metadata must pass the same tag/version/downgrade checks.
+        let base = "https://raw.githubusercontent.com/" + constants.KABANMAX_RELEASE_REPO + "/main/release/";
+        let app = fetch_json(base + "release.json", false);
+        let core = fetch_json(base + "core-release.json", false);
+        return { ...evaluate(app, core, app.tag, constants.KABANMAX_VERSION, packages.sing_box_version()), prerelease: false };
+    }
 }
 
 return { valid_tag, valid_manifest, select_release, evaluate, check };

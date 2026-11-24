@@ -55,7 +55,7 @@
     },
     {
       "id": "build-and-maintenance",
-      "patterns": ["scripts/*", "install.sh", "build.sh", "*/Makefile", ".github/*", ".gitignore", ".gitattributes", ".dockerignore", "docs/package.json", "docs/package-lock.json", "docs/yarn.lock", "docs/.vitepress/*"],
+      "patterns": ["scripts/*", "release/*", "install.sh", "build.sh", "*/Makefile", ".github/*", ".gitignore", ".gitattributes", ".dockerignore", "docs/package.json", "docs/package-lock.json", "docs/yarn.lock", "docs/.vitepress/*"],
       "entrypoints": ["scripts/build-release.sh", "scripts/check-project-docs.py", ".github/workflows/docs-check.yml"],
       "docs": ["docs/BUILD_AND_DEPLOY.md", "docs/WORKFLOW.md"]
     },

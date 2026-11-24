@@ -4,6 +4,8 @@
 
 ## Выбрать минимальную достаточную проверку
 
+API quota hotfix: `bash tests/installer-api-fallback.sh` симулирует API отказ, raw manifests обоих компонентов, pinned public assets, curl HTTP/timeout; service release/installer/zapret2 tests проверяют raw fallback и неизменные manifest/digest guards. Это сетевые заглушки; реальная доступность CDN/redirect требует отдельного native smoke.
+
 Executable `tests/core/auto_error_binary.py` использует порог Warn: первая принятая транспортная ошибка после r33 видима на этом уровне. Error скрывает её и делает проверку наличия строки некорректной. Assertions IP/timeout и отсутствия дубликатов обязательны; disabled logging проверяется отдельно.
 
 SOCKS dial failure до handshake не подтверждает TLS. Harness проверяет отказ auto-apply при неизвестном протоколе; положительный сценарий задаёт явный ожидаемый HTTPS body prefix синтетического сервера. Успешный TCP dial не подменяет TLS/status/body evidence.

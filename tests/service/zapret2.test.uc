@@ -40,6 +40,26 @@ t.test("updater uses official embedded releases with a digest and supported arch
     t.eq(updates.architecture("x86_64", "x86_64"), "x86_64");
     t.throws(() => updates.architecture("unknown", "mystery"));
 });
+
+t.test("Zapret2 quota fallback keeps the trusted upstream digest and public download", () => {
+    let exec = require("core.exec"), fs = require("fs");
+    let original = exec.combined;
+    exec.combined = (argv) => {
+        let url = argv[length(argv)-1];
+        if (index(url, "https://api.github.com/") == 0) return { status: 8, output: "HTTP403" };
+        let path = argv[index(argv, "-O") + 1];
+        fs.writefile(path, fs.readfile("../release/zapret2-release.json"));
+        return { status: 0, output: "" };
+    };
+    try {
+        let release = updates.latest();
+        t.eq(release.version, "v1.0.7");
+        t.eq(release.metadata_source, "snapshot");
+        t.eq(release.url, "https://github.com/bol-van/zapret2/releases/download/v1.0.7/zapret2-v1.0.7-openwrt-embedded.tar.gz");
+        t.eq(release.digest, "d2799bc8dffc03a21f977d3a0e2d8a8626105db630c03d9b99d5164980d5db16");
+    } catch (e) { exec.combined = original; die(e.message); }
+    exec.combined = original;
+});
 t.test("status reports managed binary presence independently of a running process", () => {
     let fs = require("fs"), exec = require("core.exec");
     let real_stat = fs.stat, real_output = exec.output;

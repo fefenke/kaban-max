@@ -4,6 +4,7 @@ let fs = require("fs");
 let common = require("core.common");
 let exec = require("core.exec");
 let lock = require("service.lock");
+let constants = require("core.constants");
 const ROOT = "/opt/kabanmax-zapret2";
 const STATE = "/var/run/kabanmax-zapret2-update.json";
 const LOCK = "/var/run/kabanmax-zapret2-update.lock";
@@ -20,7 +21,7 @@ function select_release(release) {
             die("Zapret2 release has no verified download URL or SHA-256 digest");
         if (match(asset.url ?? "", /^https:\/\/api\.github\.com\/repos\/bol-van\/zapret2\/releases\/assets\/[0-9]+$/) == null)
             die("Zapret2 release has no trusted GitHub asset API URL");
-        return { version, url: asset.url, digest: substr(asset.digest, 7) };
+        return { version, url, digest: substr(asset.digest, 7) };
     }
     die("The Zapret2 release has no OpenWrt embedded archive");
 }
@@ -45,15 +46,23 @@ function device_arch() {
 
 function fetch(url, path) {
     let headers = index(url, "/releases/assets/") >= 0 ? [ "--header=Accept: application/octet-stream" ] : [];
-    let result = exec.combined([ "uclient-fetch", "-T", "45", ...headers, "-O", path, url ]);
+    let result = index(url, "https://github.com/") == 0 && fs.access("/usr/bin/curl")
+        ? exec.combined([ "/usr/bin/curl", "--fail", "--location", "--silent", "--show-error", "--connect-timeout", "15", "--max-time", "180", "-o", path, url ])
+        : exec.combined([ "uclient-fetch", "-T", "45", ...headers, "-O", path, url ]);
     if (result.status != 0) die("Download failed: " + url + ": " + result.output);
 }
 
 function latest() {
     let path = "/tmp/kabanmax-zapret2-release." + common.own_pid() + ".json";
     try {
-        fetch("https://api.github.com/repos/bol-van/zapret2/releases/latest", path);
-        let release = select_release(json(fs.readfile(path)));
+        let source = "upstream";
+        try {
+            fetch("https://api.github.com/repos/bol-van/zapret2/releases/latest", path);
+        } catch (e) {
+            fetch("https://raw.githubusercontent.com/" + constants.KABANMAX_RELEASE_REPO + "/main/release/zapret2-release.json", path);
+            source = "snapshot";
+        }
+        let release = { ...select_release(json(fs.readfile(path))), metadata_source: source };
         fs.unlink(path);
         return release;
     }
@@ -216,11 +225,13 @@ function run(action) {
             write_state({ running: true, latest: release.version, message: "Downloading and validating " + release.version });
             install(release);
         }
-        write_state({ success: true, latest: release.version, message: action == "install" ? "Zapret2 installed: " + release.version : "Latest Zapret2: " + release.version });
+        write_state({ success: true, latest: release.version, metadata_source: release.metadata_source,
+            message: action == "install" ? "Zapret2 installed: " + release.version
+                : (release.metadata_source == "snapshot" ? "Latest verified Zapret2 (API unavailable): " : "Latest Zapret2: ") + release.version });
         lock.release(LOCK, owner);
         return 0;
     }
     catch (e) { write_state({ success: false, message: e.message }); lock.release(LOCK, owner); return 1; }
 }
 
-return { select_release, architecture, status, start, run, activate };
+return { select_release, architecture, status, start, run, activate, latest };

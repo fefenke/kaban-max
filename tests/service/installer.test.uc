@@ -451,10 +451,13 @@ t.test("successful Raw script fallback continues the installer",()=>{
  run_with({},()=>{
   fs.writefile(installer.paths.listing,sprintf('%J',{tag_name:"0.2.2",assets:[]}));
   uloop.__exit(0,0);
-  t.eq(uloop.__processes()[1].args[5],"https://raw.githubusercontent.com/fefenke/kaban-max/0.2.2/install.sh");
+  t.eq(uloop.__processes()[1].args[5],"https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh");
   uloop.__exit(1,0);
-  t.eq(uloop.__processes()[3].args[4],installer.paths.script);
-  uloop.__exit(3,0);uloop.__exit(2,0);uloop.__fire("timer");
+  t.eq(uloop.__processes()[2].args[5],"https://raw.githubusercontent.com/fefenke/kaban-max/main/release/release.json");
+  fs.writefile(installer.paths.manifest,'{"schema":1,"name":"kabanmax","version":"0.2.3","tag":"0.2.3"}');
+  uloop.__exit(2,0);
+  t.eq(uloop.__processes()[4].args[4],installer.paths.script);
+  uloop.__exit(4,0);uloop.__exit(3,0);uloop.__fire("timer");
  },"api");
  t.eq(state().exit,0);
 });
@@ -603,8 +606,8 @@ t.test("the page sees download and install phases without parsing terminal outpu
     }
 });
 
-t.test("raw fallback pins valid release refs and rejects arbitrary paths",()=>{
- t.eq(installer.raw_script_url("0.2.2"),"https://raw.githubusercontent.com/fefenke/kaban-max/0.2.2/install.sh");
+t.test("raw fallback uses maintained bootstrap and rejects arbitrary release paths",()=>{
+ t.eq(installer.raw_script_url("0.2.2"),"https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh");
  t.eq(installer.raw_script_url(""),"https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh");
  t.eq(installer.raw_script_url("../private"),null);
 });

@@ -4,6 +4,8 @@
 
 ## Маршруты, DNS и nft
 
+Zapret2 updater при отказе API использует raw `release/zapret2-release.json`: проверенный snapshot официального upstream tag/asset/digest. Он не объявляется свежим upstream latest; UI пишет «Latest verified … (API unavailable)». Archive скачивается по официальному публичному release URL и проверяется прежним SHA256 guard. Snapshot обновлять после проверки upstream, не отключать digest ради fallback.
+
 WARP r38 принимает мягкий локальный `listen_port_hint` из постоянного UCI при пустом RAM cache; серверный `port` и обязательный `listen_port` сохраняют свой смысл. Подошедший старый порт не вызывает flash write; новый сохраняется после десяти здоровых минут один раз на профиль/router boot. [Контракт и границы](WARP_PORT_HINTS.md).
 
 - Порядок секций и first-match сохраняются. Нельзя разрешать Direct для соседнего DNS-IP на основании успеха одного адреса.
