@@ -125,7 +125,8 @@ try:
             {'domain':['two.example.test'],'action':'route','outbound':'warp'},
             {'domain':['one.example.test'],'action':'route','outbound':'zap'}]
         if ip_only:rules.append({'ip_cidr':[IP+'/32'],'action':'route','outbound':'zap'})
-        value={'log':{'disabled':not logging,'level':'error','timestamp':False},
+        # Admitted transport failures are promoted to Warn; Error filters them out.
+        value={'log':{'disabled':not logging,'level':'warn','timestamp':False},
             'certificate':{'store':'none','certificate_path':[FIXTURES+'/cert.pem']},
             'inbounds':[{'type':'socks','tag':'tproxy-in','listen':'127.0.0.1','listen_port':socks}],
             'outbounds':[{'type':'direct','tag':'zap','routing_mark':mark},{'type':'direct','tag':'warp','routing_mark':0x02000002},{'type':'direct','tag':'direct-out'}],

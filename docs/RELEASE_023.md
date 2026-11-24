@@ -37,4 +37,12 @@ HTTPS через два WARP: **34/48ms**, fallback **42ms**; пользоват
 
 Публичные synthetic test PKI и обязательные upstream license/trust-anchor attribution проверены и разрешены только по точным fingerprints. Это не реальные ключи/почта оператора; GPL notices не удалялись. Не публикуются `.local`, configs/logs/private reports, mirrors, build staging или credentials. Полный GPL core source archive (1894 checked entries), без `.git`, подготовлен отдельно; source SHA256 `066d3f7b7c5dbf7288f891d82c01b5628345464dc78dda02bf11cd98d42e0d78`.
 
-Ограничения: RAM diagnostics не переживают полный router power loss. Flash schedule routing intent остаётся суточным. Полный reboot/WAN-loss/многодневный soak не проверены в этом выпуске. До подтверждённой публикации remote status не выдаётся за завершённый.
+## Подтверждённая публикация
+
+Обычный latest [release 0.2.3](https://github.com/fefenke/kaban-max/releases/tag/0.2.3), ID `457032455`, draft=false/prerelease=false. Source commit/tag `489c074fd4c55ac82a556f1c5fdf8b8ea18d0b6a` опубликованы через нефорсированный atomic push. Проверены 984 staged blobs и archive hashes; новая commit/tag identity — project contributors/noreply, без инструментального co-author. Старые commits/tags не переписаны по выбору пользователя.
+
+Uploaded 16 explicit allowlisted assets; каждый remote digest/size совпал с локальным. К 10 APK/IPK + manifests/installer/SHA добавлены полный GPL core source и `SOURCE_SHA256SUMS`. Ключи/конфиги/логи/.local/build staging не публиковались. `/releases/latest` подтверждён через независимый GitHub connector read. Роутер скачал опубликованные app/core manifests (с redirects): **0.2.3 / 1.14.4-r40**, service running.
+
+GitHub Actions для release commit: frontend, backend, shellcheck, documentation build и documentation integrity — success. Core run `45437218598` прошёл Go/race/WARP проверки, но executable error-first assertion ожидал транспортную ошибку в журнале с порогом Error: после r33 она выводится на Warn. Тест исправлен на Warn, assertions IP/timeout/отсутствия дубликатов сохранены. Это изменение harness, пакеты и release tag не меняются. Повторная remote проверка фиксируется отдельно; локальные 14 core race packages уже PASS.
+
+Ограничения: RAM diagnostics не переживают полный router power loss. Flash schedule routing intent остаётся суточным. Полный reboot/WAN-loss/многодневный soak не проверены в этом выпуске. Публикация завершена; ограничения аппаратной приёмки сохраняются.

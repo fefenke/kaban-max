@@ -4,6 +4,8 @@
 
 ## Поток управления
 
+Принятые транспортные ошибки авторутинга выводятся отдельным Warn исходного маршрута; обычный транспортный connection log остаётся Debug. Executable acceptance должен включать Warn, чтобы проверять этот контракт, а не фильтровать сообщение порогом Error.
+
 Applied diagnostics r40: `config/auto_diagnostics.uc` хранит отдельный bounded RAM snapshot, registry пишет туда diagnostic context после успешного сохранения разрешений, UI присоединяет его только по точному binding. Compact grant/flash и authorization не зависят от диагностических текстов. Один indexed snapshot на view. [Выпуск](RELEASE_023.md).
 
 Minute timer state service вызывает `diagnostics/warp_ports.uc`: authenticated core path status → RAM stability/boot allowance → редкий UCI commit через изолированный cursor под lifecycle lock. Контракт задержки и нулевых записей при рабочем порте — [WARP port hints](WARP_PORT_HINTS.md). Контракт WARP сохранён в текущем preview 0.2.9/r39; section-wide IP approvals и границы установки — [PREVIEW_029](PREVIEW_029.md).

@@ -7,6 +7,8 @@ User scope 2026-11-24: fix retained Applied errors/domain labels, install curren
 - [x] Core preserves original failure and observed labels during replacement; UI renders readable timeout wording and raw technical details, honest missing legacy information.
 - [x] Validate source/CI suites, release source and 10 packages; publishable files/commit metadata/assets scanned for secrets, personal data and unwanted tool mentions. Preserve upstream license notices and synthetic test values. Preserve local private evidence outside publication.
 - [x] Install numeric 0.2.3 with fresh core through stock installer (supported downgrade handling if needed), autonomous restart, targeted backup, native state/HTTPS/retention checks and staging cleanup.
-- [ ] Publish sanitized current source with nonpersonal commit metadata and tag 0.2.3, release notes/assets/GPL source; verify remote refs/assets/checksums and update authoritative state.
+- [x] Publish sanitized current source with nonpersonal commit metadata and tag 0.2.3, release notes/assets/GPL source; verify remote refs/assets/checksums and update authoritative state.
+
+Completed publication: stable latest release 0.2.3, 16 verified assets, source commit 489c074, native install r40, staging/mirror cleaned. Evidence: [release report](../../RELEASE_023.md).
 
 No extra approval needed for install/publish: both explicitly requested. Do not force-push history. Private .local, real configs/logs, local paths and audit transcripts are excluded from publication. Existing public history may still contain old mentions per user's decision.
