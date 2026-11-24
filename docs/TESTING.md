@@ -6,6 +6,8 @@
 
 Executable `tests/core/auto_error_binary.py` использует порог Warn: первая принятая транспортная ошибка после r33 видима на этом уровне. Error скрывает её и делает проверку наличия строки некорректной. Assertions IP/timeout и отсутствия дубликатов обязательны; disabled logging проверяется отдельно.
 
+SOCKS dial failure до handshake не подтверждает TLS. Harness проверяет отказ auto-apply при неизвестном протоколе; положительный сценарий задаёт явный ожидаемый HTTPS body prefix синтетического сервера. Успешный TCP dial не подменяет TLS/status/body evidence.
+
 Section-wide Applied IP r39: RED→GREEN другого device, старые approvals/restore, guards соседнего source/IP и реальные exclusions; 14 Go race packages, backend 99/99, frontend 14/14/build/lint, native two-grant migration. [Точные команды и пределы](AUTO_ROUTING_SECTION_IP.md), [установка](PREVIEW_029.md).
 
 Проверки постоянных WARP-портов r38 (boot allowance, десятиминутный timer, unchanged/no-commit, ownership, реальные локальные WireGuard data/keepalive) — [команды и ограничения](WARP_PORT_HINTS.md). Unit timers не заменяют десятиминутную аппаратную приёмку.

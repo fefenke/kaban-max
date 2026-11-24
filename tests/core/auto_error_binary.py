@@ -118,9 +118,10 @@ rules += ('add chain ip kabanmax_auto_error_test dial_timeout { type filter hook
           f'add rule ip kabanmax_auto_error_test dial_timeout meta mark 0x02000004 ip daddr {IP} tcp dport {port} drop\n')
 subprocess.run(NFT+['-f','-'],input=rules.encode(),check=True)
 try:
-    def config(auto_apply=False,logging=True,healthy=False,ip_only=False,timeout=False):
+    def config(auto_apply=False,logging=True,healthy=False,ip_only=False,timeout=False,prefix=''):
         api_port,socks=free_port(),free_port();mark=0x02000004 if timeout else 0x02000003 if healthy else 0x02000001
         source={'id':'meta','outbound':'zap','mark':mark,'probe_zapret':True,'direct':True,'auto_apply':auto_apply,'allow_ip_only':ip_only,'mode':'web','path':'/','port':port,'status':200}
+        source['prefix']=prefix
         rules=[{'protocol':['bittorrent'],'action':'reject'},{'action':'resolve','server':'dns-server'},
             {'domain':['two.example.test'],'action':'route','outbound':'warp'},
             {'domain':['one.example.test'],'action':'route','outbound':'zap'}]
@@ -190,6 +191,14 @@ try:
         assert not api(api_port)['candidates'],'healthy connection observed as an error'
     print('PASS executable: no logging or no failure means no candidate',flush=True)
     value,api_port,socks=config(auto_apply=True)
+    with running(value):
+        fail_request(socks,'one.example.test',port)
+        state=wait_state(api_port,lambda s:len(s['decisions'])==1)
+        assert state['decisions'][0]['reason']=='protocol_unconfirmed' and not state['leases'],state
+    print('PASS executable: pre-connect SOCKS failure has no TLS evidence and cannot auto-apply an unconfigured web probe',flush=True)
+    # SOCKS fails before the TLS handshake. Explicit HTTPS body evidence authorizes
+    # this fixture probe without pretending that the original flow was sniffed.
+    value,api_port,socks=config(auto_apply=True,prefix='<html><body>Verified synthetic application content.')
     with running(value):
         fail_request(socks,'one.example.test',port)
         state=wait_state(api_port,lambda s:len(s['leases'])==1)
