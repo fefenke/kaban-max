@@ -1,6 +1,6 @@
 # Навигатор разработчика
 
-Старт: [AGENTS](../AGENTS.md) → [PROJECT_STATE](PROJECT_STATE.md). Текущий выпуск и native smoke — [0.2.3/r40](RELEASE_023.md). Затем выбрать **одну тему**, не читать все ссылки подряд. Формальная карта путей — [PROJECT_MAP.json](PROJECT_MAP.json).
+Старт: [AGENTS](../AGENTS.md) → [PROJECT_STATE](PROJECT_STATE.md). Текущий hotfix — [0.2.3/r41](AUTO_ROUTING_LATE_DNS.md), прежняя native приёмка — [r40](RELEASE_023.md). Затем выбрать **одну тему**, не читать все ссылки подряд. Формальная карта путей — [PROJECT_MAP.json](PROJECT_MAP.json).
 
 | Задача | Сначала читать | Код и проверки |
 | --- | --- | --- |

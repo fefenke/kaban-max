@@ -1,10 +1,10 @@
 # Текущее состояние проекта
 
-**2026-11-25**. [AGENTS](../AGENTS.md), [навигатор](DEVELOPMENT_INDEX.md), [архив](archive/README.md). [Late DNS: r41, публикация готовится](AUTO_ROUTING_LATE_DNS.md).
+**2026-11-25**. [AGENTS](../AGENTS.md), [навигатор](DEVELOPMENT_INDEX.md), [архив](archive/README.md). [Late DNS: опубликован r41](AUTO_ROUTING_LATE_DNS.md).
 
 ## Рабочее дерево и выпуск
 
-- **Установлен 0.2.3/core r40, API quota hotfix `212e593`**, stock installer exit 0, running; config неизменён. Raw fallback KabanMax/Zapret2 принудительно проверен native PASS; обычная проверка обоих обновлений PASS. [Release 0.2.3](https://github.com/fefenke/kaban-max/releases/tag/0.2.3): заменены backend APK/IPK/install.sh/SHA256SUMS, все 16 assets сверены, tag `489c074` сохранён. **После restart WARP1 HTTPS 35ms, WARP2 дважды HTTP504 — остаётся открыто.** [Приёмка, сохранение Applied diagnostics и границы](RELEASE_023.md).
+- **Опубликован hotfix 0.2.3/core r41**, source `7beabf9`, [тот же release](https://github.com/fefenke/kaban-max/releases/tag/0.2.3),16assets remote SHA/size PASS; tag `489c074` сохранён. Late-DNS Applied и подписи ошибок исправлены.14Go race packages, local executable и все6GitHub jobs PASS. Privacy source/packages/4реальных credential values PASS. **После запрета пользователя роутеры не подключались/не обновлялись**, hardware r41 не заявляется. [Приёмка](AUTO_ROUTING_LATE_DNS.md), [команды с ПК](UPDATE_023.md). Прежняя r40/WARP приёмка — историческая.
 
 - **Предыдущая приёмка 0.2.9/r39, section-wide applied IP:** устранена device-привязка persistent web approvals и удалён uncovered UI status, старые записи мигрируют; core 14 race packages, backend 99/99, frontend 14/14 + build/lint PASS. Оба старых Applied мигрировали на all_devices/all_ports и сохранены в RAM; collector включён, registry errors нет. WARP HTTPS 35/38ms, fallback 34ms; flash used 33352/free 58492 KiB. [Установка](PREVIEW_029.md), [контракт](AUTO_ROUTING_SECTION_IP.md).
 
@@ -16,7 +16,7 @@
 - **Flash приведена к норме:** после 0.2.8 used 33312 KiB (~33 MiB), free 58528 KiB, 36%. Первичная r37 установка заполнила flash из-за собственных APK/backups ассистента и повредила partial binary; рабочий r36 восстановлен, затем r37 штатно установлен с LAN mirror компьютера. Дубликаты удалены после SHA сверки уже имеющихся PC copies. Собственные staging/test каталоги и LAN mirror убраны. Tailscale/настройки/результаты не удалялись. [Авария и уборка](PREVIEW_027.md).
 - **Журнал активного авторутинга r33:** каждый новый принятый source failure, ранее скрытый в Debug, получает Warn, включая повторные отказы существующей Pending записи. Общие refused/no-route остаются Debug, TLS/auth Error не дублируются. Targeted autoroute/route race PASS. Docker/live доступ восстановлен. [Контракт](LOGGING.md).
 
-- **Публикация подтверждена:** GitHub release ID `457032455`, draft=false, prerelease=false; `/releases/latest` возвращает 0.2.3. Публичные app/core manifests скачаны с роутера: 0.2.3/r40. Нынешний active autoroute source — 1 (изменение пользователя), hardware flow/WAN-loss/reboot/load soak не заявляются. Публикация только после приёмки и нового запроса. История 0.2.3 — [PREVIEW_023](PREVIEW_023.md).
+- **Публикация подтверждена:** GitHub release ID `457032455`, draft=false/prerelease=false, latest=0.2.3. Первичная native приёмка касалась r40; r41 опубликован без установки по явному запросу пользователя. Старые preview — [PREVIEW_023](PREVIEW_023.md).
 
 ## Факты из исходников
 

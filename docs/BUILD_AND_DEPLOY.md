@@ -47,7 +47,7 @@ bash scripts/build-core.sh base x86_64 dist/core-review
 
 ## Release packages
 
-Public 0.2.3 содержит текущий r40, а не ранний private preview того же номера. Перед публикацией проверять все backend payload files, privacy source/packages и точные SHA; GPL corresponding source публикуется отдельным архивом с checksum. Публикация новой чистой версии сохраняет старую историю/теги по выбору пользователя. [Команды, native install и границы](RELEASE_023.md).
+Public0.2.3 содержит r41/late-DNS hotfix. Все backend payloads/10packages, privacy и точные SHA проверены; полный GPL source публикуется отдельным архивом с checksum. Старый tag/history сохранены, source hotfix commit явно указан в release notes. [Публикация и границы](AUTO_ROUTING_LATE_DNS.md), [первичная r40приёмка](RELEASE_023.md), [команды обновления с ПК](UPDATE_023.md).
 
 Точная процедура — [build workflow](../.github/workflows/build.yml), [build-release](../scripts/build-release.sh), [check-release](../scripts/check-release.sh). Вызов `scripts/build-release.sh` принимает **согласованную версию приложения x.y.z** и output directory; не копировать старый номер из отчёта. Результаты складывать в ignored `dist/`, не в исходники и не в соседний проект.
 

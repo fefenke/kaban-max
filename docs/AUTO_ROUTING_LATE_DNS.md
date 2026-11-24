@@ -1,6 +1,6 @@
 # Applied обходится при позднем DNS — 2026-11-25
 
-**Исправлено локально в r41, hotfix приложения0.2.3; публикация готовится.** После диагностики пользователь разрешил исправление/публикацию под тем же номером, запретил подключения и установку на роутеры. Исполнение одним ассистентом. [Команды самостоятельного обновления](UPDATE_023.md).
+**Исправлено и опубликовано в r41, hotfix приложения0.2.3.** После диагностики пользователь разрешил исправление/публикацию под тем же номером, запретил подключения и установку на роутеры. Запрет соблюдён. [Команды самостоятельного обновления](UPDATE_023.md).
 
 ## Текущий контракт r41
 
@@ -8,7 +8,17 @@ Patch0041 добавляет per-call `resolveDialer.DialContextWithWrapper`: и
 
 Persistent target failure выставляет reason=applied_target_failed, заменяя прежний bypass reason. RAM diagnostic sidecar сохраняет строго ограниченную attribution причины. UI различает applied_route_bypassed и ошибку выбранной альтернативы; старым ошибкам без attribution показывает нейтральную подпись, не угадывает маршрут. Исходный технический текст/время сохраняются.
 
-Tracked regression `tests/core/auto_late_dns_test.go` подключён к runner/CI: serial/parallel, сохранение winning route, отсутствие observation в DNS, target failure attribution, sibling/exclusion/DNS error. Получен GREEN; полный профильный Go race suite14packages PASS. Executable acceptance дополнен режимом pre_resolve=false; remote результат фиксируется после CI. На роутерах новый код не проверялся/не устанавливался.
+Tracked regression `tests/core/auto_late_dns_test.go` подключён к runner/CI: serial/parallel, сохранение winning route, отсутствие observation в DNS, target failure attribution, sibling/exclusion/DNS error. Получен GREEN; полный профильный Go race suite14packages PASS. Executable acceptance дополнен режимом pre_resolve=false; local и remote PASS. На роутерах новый код не проверялся/не устанавливался.
+
+## Подтверждённая публикация
+
+2026-11-25, source commit `7beabf98d3e452e1e64a7d501c88cc95a1aa2e02`. Обновлён существующий [release0.2.3](https://github.com/fefenke/kaban-max/releases/tag/0.2.3), ID457032455, stable/latest, без переписи tag/history. Проверены digest/size всех16assets: APK/IPK backend/LuCI/RU0.2.3, core r41 base/tiny, manifests/installer/checksums и полный GPL source. Старые r40 core/source assets заменены; новые source references явно указаны в release notes. Raw catalog core-release.json соответствует опубликованному r41.
+
+GitHub Actions source7beabf9: core `45494093551`, frontend `45494093567`, backend `45494093540`, documentation `45494093534`, integrity `45494093608`, ShellCheck `45494093450` — **success**. В core log явно подтверждены pre_resolve=true/false и lifecycle HUP PASS. Job долго находился в setup, поэтому параллельно выполнен локальный equivalent; итоговый remote результат тоже зелёный.
+
+GPL source SHA256=`f68b8ac60682ff0da9e87d39119b70d7ec7c5126a54380e6d4c7e28d40151410`. Privacy: `python scripts/audit-release-privacy.py --packages dist/release-023-r41 --private-reference .local/release023-api-hotfix/kabanmax.before --report dist/release-023-r41/privacy-final.json` —1124source/payload files,4реальных credential values, findings=[]. Обязательные public upstream licenses/test attribution сохранены; operator data и инструментальные метки не найдены. Private staging/logs/backup не опубликованы.
+
+Локальный executable: `docker exec kabanmax-autoroute-tests sh /work/dist/release-023-r41/build-exec.sh`; `docker build -t kabanmax-late-dns-exec:local dist/release-023-r41/exec-context`; `docker run --rm --network none --cap-add NET_ADMIN --sysctl net.ipv4.tcp_syn_retries=1 -v PROJECT:/work:ro kabanmax-late-dns-exec:local sh /work/dist/release-023-r41/exec-smoke.sh` — **exit0/PASS**: kernel TCP DROP/ETIMEDOUT, manual apply/restore, CNAME, disabled logging, неизвестный protocol, automatic HTTPS apply с предварительным/поздним DNS и получение данных, lifecycle HUP. Настройка TCP retry задаётся только namespace контейнера; host/read-only proc не менялись. Первый запуск пытался записать readonly proc/sys и был исправлен на штатный Docker --sysctl.
 
 ## Проверки реализации 2026-11-25
 
