@@ -197,3 +197,16 @@ func TestDNSRefusalIncludesResolverCheck(t *testing.T) {
 		t.Fatalf("actionable DNS refusal lost: %s", got)
 	}
 }
+
+func TestMissingFakeIPRefusalRemainsDebug(t *testing.T) {
+	for _, address := range []string{"198.18.0.1:44100", "[2001:2::1]:44100"} {
+		router, output := newLoggedRouter(t)
+		if !router.logRefused(context.Background(), M.ParseSocksaddr(address), errMissingFakeIPRecord) {
+			t.Fatal("missing FakeIP must still be refused")
+		}
+		got := output.String()
+		if !strings.HasPrefix(got, "DEBUG") || !strings.Contains(got, "no fakeip record") || !strings.Contains(got, address) {
+			t.Fatalf("missing FakeIP diagnostics must stay Debug with destination: %s", got)
+		}
+	}
+}

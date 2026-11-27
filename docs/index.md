@@ -29,6 +29,6 @@ features:
 
 **Keepalive-Assisted Backend Arbitration Node — MAX Edition.** Правила маршрутизации, VPN и Zapret2 для OpenWrt.
 
-**0.2.3 · ядро 1.14.4-r46.** Пакеты APK и IPK для OpenWrt, архитектура `aarch64_cortex-a53`; варианты base и tiny.
+**0.2.3 · ядро 1.14.4-r47.** Пакеты APK и IPK для OpenWrt, архитектура `aarch64_cortex-a53`; варианты base и tiny.
 
 Основано на Forkop. [Авторы компонентов и лицензии](https://github.com/fefenke/kaban-max/blob/main/CREDITS.md).

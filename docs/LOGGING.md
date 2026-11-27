@@ -1,5 +1,7 @@
 # Журнал и мониторинг: ограничение памяти
 
+**r47:** отсутствие записи FakeIP — только Debug, отказ соединения сохранён. Патч0047 отменяет повышение в0042. Независимые project/executable tests проверяют Warn/Error/Debug и IPv4/IPv6. [Приёмка](FAKEIP_LOG_R47.md).
+
 **Локальный r46:** поздние stream TLS/unknown failures не выводятся в Error. Диагностируемые ошибки открытия/отложенного outbound handshake получают адрес, маршрут, этап и предметную проверку; без этого остаются Debug. Client handshake отдельно Debug. Типизированные DNS REFUSED/SERVFAIL сохраняют полезный Error. Fallback/WAN/lifecycle не менялись. [Точный контракт, границы и проверки](ACTIONABLE_CONNECTION_LOGS.md).
 
 **Локальный r45:** возвращён прежний критерий stable fallback: успешный независимый confirmation означает healthy, без failed-check/suspect/confirmed Warn для этой пары. Общий код WARP/VLESS. Остальные уровни сообщений не менялись. По запросу установлен на локальный роутер. [Контракт](FALLBACK_CONFIRMATION_SUCCESS.md).
@@ -65,23 +67,23 @@ Core `/connections` копировал весь набор metadata, созда�
 
 ### Политика уровней после запроса пользователя
 
-Таблица описывает локальный r42. При Warn видны Warn/Error/Fatal/Panic; Debug/Trace ниже порога. Уже сохранённые строки не удаляются. Уровень классифицируется у источника, а согласованные lifecycle/WAN исключения применяются отдельно.
+Таблица описывает текущую серию до r47. При Warn видны Warn/Error/Fatal/Panic; Debug/Trace ниже порога. Уже сохранённые строки не удаляются. Уровень классифицируется у источника, а согласованные lifecycle/WAN исключения применяются отдельно.
 
 | Событие | Уровень / область |
 | --- | --- |
-| Ошибка TCP upload/download copy или half-close существующего соединения | Classified: routine Debug, TLS/auth/неизвестная protocol error — Error; причина и close callback сохраняются |
+| Ошибка TCP upload/download copy или half-close существующего соединения | Debug, включая поздние TLS/auth; причина и close callback сохраняются |
 | `EHOSTUNREACH`, `ENETUNREACH`, `ENOTCONN`, `ECONNRESET`, `ECONNABORTED`, `EPIPE`; отмена/EOF/закрытый socket при открытии/подтверждении handshake в ConnectionManager | Debug. Typed unwrap + точные suffix для userspace `no route to host`, `network is unreachable`, `endpoint not connected`, `connection reset by peer`, `broken pipe` |
-| Отсутствующий FakeIP record | Warn; соединение по-прежнему отклоняется |
+| Отсутствующий FakeIP record | Debug; соединение по-прежнему отклоняется |
 | DNS `bad question size` | Warn в Client и Router; FORMATERROR сохраняется |
 | REFUSED на CHAOS/TXT для `version.bind.`, `version.maradns.`, `version.pdns.`, `hostname.bind.`, `id.server.` | Debug, без открытия/загрязнения окна отказов обычного DNS; возврат причины и IsLoggedFailure сохраняются |
 | Первый отказ обычного DNS exchange | Warn с сервером/доменом/типом/классом/причиной |
 | Повторные DNS failures того же server+domain+type+class за 10s | Один Warn: число дополнительных отказов и причина именно этого вопроса. Разные домены не смешиваются; окна/причины ограничены по памяти |
-| Fallback probe-only failure с подтверждёнными свежими данными пользователя; промежуточный suspect | Warn. Успех независимого confirmURL больше не стирает primary failure |
+| Fallback probe-only failure с подтверждёнными свежими данными пользователя; промежуточный suspect | Успешный независимый confirmation означает healthy; отказ фиксируется при неуспехе обоих адресов |
 | Fallback confirmed failure | Прежний Warn: именованный выход и причина подтверждённого отказа |
 | `connection refused`, настоящие deadline/timeout при открытии соединения в ConnectionManager | Debug по дополнительному указанию пользователя; причины/close handler сохраняются |
-| TLS/version/certificate/auth/config ошибки | Error при открытии и поздней copy; при подтверждённом отсутствии WAN действует прежнее подавление связанных сетевых сообщений |
+| TLS/version/certificate/auth/config ошибки | Диагностируемый connect/outbound-handshake — Error с контекстом и подсказкой; stream/client-handshake — Debug; WAN gate сохраняется |
 | Ошибка выбранного Applied маршрута | Routine причина получает selected-route Warn; не маркируется как исходный отказ. Non-routine Error не дублируется |
-| Поздний сбой stable TCP stream и смена участника | Warn. Late failure запускает внеочередную bounded health check; обычный EOF/close/cancel не запускает |
+| Поздний сбой stable TCP stream и смена участника | Debug, не запускает health check и не переключает fallback |
 | Запуск/apply/проверка конфигурации, отсутствующие зависимости, OOM/crash, ошибки сохранения/отзыва и внутренние ошибки | Прежние уровни сохраняются. Прочие logger sites/зависимости не превращены в глобальный whitelist |
 
 Предварительное предположение «полезность можно определить по возрасту 17–20 минут» не стало правилом: ошибки завершения понижены независимо от возраста. Deadline сначала сохранялся, затем по прямому дополнительному указанию переведён в Debug; тест обновлён под текущий контракт. Авторутинг получает те же ошибки/события, алгоритм fallback и обработка DNS не ослаблены. Не введено обещание автоматически объяснять причину каждого сообщения или доказывать WAN-loss по одному отказу.

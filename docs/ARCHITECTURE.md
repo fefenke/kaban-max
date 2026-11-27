@@ -1,5 +1,7 @@
 # Архитектура
 
+R47: отсутствующая запись FakeIP снова Debug без изменения отказа соединения. Во время установки отдельная KabanMaxDnsTransition сохраняет DNS-политику после удаления основной таблицы: снимок интерфейсов и IPv4/IPv6 исключений, original TCP/UDP53, очистка после готовности сервиса или ошибки installer. [Приёмка](FAKEIP_LOG_R47.md).
+
 R43: optional `allow_unconfirmed_protocol` в source options, gated backend по AutoApply и core capability; отсутствие опции сохраняет прежнее поведение. Fallback сообщает bounded TCP dial budget, autoroute не увеличивает parent60s deadline. [Контракт](AUTO_ROUTING_R43.md).
 
 Текущий r46 содержит отдельный autoroute target-failure callback. Fallback реагирует на новые dial/handshake failures; закрытие установленного потока не запускает health check. WAN gate и lifecycle scope сохранены; новых демонов/хранилищ нет. [Контракт](FALLBACK_DIAL_ONLY.md).

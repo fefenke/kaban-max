@@ -1,5 +1,7 @@
 # Сетевые контракты и инварианты
 
+Во время полной установки DNS защищает отдельная таблица KabanMaxDnsTransition: original TCP/UDP53 на ранее захваченных интерфейсах, с прежними исключениями устройств IPv4/IPv6. Основная таблица может быть удалена при stop без ухода DNS в обход политики. Router/core output не охвачен. Guard снимается после готовности или при cleanup/recovery; глобальные DNS/conntrack caches не очищаются. [Приёмка](FAKEIP_LOG_R47.md).
+
 Локальный backend r46: во время HUP клиентский TCP/UDP DNS53 на source interfaces блокируется filter guard до DNAT, затем возобновляется атомарно с capture. Исключённые устройства и bootstrap DNS ядра сохраняются; no-op save не затронут. Это предотвращает найденный обычный-DNS bypass, не очищает клиентские кэши и не является общим DoH kill switch. [Контракт/границы](RELOAD_DNS_PAUSE.md).
 
 R45 возвращает критерий stable fallback0.2.0/0.2.2: успех основного HTTPS либо независимого confirmation сохраняет здоровый профиль; частичный отказ primary не объявляется полным отказом туннеля. Это общий механизм WARP/VLESS. Отказ обоих URL подтверждается повторно, возврат требует3успехов; all-failed hold и dial-only wake сохранены. [Контракт/проверки](FALLBACK_CONFIRMATION_SUCCESS.md).

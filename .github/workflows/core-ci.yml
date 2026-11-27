@@ -90,3 +90,4 @@ jobs:
           python3 "$GITHUB_WORKSPACE/tests/core/lifecycle_log_binary.py" /tmp/auto-core
           python3 "$GITHUB_WORKSPACE/tests/core/connection_actionable_binary.py" /tmp/auto-core
           python3 "$GITHUB_WORKSPACE/tests/core/fallback_partial_binary.py" /tmp/auto-core
+          python3 "$GITHUB_WORKSPACE/tests/core/fakeip_log_binary.py" /tmp/auto-core

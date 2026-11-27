@@ -144,6 +144,7 @@ finish() { # finish EXIT [CODE]
 }
 
 cleanup() {
+	dns_transition_stop || log 'Could not remove the update DNS guard'
 	[ -z "$WORK" ] || rm -rf "$WORK"
 	[ "$LOCKED" = 0 ] || rm -rf "$LOCK_DIR"
 }
@@ -1090,12 +1091,16 @@ arm_memory_recovery() {
     : > "$marker"
     (trap '' INT TERM HUP PIPE
      while [ -f "$marker" ] && kill -0 "$owner" 2>/dev/null; do sleep 2; done
-     [ ! -f "$marker" ] || /etc/init.d/kabanmax start >>"$LOG" 2>&1
+     if [ -f "$marker" ]; then
+         /etc/init.d/kabanmax start >>"$LOG" 2>&1 || log 'RAM recovery could not start KabanMax'
+         dns_transition_stop || log 'RAM recovery could not remove the DNS guard'
+     fi
     ) </dev/null >/dev/null 2>&1 &
 }
 
 pause_for_ram() {
     [ "$KABANMAX_RUNNING" = 1 ] && [ "$EARLY_STOPPED" = 0 ] || return 1
+    dns_transition_start
     EARLY_STOPPED=1
     arm_memory_recovery
     step stop "$(t 'Temporarily stopping KabanMax to free RAM' 'Временно останавливаем KabanMax для освобождения памяти')"
@@ -1139,12 +1144,23 @@ enough_ram() { # enough_ram KB downloads|dependencies: the run stops here unless
 }
 
 download_packages() {
-	enough_ram "$(need_ram_kb)" downloads
 	step download "$(t 'Downloading the packages' 'Загрузка пакетов')"
+	# Prepare the small backend first, so even a RAM-saving stop can use its guard.
+	if [ -n "$KABANMAX_OLD" ] && [ ! -f /usr/lib/kabanmax/nft/dns_transition.uc ] && [ "$CORE_ACTION" = install ]; then
+		NEED_KABANMAX=1
+	fi
 	if [ "$NEED_KABANMAX" = 1 ]; then
+		if [ -f /usr/lib/kabanmax/nft/dns_transition.uc ]; then
+			enough_ram 8192 downloads
+		else
+			[ "$(mem_available_kb)" -ge 8192 ] && [ "$(free_kb /tmp)" -ge 8192 ] ||
+				fail 1 no_memory "$(t 'Need 8 MiB RAM to prepare a protected update without stopping KabanMax' 'Нужно 8 МиБ RAM для подготовки защищённого обновления без остановки KabanMax')"
+		fi
 		get_package kabanmax "kabanmax_${F_VERSION}_all.$EXT"
 		FILE_KABANMAX=$GOT
+		extract_new_backend || fail 1 check "$(t 'Cannot prepare the backend before update' 'Не удалось подготовить backend перед обновлением')"
 	fi
+	enough_ram "$(need_ram_kb)" downloads
 	if [ "$NEED_APP" = 1 ]; then
 		get_package kabanmax "luci-app-kabanmax_${F_VERSION}_all.$EXT"
 		FILE_APP=$GOT
@@ -1284,6 +1300,22 @@ check_space() { # whether the packages and their dependencies fit the flash; may
 		"$(t 'Free some space and run the installer again' 'Освободите место и запустите установщик снова')"
 }
 
+extract_new_backend() {
+	local root="$WORK/new"
+	[ ! -f "$WORK/backend-extracted" ] || return 0
+	mkdir -p "$root" || return 1
+	if [ "$EXT" = apk ]; then
+		apk extract --allow-untrusted --no-chown --destination "$root" "$FILE_KABANMAX" >>"$LOG" 2>&1 || return 1
+	else
+		tar -xzOf "$FILE_KABANMAX" ./data.tar.gz >"$WORK/backend-data.tar.gz" 2>>"$LOG" ||
+			tar -xzOf "$FILE_KABANMAX" data.tar.gz >"$WORK/backend-data.tar.gz" 2>>"$LOG" || return 1
+		tar -xzf "$WORK/backend-data.tar.gz" -C "$root" >>"$LOG" 2>&1 || return 1
+		rm -f "$WORK/backend-data.tar.gz"
+	fi
+	test -f "$root/usr/lib/kabanmax/config/migration.uc" || return 1
+	: >"$WORK/backend-extracted"
+}
+
 check_config() { # what the new package does with /etc/config/kabanmax, from its own migration code
 	local root="$WORK/new" verdict='' status=1 note
 	[ "$NEED_KABANMAX" = 1 ] && [ -f /etc/config/kabanmax ] || return 0
@@ -1293,13 +1325,10 @@ check_config() { # what the new package does with /etc/config/kabanmax, from its
 		return 0
 	fi
 	if mkdir -p "$root" "$WORK/check" && cp /etc/config/kabanmax "$WORK/check/kabanmax"; then
-		if [ "$EXT" = apk ]; then
-			apk extract --allow-untrusted --no-chown --destination "$root" "$FILE_KABANMAX" >>"$LOG" 2>&1
-		else
-			tar -xzOf "$FILE_KABANMAX" ./data.tar.gz 2>/dev/null | tar -xzf - -C "$root" >>"$LOG" 2>&1
+		if extract_new_backend; then
+			verdict=$(ucode -L "$root/usr/lib/kabanmax" "$root/usr/lib/kabanmax/config/migration.uc" check "$WORK/check/kabanmax" 2>>"$LOG")
+			status=$?
 		fi
-		verdict=$(ucode -L "$root/usr/lib/kabanmax" "$root/usr/lib/kabanmax/config/migration.uc" check "$WORK/check/kabanmax" 2>>"$LOG")
-		status=$?
 	fi
 	log "migration check: $status $verdict"
 	CONFIG_PLAN=$(printf '%s' "$verdict" | jsonfilter -e '@.result' 2>/dev/null)
@@ -1427,6 +1456,41 @@ stop_cores() {
 	done
 	# shellcheck disable=SC2046
 	kill -9 $(pidof sing-box sing-box-core 2>/dev/null) 2>/dev/null
+}
+
+arm_dns_transition_recovery() {
+	local marker="$WORK/dns-transition" owner=$$
+	: >"$marker" || return 1
+	(trap '' INT TERM HUP PIPE
+	 while [ -f "$marker" ] && kill -0 "$owner" 2>/dev/null; do sleep 2; done
+	 if [ -f "$marker" ]; then
+		 dns_transition_stop || log 'DNS guard recovery failed after installer exit'
+	 fi
+	) </dev/null >/dev/null 2>&1 &
+}
+
+dns_transition_start() {
+	local root="$WORK/new/usr/lib/kabanmax"
+	[ "${DNS_TRANSITION_GUARD:-0}" != 1 ] || return 0
+	[ -f "$root/nft/dns_transition.uc" ] || root=/usr/lib/kabanmax
+	[ -f "$root/nft/dns_transition.uc" ] || return 0
+	ucode -L "$root" -e 'exit(require("nft.dns_transition").begin() ? 0 : 1)' >>"$LOG" 2>&1 ||
+		fail 1 check "$(t 'Cannot protect client DNS before stopping KabanMax' 'Не удалось защитить DNS клиентов перед остановкой KabanMax')"
+	if nft list table inet KabanMaxDnsTransition >/dev/null 2>&1; then
+		DNS_TRANSITION_GUARD=1
+		log 'Client DNS guard active for update'
+		arm_dns_transition_recovery || fail 1 check "$(t 'Cannot arm DNS guard recovery' 'Не удалось подготовить восстановление DNS')"
+	fi
+}
+
+dns_transition_stop() {
+	[ "${DNS_TRANSITION_GUARD:-0}" = 1 ] || return 0
+	if ! nft delete table inet KabanMaxDnsTransition >>"$LOG" 2>&1; then
+		nft list table inet KabanMaxDnsTransition >/dev/null 2>&1 && return 1
+	fi
+	DNS_TRANSITION_GUARD=0
+	rm -f "$WORK/dns-transition"
+	log 'Client DNS guard removed after update'
 }
 
 stop_services() {
@@ -1777,6 +1841,7 @@ apply() {
 	trap '' INT TERM HUP PIPE
 	backup_config
 	install_dependencies
+	dns_transition_start
 	stop_services
 	legacy_migrate || fail 3 migration "Could not transfer existing settings to KabanMax"
 	remove_files
@@ -1790,6 +1855,7 @@ apply() {
 	fi
 	clean_up_after
 	start_kabanmax
+	dns_transition_stop || fail 3 dns_guard "$(t 'Cannot restore client DNS after update' 'Не удалось восстановить DNS клиентов после обновления')"
 	legacy_finish
 	summary
 }

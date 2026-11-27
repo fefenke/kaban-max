@@ -80,3 +80,5 @@ jobs:
 
       - name: Check namespace migration
         run: bash tests/legacy-namespace.sh
+      - name: Check DNS protection across package transactions
+        run: bash tests/dns-transition-installer.sh

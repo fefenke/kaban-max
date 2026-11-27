@@ -1,0 +1,42 @@
+diff --git a/route/route.go b/route/route.go
+--- a/route/route.go
++++ b/route/route.go
+@@ -630,7 +630,7 @@
+ // came in for.
+ func (r *Router) logRefused(ctx context.Context, destination M.Socksaddr, err error) bool {
+ 	if errors.Is(err, errMissingFakeIPRecord) {
+-		r.logger.WarnContext(ctx, "connection to ", destination, " refused: no fakeip record (the address was given out shortly before a crash, was flushed, or was unused for a long time); the client gets a new one when it resolves the name again")
++		r.logger.DebugContext(ctx, "connection to ", destination, " refused: no fakeip record (the address was given out shortly before a crash, was flushed, or was unused for a long time); the client gets a new one when it resolves the name again")
+ 		return true
+ 	}
+ 	return false
+diff --git a/route/route_log_test.go b/route/route_log_test.go
+--- a/route/route_log_test.go
++++ b/route/route_log_test.go
+@@ -43,7 +43,7 @@
+ func (b *lockedBuffer) lines() []string {
+ 	var lines []string
+ 	for _, line := range strings.Split(strings.TrimSpace(b.String()), "\n") {
+-		if line != "" && !strings.HasPrefix(line, "WARN") {
++		if line != "" && !strings.HasPrefix(line, "DEBUG") {
+ 			lines = append(lines, line)
+ 		}
+ 	}
+@@ -111,7 +111,7 @@
+ 
+ // A connection to a FakeIP address the store has no record for is refused by design: the
+ // log says so at the debug level, with the address, not as an error of the router.
+-func TestMissingFakeIPRecordIsLoggedAsWarning(t *testing.T) {
++func TestMissingFakeIPRecordIsLoggedAsDebug(t *testing.T) {
+ 	router, output := newLoggedRouter(t)
+ 	router.dnsTransport = fakeDNSTransportManager{fakeIP: fakeFakeIPTransport{store: fakeFakeIPStore{prefix: netip.MustParsePrefix("198.18.0.0/15")}}}
+ 	metadata := adapter.InboundContext{
+@@ -136,7 +136,7 @@
+ 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+ 	require.Len(t, lines, 3, output.String())
+ 	for _, line := range lines {
+-		require.True(t, strings.HasPrefix(line, "WARN"), line)
++		require.True(t, strings.HasPrefix(line, "DEBUG"), line)
+ 		require.Contains(t, line, "no fakeip record")
+ 		require.Contains(t, line, "198.18.0.5:22")
+ 	}

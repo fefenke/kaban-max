@@ -1,4 +1,4 @@
-﻿<p align="center"><img src="assets/kaban-max.png" width="250" alt="K.A.B.A.N.-MAX"></p>
+<p align="center"><img src="assets/kaban-max.png" width="250" alt="K.A.B.A.N.-MAX"></p>
 <h1 align="center">K.A.B.A.N.-MAX</h1>
 <p align="center"><b>Ваши устройства. Ваши маршруты. Один роутер.</b><br>VPN, WARP, Zapret2 и DNS под управлением OpenWrt</p>
 <p align="center">
@@ -29,7 +29,7 @@
 
 ## Установка
 
-**Выпуск 0.2.3 · ядро 1.14.4-r46**
+**Выпуск 0.2.3 · ядро 1.14.4-r47**
 
 Готовые пакеты рассчитаны на OpenWrt с архитектурой **`aarch64_cortex-a53`**. Доступны **APK** и **IPK**. Для другой архитектуры потребуется собственная сборка ядра.
 
