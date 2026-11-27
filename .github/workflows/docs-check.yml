@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'Optional comparison base, including the mapped base after an authorized history rewrite'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -23,7 +28,7 @@ jobs:
         run: python -m unittest discover -s tests/docs -p 'test_*.py'
       - name: Check source facts, links and change coverage
         env:
-          BASE_REV: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_REV: ${{ inputs.base_ref || github.event.pull_request.base.sha || github.event.before }}
         run: |
           if [ -n "$BASE_REV" ] && [ "$BASE_REV" != "0000000000000000000000000000000000000000" ]; then
             python scripts/check-project-docs.py --base "$BASE_REV"
