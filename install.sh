@@ -1460,6 +1460,7 @@ stop_cores() {
 
 arm_dns_transition_recovery() {
 	local marker="$WORK/dns-transition" owner=$$
+	DNS_TRANSITION_MARKER=$marker
 	: >"$marker" || return 1
 	(trap '' INT TERM HUP PIPE
 	 while [ -f "$marker" ] && kill -0 "$owner" 2>/dev/null; do sleep 2; done
@@ -1489,7 +1490,7 @@ dns_transition_stop() {
 		nft list table inet KabanMaxDnsTransition >/dev/null 2>&1 && return 1
 	fi
 	DNS_TRANSITION_GUARD=0
-	rm -f "$WORK/dns-transition"
+	[ -z "${DNS_TRANSITION_MARKER:-}" ] || rm -f "$DNS_TRANSITION_MARKER"
 	log 'Client DNS guard removed after update'
 }
 

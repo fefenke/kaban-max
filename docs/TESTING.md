@@ -1,5 +1,7 @@
 # Проверки: выбор, команды, доказательства
 
+Финальная r47 проверка installer: BusyBox IPK `data.tar.gz`/`./data.tar.gz`, watchdog после выхода owner и cleanup исходного marker после сброса WORK — PASS; последняя regression сначала RED, затем GREEN. Core/UI bytes при этом не менялись.
+
 R47: TestMissingFakeIPRefusalRemainsDebug и fakeip_log_binary.py защищают отказ IPv4/IPv6 и пороги Warn/Error/Debug. dns_transition.test.uc проверяет отдельную таблицу/снимки/exclusions/атомарность; dns-transition-installer.sh — stop/start, early RAM pause и очистку при отказах. [Команды](FAKEIP_LOG_R47.md).
 
 2026-11-27: публикационный core CI обнаружил scheduling race upstream `TestRuleProviderAPI`: registration не означает завершение начального snapshot. Test-only `ruleprovider_synchronization.patch` добавляет барьер чтения, сохраняя проверки имени/revision и production source. Изолированный reproducer с задержкой после регистрации дал RED; после барьера `go test -race -count=100 -run '^TestRuleProviderAPI$' ... ./experimental/clashapi` — PASS, включая принудительное расписание. Без задержки прежние60повторов могли проходить, что не отменяет CI-сбой. [Отчёт](PUBLICATION_023.md).

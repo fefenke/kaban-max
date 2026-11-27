@@ -98,6 +98,17 @@ for _ in {1..50}; do
 done
 test -f "$scratch/recovered"
 test ! -f "$scratch/owner-exit/dns-transition"
+TEST_SOURCE="$scratch/functions.sh" TEST_WORK="$scratch/work-reset" bash -c '
+    source "$TEST_SOURCE"
+    WORK="$TEST_WORK" LOG=/dev/null DNS_TRANSITION_GUARD=1
+    mkdir -p "$WORK"
+    log() { :; }
+    nft() { return 0; }
+    arm_dns_transition_recovery
+    WORK=""
+    dns_transition_stop
+    test ! -e "$TEST_WORK/dns-transition"
+'
 if command -v busybox >/dev/null 2>&1; then
     mkdir -p "$scratch/payload/usr/lib/kabanmax/config" "$scratch/outer"
     printf 'fixture\n' >"$scratch/payload/usr/lib/kabanmax/config/migration.uc"
