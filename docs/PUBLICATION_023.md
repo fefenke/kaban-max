@@ -28,7 +28,7 @@
 | `docker exec kabanmax-autoroute-tests bash -c 'bash /work/tests/run.sh'` | PASS, 101/101 backend-файлов; первоначальный вызов через sh отвергнут из-за bash pipefail, повтор через bash успешен |
 | `AUTO_BUILD=0 sh /tmp/auto-routing-r43-full.sh` в существующем Go-контейнере | PASS, чистое применение 46 patches и 14 пакетов `go test -count=1 -race -p=2`; без повторной сборки бинарников |
 | `python3 /work/scripts/inspect-release.py /work/dist/auto-routing-r46/release` в release-образе | PASS, все 10 APK/IPK, backend/UI source substitution, base/tiny binaries, лицензии, 13 SHA256 records |
-| `python scripts/audit-release-privacy.py --packages dist/auto-routing-r46/release --private-reference .local/release023-api-hotfix/kabanmax.before --report dist/publication-023/privacy-current.json` | PASS, 1156 source/payload файлов, 4 приватных значения, 0 находок |
+| `python scripts/audit-release-privacy.py --packages dist/auto-routing-r46/release --private-reference .local/release023-api-hotfix/kabanmax.before --report dist/publication-023/privacy-current.json` | PASS, 1158 source/payload файлов, 4 приватных значения, 0 находок |
 | `python dist/publication-023/verify_history.py` | PASS, 35 коммитов / 29 090 файловых записей |
 | `python3 /work/dist/publication-023/verify_sanitized.py` в release-образе | PASS, 13 выпусков, APK/IPK equivalence, pixels/scripts/checksums |
 | `python dist/publication-023/audit_source_archive.py` | PASS, 1666 файлов полного исходного архива r46, 0 находок |
@@ -40,10 +40,25 @@
 
 ## Публикационный статус
 
+Независимый mirror clone с GitHub на commit `939115ec1e075beaaf5b9ff26531d096bdf92dbf`: 15 refs, 38 доступных коммитов, 32 169 файловых записей, четыре приватных контрольных значения — 0 находок. Public raw README/installer/catalog/install guide побайтно совпадают с Git blobs; различия CRLF рабочего каталога не считаются изменением опубликованных данных. Проверены 100 файлов локальной сборки пользовательского сайта: 0 находок. Публичный сайт отвечает HTTP200, содержит 0.2.3 и r46.
+
 Повторный core CI выявил отдельную гонку расписания в upstream-тесте long-poll API списков: snapshot может сформироваться после Update, тогда корректный aggregate response не содержит имя. Изолированный reproducer с задержкой после регистрации подтвердил RED. Test-only overlay добавляет ожидание чтения снимка до Update и сохраняет все исходные assertions; 100 повторов с race detector и принудительным расписанием — PASS. Никакие runtime-патчи, пакеты, binary SHA или версия r46 при этом не изменены. Overlay включён в CI и runners clashapi.
 
 Опубликованы все 14 комплектов release assets: размеры и SHA256 каждой позиции сверены через GitHub API. В текущем 0.2.3 — 17 assets: 10 пакетов, установщик, два каталога, SHA256SUMS, архивы исходников r41/r46 и SOURCE_SHA256SUMS. 53 заменённых/добавленных файла независимо скачаны по публичным ссылкам без авторизации: SHA256 PASS.
 
 Main и все 14 тегов отправлены одним atomic push с отдельным force-with-lease на каждый исходный ref. 13 исторических тегов сохраняют прежние функциональные версии; 0.2.3 указывает на текущие исходники. Обновлены описание, topics, ссылка документации и продуктовая страница выпуска. Прежние core r41 packages удалены из текущего комплекта; соответствующий исходный архив сохранён.
 
-Первый автоматический docs CI после переписи не смог найти прежний event.before SHA в новом графе: `Invalid symmetric difference expression`. Это не runtime failure. Для контролируемой повторной проверки workflow получает явный base_ref — соответствующий очищенный родитель публикационного commit. Проверка охвата исходных изменений сохраняется, `--no-diff` для этой приёмки не используется. Frontend/backend workflows допускают ручной запуск полного suite; остальные проверки и Pages запускаются на опубликованном commit. Их окончательный результат фиксируется после завершения.
+Первый автоматический docs CI после переписи не смог найти прежний event.before SHA в новом графе: `Invalid symmetric difference expression`. Это не runtime failure. Для контролируемой повторной проверки workflow получил явный base_ref — соответствующий очищенный родитель публикационного commit. Проверка охвата исходных изменений сохранена, `--no-diff` для этой приёмки не использовался. Frontend/backend workflows допускают ручной запуск полного suite.
+
+## Завершённая GitHub-приёмка
+
+Для source/tag **939115ec1e075beaaf5b9ff26531d096bdf92dbf** все шесть workflows завершены с `success`:
+
+- [Frontend CI](https://github.com/fefenke/kaban-max/actions/runs/45930786115)
+- [Backend CI](https://github.com/fefenke/kaban-max/actions/runs/45930716830)
+- [Patched core fallback](https://github.com/fefenke/kaban-max/actions/runs/45930716822): TLS/parser/fallback race, scoped registry, WARP/network reset и реальные executable-проверки autoroute/lifecycle/actionable logs/independent fallback
+- [ShellCheck](https://github.com/fefenke/kaban-max/actions/runs/45930716806)
+- [Documentation integrity](https://github.com/fefenke/kaban-max/actions/runs/45930716819)
+- [Pages](https://github.com/fefenke/kaban-max/actions/runs/45930716800)
+
+Первоначальные два CI-сбоя и их причины описаны выше; они не выдаются за успешные. Итоговый source/tag, public downloads, текущие raw-каталоги и версия публичного сайта проверены отдельно. Последующая запись результатов в main меняет только документацию; release tag сохраняет проверенный source commit.

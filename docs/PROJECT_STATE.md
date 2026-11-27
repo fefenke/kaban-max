@@ -31,9 +31,9 @@
 - Авторутинг: section-wide IP approvals для всех устройств/портов; успешные результаты сохраняются без периодической перепроверки. Protocol-unverified auto-apply — отдельное явное согласие. [Хранение](AUTO_ROUTING_STORAGE.md), [r43](AUTO_ROUTING_R43.md).
 - DNS guard удерживает перехватываемые DNS-запросы во время HUP; глобальные DNS/conntrack кэши не очищаются. [Контракт](RELOAD_DNS_PAUSE.md).
 
-## Открыто и ограничения
+Все шесть GitHub workflows для source/tag `939115e` завершились успешно: frontend, backend, core race/executable, ShellCheck, документация и Pages. RED и 100 race-повторов GREEN test-only long-poll fixture зафиксированы; бинарники r46 сохранены. [Отчёт](PUBLICATION_023.md).
 
-Публикационная проверка CI завершает повторный прогон после test-only синхронизации upstream long-poll fixture. RED и 100 race-повторов GREEN зафиксированы; бинарники r46 сохранены. [Отчёт](PUBLICATION_023.md).
+## Открыто и ограничения
 
 1. Переменные WARP timeout и региональные отказы требуют длительной проверки на конкретном провайдере; причина не доказана. Успех отдельной HTTPS-пробы не гарантирует доступность любого сайта.
 2. Не завершены многодневная приёмка, полное отключение питания, hardware WAN-loss/PBR/IPv6-only и клиентские browser/DNS captures после HUP.
