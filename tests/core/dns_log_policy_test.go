@@ -109,7 +109,7 @@ type logPolicyDNSTransport struct{ adapter.DNSTransport }
 
 func (logPolicyDNSTransport) Tag() string { return "test" }
 
-func TestMalformedDNSQueryIsDebugAndStillRejected(t *testing.T) {
+func TestMalformedDNSQueryIsWarnAndStillRejected(t *testing.T) {
 	output := new(lockedBuffer)
 	factory := log.NewDefaultFactory(context.Background(), log.Formatter{BaseTime: time.Now(), DisableColors: true}, output, "", nil, false)
 	if err := factory.Start(); err != nil {
@@ -131,10 +131,10 @@ func TestMalformedDNSQueryIsDebugAndStillRejected(t *testing.T) {
 	}
 	lines := output.lines()
 	if len(lines) != 2 {
-		t.Fatalf("want two debug events, got %q", lines)
+		t.Fatalf("want two warning events, got %q", lines)
 	}
 	for _, line := range lines {
-		if !strings.HasPrefix(line, "DEBUG") {
+		if !strings.HasPrefix(line, "WARN") {
 			t.Fatalf("unexpected severity: %s", line)
 		}
 	}

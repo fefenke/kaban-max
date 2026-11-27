@@ -1,5 +1,13 @@
 # Сетевые контракты и инварианты
 
+Локальный backend r46: во время HUP клиентский TCP/UDP DNS53 на source interfaces блокируется filter guard до DNAT, затем возобновляется атомарно с capture. Исключённые устройства и bootstrap DNS ядра сохраняются; no-op save не затронут. Это предотвращает найденный обычный-DNS bypass, не очищает клиентские кэши и не является общим DoH kill switch. [Контракт/границы](RELOAD_DNS_PAUSE.md).
+
+R45 возвращает критерий stable fallback0.2.0/0.2.2: успех основного HTTPS либо независимого confirmation сохраняет здоровый профиль; частичный отказ primary не объявляется полным отказом туннеля. Это общий механизм WARP/VLESS. Отказ обоих URL подтверждается повторно, возврат требует3успехов; all-failed hold и dial-only wake сохранены. [Контракт/проверки](FALLBACK_CONFIRMATION_SUCCESS.md).
+
+R43 не считает TCP connect доказательством протокола: только явный пользовательский риск допускает две TCP-попытки с отдельным unverified evidence. Known TLS identity, UDP, strict nonce, source ownership и исключения не обходятся. Для проб учтён dial budget выбранного fallback при прежнем parent limit. [Точный контракт](AUTO_ROUTING_R43.md).
+
+Историческая стратегия r42 заменена0044/0045: stream failure больше не будит health, успешный confirmation сохраняет healthy. WAN suppression, WG rebind guards и интервалы не менялись. [История r42](WARP_RUNTIME_FIX.md).
+
 Текущие границы, которые нельзя менять ради уборки. Архитектура слоёв — [ARCHITECTURE](ARCHITECTURE.md), причины — [DECISIONS](DECISIONS.md), доступ к устройствам — [SECURITY](SECURITY.md).
 
 ## Маршруты, DNS и nft

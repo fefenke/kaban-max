@@ -1,0 +1,195 @@
+--- a/route/conn.go
++++ b/route/conn.go
+@@ -103,6 +103,7 @@
+ 
+ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+ 	ctx = adapter.WithContext(ctx, &metadata)
++	ctx = withConnectionLogRoute(ctx, this, metadata.Network)
+ 	var (
+ 		remoteConn net.Conn
+ 		err        error
+@@ -136,7 +137,7 @@
+ 		err = E.Cause(err, "report handshake success")
+ 		remoteConn.Close()
+ 		N.CloseOnHandshakeFailure(conn, onClose, err)
+-		m.logConnectionFailure(ctx, err)
++		m.logConnectionStageFailure(ctx, "client_handshake", err)
+ 		return
+ 	}
+ 	if metadata.TLSFragment || metadata.TLSRecordFragment {
+@@ -167,6 +168,7 @@
+ 
+ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dialer, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+ 	ctx = adapter.WithContext(ctx, &metadata)
++	ctx = withConnectionLogRoute(ctx, this, metadata.Network)
+ 	var (
+ 		remotePacketConn   net.PacketConn
+ 		remoteConn         net.Conn
+@@ -239,7 +241,7 @@
+ 		err = E.Cause(err, "report handshake success")
+ 		remotePacketConn.Close()
+ 		N.CloseOnHandshakeFailure(conn, onClose, err)
+-		m.logConnectionFailure(ctx, err)
++		m.logConnectionStageFailure(ctx, "client_handshake", err)
+ 		return
+ 	}
+ 	if destinationAddress.IsValid() {
+@@ -323,7 +325,7 @@
+ 		if err == nil {
+ 			m.logger.DebugContext(ctx, "connection upload finished")
+ 		} else if !E.IsClosedOrCanceled(err) && !strings.Contains(err.Error(), "NO_ERROR") && !strings.Contains(err.Error(), "CANCEL") && !strings.Contains(err.Error(), "body closed") {
+-			m.logConnectionFailure(ctx, E.Cause(err, "connection upload closed"))
++			m.logConnectionStageFailure(ctx, "upload", E.Cause(err, "connection upload closed"))
+ 		} else {
+ 			m.logger.TraceContext(ctx, "connection upload closed")
+ 		}
+@@ -331,7 +333,7 @@
+ 		if err == nil {
+ 			m.logger.DebugContext(ctx, "connection download finished")
+ 		} else if !E.IsClosedOrCanceled(err) && !strings.Contains(err.Error(), "NO_ERROR") && !strings.Contains(err.Error(), "response body closed") {
+-			m.logConnectionFailure(ctx, E.Cause(err, "connection download closed"))
++			m.logConnectionStageFailure(ctx, "download", E.Cause(err, "connection download closed"))
+ 		} else {
+ 			m.logger.TraceContext(ctx, "connection download closed")
+ 		}
+@@ -389,9 +391,9 @@
+ 	}
+ 	common.Close(source, destination)
+ 	if !direction {
+-		m.logConnectionFailure(ctx, E.Cause(err, "connection upload handshake"))
+-	} else {
+-		m.logConnectionFailure(ctx, E.Cause(err, "connection download handshake"))
++		m.logConnectionStageFailure(ctx, "outbound_handshake", E.Cause(err, "connection upload handshake"))
++	} else {
++		m.logConnectionStageFailure(ctx, "client_handshake", E.Cause(err, "connection download handshake"))
+ 	}
+ 	return true
+ }
+--- a/route/connection_log.go
++++ b/route/connection_log.go
+@@ -29,9 +29,5 @@
+ }
+ 
+ func (m *ConnectionManager) logConnectionFailure(ctx context.Context, err error) {
+-	if routineConnectionFailure(err) {
+-		m.logger.DebugContext(ctx, err)
+-	} else {
+-		m.logger.ErrorContext(ctx, err)
+-	}
++	m.logConnectionStageFailure(ctx, "connect", err)
+ }
+--- /dev/null
++++ b/route/connection_log_context.go
+@@ -0,0 +1,112 @@
++package route
++
++import (
++	"context"
++	"errors"
++	"strings"
++	"unicode"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/dns"
++	N "github.com/sagernet/sing/common/network"
++)
++
++type connectionLogRouteKey struct{}
++
++// Capture routing identity before dial. A group may change its selection later.
++func withConnectionLogRoute(ctx context.Context, dialer N.Dialer, network string) context.Context {
++	if network == "" {
++		network = "tcp"
++	}
++	var path []string
++	for depth := 0; depth < 8; depth++ {
++		outbound, ok := dialer.(adapter.Outbound)
++		if !ok {
++			break
++		}
++		path = append(path, outbound.Type()+"["+outbound.Tag()+"]")
++		group, ok := outbound.(adapter.OutboundGroup)
++		if !ok {
++			break
++		}
++		next := group.Selected(network)
++		if next == nil {
++			break
++		}
++		dialer = next
++	}
++	return context.WithValue(ctx, connectionLogRouteKey{}, strings.Join(path, " -> "))
++}
++
++func connectionLogLabel(value string) string {
++	var result strings.Builder
++	count := 0
++	for _, r := range value {
++		if count == 256 {
++			result.WriteString("...")
++			break
++		}
++		if unicode.IsControl(r) {
++			r = ' '
++		}
++		result.WriteRune(r)
++		count++
++	}
++	return result.String()
++}
++
++func connectionLogContext(ctx context.Context) (destination, route string) {
++	metadata := adapter.ContextFrom(ctx)
++	if metadata != nil {
++		if metadata.Destination.IsIP() || metadata.Destination.IsDomain() {
++			destination = metadata.Destination.String()
++		}
++		if metadata.Domain != "" && metadata.Destination.IsIP() {
++			destination += " (" + metadata.Domain + ")"
++		}
++		route = metadata.RouteOutbound
++		if route == "" {
++			route = metadata.Outbound
++		}
++	}
++	if captured, ok := ctx.Value(connectionLogRouteKey{}).(string); ok && captured != "" {
++		route = captured
++	}
++	return connectionLogLabel(destination), connectionLogLabel(route)
++}
++
++func connectionFailureHint(err error) string {
++	if errors.Is(err, dns.RcodeRefused) || errors.Is(err, dns.RcodeServerFailure) {
++		return "check configured DNS resolver availability, upstream failures and refusal policy for this name"
++	}
++	// Classify the cause, not a hostname/profile included by a contextual wrapper.
++	for errors.Unwrap(err) != nil {
++		err = errors.Unwrap(err)
++	}
++	detail := strings.ToLower(err.Error())
++	switch {
++	case strings.Contains(detail, "certificate"), strings.Contains(detail, "x509:"):
++		return "check peer certificate validity, trust chain and configured server name"
++	case strings.Contains(detail, "authentication"), strings.Contains(detail, "unauthorized"), strings.Contains(detail, "invalid credentials"):
++		return "check selected proxy credentials and server authentication settings"
++	case strings.Contains(detail, "tls"), strings.Contains(detail, "reality"):
++		return "check peer TLS compatibility, configured transport and server name"
++	case strings.Contains(detail, "handshake") && strings.Contains(detail, "protocol"):
++		return "check matching client/server protocol and transport settings"
++	default:
++		return ""
++	}
++}
++
++func (m *ConnectionManager) logConnectionStageFailure(ctx context.Context, stage string, err error) {
++	if err == nil {
++		return
++	}
++	destination, route := connectionLogContext(ctx)
++	hint := connectionFailureHint(err)
++	if stage == "upload" || stage == "download" || stage == "client_handshake" || routineConnectionFailure(err) || destination == "" || route == "" || hint == "" {
++		m.logger.DebugContext(ctx, "connection failure stage=", stage, " destination=", destination, " route=", route, ": ", err)
++		return
++	}
++	m.logger.ErrorContext(ctx, "connection failure stage=", stage, " destination=", destination, " route=", route, "; check=", hint, "; cause=", err)
++}

@@ -27,6 +27,9 @@ cp /extra-tests/auto_quic_field_test.go common/autoroute/
 cp /extra-tests/auto_all_ports_test.go common/autoroute/
 cp /extra-tests/auto_section_ip_test.go common/autoroute/
 cp /extra-tests/auto_applied_diagnostics_test.go common/autoroute/
+cp /extra-tests/auto_failed_retry_test.go common/autoroute/
+cp /extra-tests/auto_probe_timeout_test.go common/autoroute/
+cp /extra-tests/auto_protocol_risk_test.go common/autoroute/
 cp /extra-tests/auto_late_dns_test.go common/autoroute/
 cp /extra-tests/auto_ja3_alpn_test.go common/ja3/
 cp /extra-tests/auto_sniff_alpn_test.go common/sniff/
@@ -40,6 +43,10 @@ cp /extra-tests/fakeip_ipv6_migration_test.go dns/transport/fakeip/
 cp /extra-tests/wan_state_test.go /extra-tests/wan_probe_test.go common/wanstate/
 cp /extra-tests/wan_log_gate_test.go log/
 cp /extra-tests/lifecycle_log_test.go log/
+cp /extra-tests/runtime_log_levels_test.go log/
+cp /extra-tests/fallback_partial_failure_test.go protocol/group/
+cp /extra-tests/fallback_stream_failure_test.go protocol/group/
+cp /extra-tests/fallback_probe_budget_test.go protocol/group/
 taskVersion=$(sed -n 's/^package_version=//p' /core/UPSTREAM | tr -d '\r')
 GOPROXY=off go test -count=1 -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./common/autoroute ./route ./dns ./dns/transport/fakeip ./common/wanstate ./log ./experimental/clashapi ./protocol/group ./transport/wireguard ./protocol/warp ./protocol/wireguard ./experimental/cachefile ./common/ja3 ./common/sniff
 if [ "${AUTO_BUILD:-0}" = 1 ]; then

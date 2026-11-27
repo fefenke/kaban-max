@@ -1,5 +1,23 @@
 # Сборка, версии и внешние действия
 
+Текущий комплект публикации — **0.2.3 / core r46**, готовые base/tiny ARM64 APK/IPK. [Публикационная проверка](PUBLICATION_023.md) содержит текущий статус, соответствующие исходники и границы privacy-аудита. Повторное обновление той же версии — [UPDATE_023](UPDATE_023.md).
+
+## Историческая локальная подготовка
+
+Следующие записи описывают состояние до публикации r46; прежние «не опубликован» и r41 относятся к датам этих этапов.
+
+Установка неопубликованного комплекта на другие устройства с ПК — [local preview](UPDATE_LOCAL_PREVIEW.md), `scripts/update-local-preview.ps1`: передача подходящих APK/IPK, SHA, автономный отдельный runner, штатный install.sh через loopback mirror. Публичный release0.2.3 остаётся r41; не подменять этой ссылкой r46.
+
+Локальный app0.2.3/core r46 с logging/DNS guard и confirmation URL combobox установлен по прямому запросу.10APK/IPK PASS; installer/SHA/config/running и оба WARP/VLESS HTTPS PASS. Последующий LuCI-only package update не перезапускал core. GitHub не публиковался. [Приёмка](LOCAL_R46_INSTALL.md).
+
+Локальный комплект app0.2.3/core r45: прежний критерий stable fallback восстановлен;10APK/IPK прошли inspector/checksums. По отдельному запросу штатно установлен на локальный роутер; installer/SHA/config/HTTPS PASS. Не опубликован. [Evidence](FALLBACK_CONFIRMATION_SUCCESS.md).
+
+Локальный r44 по отдельному прямому запросу установлен штатным installer, exit0/running/SHA/config PASS. App0.2.3, core r44; не опубликован. [Точные команды, scope и результаты](FALLBACK_DIAL_ONLY.md).
+
+Текущая локальная подготовка r43 заменяет r42 без изменения app0.2.3. Новая protocol-risk опция требует core r43 только при включении; существующий общий минимум не повышен. [Сборка/приёмка](AUTO_ROUTING_R43.md). По прямому запросу установлен на локальный роутер штатным installer; exit0/running/SHA PASS. Не опубликован.
+
+Локальный r42: append-only patch0042; partial/stream/threshold regressions включены в core CI и локальные runners. ARM64 base/tiny и amd64 base собраны из pinned source+42patches; не опубликованы/не установлены. [Точные проверки](WARP_RUNTIME_FIX.md).
+
 Локальная сборка не означает разрешение на установку/публикацию. Статус версии — [PROJECT_STATE](PROJECT_STATE.md), ограничения — [SECURITY](SECURITY.md), проверки — [TESTING](TESTING.md).
 
 ## Источники и версии

@@ -16,6 +16,7 @@ const LOCAL4 = constants.NFT_LOCALV4_SET_NAME;
 const LOCAL6 = constants.NFT_LOCALV6_SET_NAME;
 const INTERFACES = constants.NFT_INTERFACE_SET_NAME;
 const PAUSE_CHAIN = constants.NFT_PAUSE_CHAIN_NAME;
+const DNS_PAUSE_CHAIN = "dns_capture_pause";
 const FAKEIP_MARK = constants.NFT_FAKEIP_MARK;
 const OUTBOUND_MARK = constants.NFT_OUTBOUND_MARK;
 const ROUTER_MARK = constants.NFT_ROUTER_MARK;
@@ -124,9 +125,13 @@ function add_held_flow_rule(chain, mark) {
 // packet would be offloaded past this table for good.
 function capture_command(active) {
     let chain = [ "inet", TABLE, PAUSE_CHAIN ];
-    let commands = [ [ "flush", "chain", ...chain ] ];
+    let dns_chain = [ "inet", TABLE, DNS_PAUSE_CHAIN ];
+    // Add is idempotent, including an upgrade from a table built before the DNS guard.
+    // One nft transaction releases both pauses together; no partial resume.
+    let commands = [ [ "add", "chain", ...dns_chain ], [ "flush", "chain", ...dns_chain ], [ "flush", "chain", ...chain ] ];
     if (!active)
-        push(commands, [ "add", "rule", ...chain, ...marked(FAKEIP_MARK), "counter", "drop" ],
+        push(commands, [ "add", "rule", ...dns_chain, "counter", "drop" ],
+            [ "add", "rule", ...chain, ...marked(FAKEIP_MARK), "counter", "drop" ],
             [ "add", "rule", ...chain, ...marked(ROUTER_MARK), "counter", "drop" ], [ "add", "rule", ...chain, "counter", "accept" ]);
     return [ "nft", join("; ", map(commands, (command) => join(" ", command))) ];
 }
@@ -171,6 +176,7 @@ function add_base(settings, excluded_router, excluded) {
     add_rule("priority_output_rules", [ "meta", "mark", "&", "0x1c000000", "!=", "0", "return" ]);
     add_chain("proxy", "{ type filter hook prerouting priority -100; policy accept; }");
     add_chain(PAUSE_CHAIN, "{ }");
+    add_chain(DNS_PAUSE_CHAIN, "{ }");
 
     add_chain("dns_redirect", "{ type nat hook prerouting priority " + constants.NFT_DNS_REDIRECT_PRIORITY + "; policy accept; }");
     add_rule("dns_redirect", [ "jump", PAUSE_CHAIN ]);
@@ -180,6 +186,11 @@ function add_base(settings, excluded_router, excluded) {
 
     add_held_flow_rule("mangle", FAKEIP_MARK);
     add_excluded_returns("mangle", excluded);
+    // Guard before NAT: a query accepted by dns_redirect while paused could both
+    // cache a real address and retain an unredirected conntrack flow after resume.
+    // Excluded clients bypass this; loopback/core upstream DNS never matches it.
+    add_rule("mangle", [ "ct", "direction", "original", "iifname", "@" + INTERFACES,
+        "meta", "l4proto", "{ tcp, udp }", "th", "dport", "53", "jump", DNS_PAUSE_CHAIN ]);
     add_rule("mangle", [ "ct", "status", "dnat", "return" ]);
     add_rule("mangle", REPLY_RETURN);
     // nft runs every nat chain at the NAT hook, after this chain, so a query a

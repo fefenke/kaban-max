@@ -1,0 +1,63 @@
+--- a/protocol/group/fallback_stable.go
++++ b/protocol/group/fallback_stable.go
+@@ -323,7 +323,6 @@
+ 	// A candidate is committed only while its outbound identity still matches.
+ 	stale := false
+ 	probeTargets := make(map[string]N.Dialer)
+-	partialFailures := make(map[string]bool)
+ 	probe := func(c fallbackCandidate, recovering bool) bool {
+ 		probeReason := checkReason
+ 		if recovering {
+@@ -361,9 +360,9 @@
+ 		}
+ 		var confirmationError error
+ 		if err != nil && ctx.Err() == nil {
+-			_, _, confirmationError = s.coordinator.Check(ctx, s.stable.confirmURL, s.stable.confirmStatus, targetTag, target, probeTimeout, 0)
+-			// Confirmation is independent evidence, never a replacement for the configured service.
+-			partialFailures[c.tag] = confirmationError == nil
++			// Either independent HTTPS target can establish tunnel availability.
++			delay, at, err = s.coordinator.Check(ctx, s.stable.confirmURL, s.stable.confirmStatus, targetTag, target, probeTimeout, 0)
++			confirmationError = err
+ 		}
+ 		if ctx.Err() != nil {
+ 			return false
+@@ -384,7 +383,7 @@
+ 		if err != nil {
+ 			s.stable.recordCount(time.Now(), c.tag, 0, 1, 0)
+ 		}
+-		if c.tag == selected && err != nil && !partialFailures[c.tag] && s.freshStableUserDataLocked(c, target, roundStarted) {
++		if c.tag == selected && err != nil && s.freshStableUserDataLocked(c, target, roundStarted) {
+ 			detail := "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(confirmationError)
+ 			s.vetoStableProbeFailureLocked(c, at, probeReason, detail)
+ 			s.access.Unlock()
+@@ -518,7 +517,7 @@
+ 			return result
+ 		}
+ 	}
+-	if !activeHealthy && !partialFailures[selected] && s.freshStableUserDataLocked(candidates[active], probeTargets[candidates[active].tag], roundStarted) {
++	if !activeHealthy && s.freshStableUserDataLocked(candidates[active], probeTargets[candidates[active].tag], roundStarted) {
+ 		detail := s.health[candidates[active].tag].lastError
+ 		s.vetoStableProbeFailureLocked(candidates[active], time.Now(), checkReason, detail)
+ 		s.access.Unlock()
+--- a/protocol/group/fallback_stable_observation_test.go
++++ b/protocol/group/fallback_stable_observation_test.go
+@@ -124,7 +124,7 @@
+ 		t.Fatal("suspect released manual choice or probed another member")
+ 	}
+ }
+-func TestStableConfirmationSuccessDoesNotErasePrimaryFailure(t *testing.T) {
++func TestStableConfirmationSuccessCancelsPrimarySuspicion(t *testing.T) {
+ 	node := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", false)}
+ 	backup := newFallbackHealthTestOutbound("backup", true)
+ 	s := stableCandidateGroup(t, fallbackCandidate{tag: node.Tag(), outbound: node}, fallbackCandidate{tag: backup.Tag(), outbound: backup})
+@@ -137,8 +137,8 @@
+ 		return nil, errors.New("primary target unavailable")
+ 	}
+ 	s.checkOutbounds(context.Background(), 0)
+-	if selectedTag(s) != "backup" || backup.dialCount == 0 {
+-		t.Fatal("confirmation success erased repeated primary failure")
++	if selectedTag(s) != "primary" || backup.dialCount != 0 {
++		t.Fatal("confirmation success did not cancel primary suspicion")
+ 	}
+ }
+ 

@@ -134,13 +134,15 @@ export function recordStateText(row: AutoEntry): string {
     row.reason === 'applied_route_bypassed'
   )
     return _('Applied rule was bypassed; connection used the original route');
-  if (row.status === 'applied' && row.new_error && row.error_port)
-    return `${_('New connection error on port')}: ${row.error_port}`;
   if (row.status === 'applied')
-    return row.new_error
-      ? _('New connection error detected')
-      : _('No new errors');
+    return row.evidence === 'unverified_protocol_tcp_reachable'
+      ? _('Rule applied without protocol verification')
+      : _('Rule applied');
   if (row.status === 'saved') return _('Saved route is not active');
+  if (row.evidence === 'unverified_protocol_tcp_reachable' && row.target)
+    return `${_('TCP reachable; protocol unverified')}: ${routeText(row)}`;
+  if (row.status === 'unchanged' && row.reason === 'zapret_verified')
+    return _('Original route works; no change needed');
   if (row.reason === 'protocol_unconfirmed')
     return _('Protocol operation is unconfirmed');
   if (row.reason === 'check_expired' && row.target)
@@ -247,6 +249,11 @@ export function attachAutoRouting(section: CBISection) {
     ['auto_routing_use_warp', _('WARP'), '1'],
     ['auto_routing_apply', _('Apply automatically'), '0'],
     ['auto_routing_ip_only', _('Allow redirecting IPs without a domain'), '0'],
+    [
+      'auto_routing_unconfirmed_protocol',
+      _('Allow automatic routing without protocol verification (risk)'),
+      '0',
+    ],
   ]) {
     const option = section.taboption('auto_routing', form.Flag, key, label);
     option.modalonly = true;
@@ -295,6 +302,10 @@ export function attachAutoRouting(section: CBISection) {
         'Automatically apply verified IP-only proposals too. Manual IP-only proposals do not require this preference.',
       );
     }
+    if (key === 'auto_routing_unconfirmed_protocol')
+      option.description = _(
+        'Use two successful TCP connections when the original protocol cannot be verified. This does not prove the service works. UDP is excluded.',
+      );
   }
   const contract = section.taboption(
     'auto_routing',

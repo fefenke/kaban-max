@@ -1,5 +1,9 @@
 # Архитектура
 
+R43: optional `allow_unconfirmed_protocol` в source options, gated backend по AutoApply и core capability; отсутствие опции сохраняет прежнее поведение. Fallback сообщает bounded TCP dial budget, autoroute не увеличивает parent60s deadline. [Контракт](AUTO_ROUTING_R43.md).
+
+Локальный patch0042 добавляет отдельный autoroute target-failure callback и bounded stream-failure observer stable fallback; новые демоны/хранилища отсутствуют. WAN gate и lifecycle scope прежние. [Контракт и приёмка](WARP_RUNTIME_FIX.md).
+
 Текущий инженерный обзор; версия и приёмка — [PROJECT_STATE](PROJECT_STATE.md). Источник истины поведения — код и относящиеся к нему проверки, а не исторические планы.
 
 ## Поток управления

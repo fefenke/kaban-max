@@ -16,5 +16,9 @@ cp "$project/tests/core/connection_log_policy_test.go" route/
 cp "$project/tests/core/wan_state_test.go" "$project/tests/core/wan_probe_test.go" common/wanstate/
 cp "$project/tests/core/wan_log_gate_test.go" log/
 cp "$project/tests/core/lifecycle_log_test.go" log/
+cp "$project/tests/core/runtime_log_levels_test.go" log/
+cp "$project/tests/core/fallback_partial_failure_test.go" protocol/group/
+cp "$project/tests/core/fallback_stream_failure_test.go" protocol/group/
+cp "$project/tests/core/fallback_probe_budget_test.go" protocol/group/
 GOPROXY=off go test -count=1 -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./common/autoroute ./dns ./dns/transport/fakeip ./route ./protocol/group ./common/wanstate ./log
 GOPROXY=off go test -run '^$' -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./cmd/sing-box

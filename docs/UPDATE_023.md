@@ -1,40 +1,24 @@
-# Повторное обновление 0.2.3 с компьютера
+﻿# Повторное обновление 0.2.3
 
-Hotfix сохраняет номер приложения0.2.3, ядро обновляется до1.14.4-r41. Нужны SSH root-доступ, Windows OpenSSH (`ssh`, `scp`) и PowerShell. Примеры адресов ниже заменить своими. Установщик сохраняет настройки и использует прежний вариант ядра; `KABANMAX_REINSTALL=1` вместе с pin0.2.3 обновляет backend/LuCI/перевод того же номера. Не отключать проверку SSH host key.
+Публичный комплект: приложение **0.2.3**, ядро **1.14.4-r46**. Номер приложения сохраняется, поэтому при обновлении с уже установленной 0.2.3 используется `KABANMAX_REINSTALL=1`.
 
-Команды вставляются **в окно PowerShell**; изменение ExecutionPolicy не требуется. Скрипт установщика скачивается на ПК, передаётся legacy SCP (`-O`, без требования sftp-server) и запускается через setsid независимо от SSH-сеанса. Установщик сам перезапускает KabanMax. Во время этого связь может прерваться; не запускать параллельно другую установку на том же роутере.
+Откройте SSH-сессию нужного роутера и выполните:
 
-```powershell
-$routers = @('192.0.2.1', '198.51.100.1') # адреса ваших роутеров
-$id = [Guid]::NewGuid().ToString('N')
-$file = Join-Path ([IO.Path]::GetTempPath()) "kabanmax-$id.sh"
-$prefix = "/tmp/kabanmax-pc-$id"
-$delay = 60 + 20 * $routers.Count
-Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh' -OutFile $file
-$launch = 'command -v setsid >/dev/null 2>&1 || exit 1; setsid sh -c ''sleep __D__; KABANMAX_RELEASE=0.2.3 KABANMAX_REINSTALL=1 sh __P__.sh --lang ru --quiet >__P__.log 2>&1; result=$?; echo $result >__P__.exit; rm -f __P__.sh'' </dev/null >/dev/null 2>&1 &'
-try {
-    foreach ($router in $routers) {
-        scp -O -o ConnectTimeout=15 $file "root@${router}:$prefix.sh"
-        if ($LASTEXITCODE -ne 0) { Write-Warning "Не загружен установщик: $router"; continue }
-        ssh -o ConnectTimeout=15 "root@$router" ($launch.Replace('__P__', $prefix).Replace('__D__', [string]$delay))
-        if ($LASTEXITCODE -ne 0) { Write-Warning "Проверьте запуск: $router" }
-    }
-} finally {
-    Remove-Item -LiteralPath $file -Force
-}
+```sh
+wget -T 15 -O /tmp/kabanmax-install.sh https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh && KABANMAX_RELEASE=0.2.3 KABANMAX_REINSTALL=1 sh /tmp/kabanmax-install.sh --lang ru
 ```
 
-Перед запуском предусмотрена задержка `$delay` секунд, чтобы успеть отправить команды остальным роутерам до restart шлюза. Через эту паузу плюс1–2минуты в **том же окне** проверить каждый роутер:
+Загружайте актуальный установщик из main: он поддерживает резервное получение каталога через raw.githubusercontent.com при недоступности GitHub API. Пакеты сверяются по SHA256. Конфигурация и выбранный вариант ядра сохраняются.
 
-```powershell
-foreach ($router in $routers) {
-    Write-Host "=== $router ==="
-    ssh -o ConnectTimeout=15 "root@$router" "if test -f $prefix.exit; then cat $prefix.exit; else echo WAITING_OR_RUNNING; fi; if test -f $prefix.log; then tail -n 15 $prefix.log; fi"
-}
+Установщик сам перезапускает службу. Соединения через KabanMax могут прерваться; для удалённого роутера выполняйте установку в автономной SSH-сессии, например через заранее настроенный screen/tmux, либо используйте LuCI. Не запускайте две установки одновременно. Не отключайте проверку SSH host key.
+
+После завершения:
+
+```sh
+/etc/init.d/kabanmax status
+sing-box version
 ```
 
-Код0 и сообщение об успешном запуске означают завершённую установку. Если exit ещё нет, посмотреть журнал и повторить проверку позже. При ненулевом коде сохранить журнал и выяснить ошибку перед повторным запуском. Отсутствие SSH-связи само по себе не доказывает провал установки.
+Ожидаются работающая служба и версия ядра `1.14.4-r46`. Обновите страницу LuCI через Ctrl+F5. Подробности — [установка](guide/install.md).
 
-После завершения можно проверить `ssh root@АДРЕС '/usr/bin/sing-box version; /etc/init.d/kabanmax status'`: ядро должно быть1.14.4-r41, служба running. Небольшие `.log`/`.exit` находятся только в `/tmp`; после проверки их можно удалить по точному сохранённому `$prefix`. Конфиг и checkpoints не удалять.
-
-Эти команды подготовлены и проверяются локально. Автор исправления не запускал их на роутерах после запрета пользователя; аппаратная приёмка нового r41 выполняется пользователем.
+Для разработчиков: [передача локального комплекта с ПК](UPDATE_LOCAL_PREVIEW.md) использует отдельный автономный runner и предварительную проверку пакетов. Эта инструкция не означает, что обновление уже выполнено на устройствах.

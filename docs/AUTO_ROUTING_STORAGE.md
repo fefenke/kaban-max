@@ -1,5 +1,9 @@
 # Хранение и очистка авторутинга — локально r24
 
+Локальный r43 сохраняет историю Applied ошибок, но показывает статус «Правило применено», без per-IP follow-up jobs. Явный TCP-risk opt-in имеет отдельный evidence, не обходит IP-only/scope/исключения и не притворяется protocol proof. [Контракт r43](AUTO_ROUTING_R43.md).
+
+Локальный r42 добавляет selected-route Warn и bounded retry неуспешного web transport check после прежних5мин. Успешный Pending не перепроверяется; Failure/OriginalFailure, permissions, retention и flash schedule прежние. [Разбор Applied/Pending](AUTO_ROUTING_PENDING_RETRY.md), [тесты](WARP_RUNTIME_FIX.md).
+
 Hotfix r41 сохраняет bounded failure_reason для applied_route_bypassed/applied_target_failed в RAM sidecar. Поздняя ошибка альтернативы заменяет прежнюю причину обхода; старые сведения без attribution не приписываются выбранному маршруту. Routing permissions, flash schedule и budget неизменны. [Late-DNS исправление](AUTO_ROUTING_LATE_DNS.md).
 
 Приём ошибки в registry и её видимость в журнале — разные проверки: исходная транспортная ошибка публикуется на Warn. Executable harness включает этот уровень и отдельно проверяет disabled logging, запрет auto-apply для неизвестного протокола и положительное HTTPS body evidence. Retention сохранённых результатов от log level не зависит.

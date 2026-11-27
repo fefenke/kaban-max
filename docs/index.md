@@ -10,14 +10,14 @@ hero:
     alt: K.A.B.A.N.-MAX
   actions:
     - theme: brand
-      text: Установить 0.1.3
+      text: Установить 0.2.3
       link: /guide/install
     - theme: alt
       text: Скачать пакеты
       link: https://github.com/fefenke/kaban-max/releases
 features:
   - title: Тихий резерв
-    details: Подтверждение отказа вторым HTTPS-адресом и возврат после серии успехов.
+    details: Два независимых HTTPS-адреса проверки, подтверждение отказа и возврат после серии успехов.
     link: /connections/fallback
   - title: Zapret2 внутри LuCI
     details: Отдельные стратегии для секций, установка и обновление официального компонента.
@@ -29,6 +29,6 @@ features:
 
 **Keepalive-Assisted Backend Arbitration Node — MAX Edition.** Правила маршрутизации, VPN и Zapret2 для OpenWrt.
 
-**0.1.3 · предварительная версия.** Пакеты APK и IPK для OpenWrt, архитектура `aarch64_cortex-a53`.
+**0.2.3 · ядро 1.14.4-r46.** Пакеты APK и IPK для OpenWrt, архитектура `aarch64_cortex-a53`; варианты base и tiny.
 
 Основано на Forkop. [Авторы компонентов и лицензии](https://github.com/fefenke/kaban-max/blob/main/CREDITS.md).

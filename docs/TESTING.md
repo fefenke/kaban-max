@@ -1,5 +1,11 @@
 # Проверки: выбор, команды, доказательства
 
+R46: `connection_log_policy_test.go` проверяет Debug позднего TLS, отсутствие неизвестных/непривязанных Error, сохранность close cause, профиль в NewConnection, handshake направления и DNS REFUSED. `connection_actionable_binary.py` использует loopback TLS1.3-only server и TLS1.2-only outbound с настроенной CA: реальный отказ выводит destination/route/stage/check/cause. Включён в core CI рядом с lifecycle/fallback executable checks. [Приёмка](ACTIONABLE_CONNECTION_LOGS.md).
+
+R43: `auto_probe_timeout_test.go`, `auto_protocol_risk_test.go`, `fallback_probe_budget_test.go`, backend export/version и UI risk/status cases. CI запускает дополнительные group regressions после их копирования. [RED/GREEN, scope и ограничения](AUTO_ROUTING_R43.md).
+
+R42 добавляет `fallback_partial_failure_test.go`, `fallback_stream_failure_test.go`, `runtime_log_levels_test.go`; source/Applied callbacks проверяются раздельно. Red/green, clean42patches, race scope и real HUP перечислены в [отчёте](WARP_RUNTIME_FIX.md). Успешные synthetic tests не заменяют аппаратный soak.
+
 Последний подтверждённый результат — [PROJECT_STATE](PROJECT_STATE.md) со ссылкой на датированный отчёт. Команды ниже — рецепт, а не утверждение, что их только что запускали. После каждого логического изменения обновлять [документацию](WORKFLOW.md).
 
 ## Выбрать минимальную достаточную проверку

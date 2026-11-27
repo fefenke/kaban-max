@@ -1,0 +1,33 @@
+# Проверка fallback только по ошибке открытия соединения
+
+## Дневная read-only проверка26ноября
+
+Повтор по сообщению о непрерывном YouTube, около17:08MSK: native group history и свежий syslog подтверждают в17:01:22 suspect Tunnel1,17:01:38 confirmed Tunnel1,17:01:46 failed Tunnel2 — во всех primary timeout/confirmation ok. В17:06:47 основной снова имеет успешный check35ms. Текущая матрица explicit native delay timeout8000: Tunnel1 Google44/Cloudflare36/YouTube41ms; Tunnel2 Google42/Cloudflare38/YouTube45ms. Все HTTP200 API. Отсутствие service health в17:01 не доказывает общий отказ WARP или ошибку всех Google-сервисов.
+
+Два snapshots `/connections` показывают рост download/upload существующих `www.youtube.com` и `i.ytimg.com` через WARP fallback; конкретный googlevideo media flow в snapshots не обнаружен, непрерывная передача самого видео и состояние строго в17:01 ими не доказаны. В group snapshot второй всё ещё unhealthy по last_check17:01:46, хотя explicit probe успешен: это старый результат проверки группы, не текущий результат ручной пробы. Групповой selected остаётся Tunnel1. Искусственных failover/restart/config mutations не выполнялось; первопричина интермиттирующего primary timeout ещё не установлена.
+
+По сообщению пользователя о большом числе failed health checks: native GET `/proxies` через `singbox.clash_api`,26ноября15:27MSK, r44 executable SHA подтверждён. Накопленная статистика с02:51MSK: Tunnel1 failed_checks30/connection_errors24, Tunnel2 failed_checks2/connection_errors0, switches_total4. Это накопленные счётчики, не текущий статус и не число независимых отключений. Сохранённые события13:46/14:53MSK: primary Google timeout при confirmation Cloudflare ok, повторное подтверждение и уход на backup; затем три recovery success и возврат. В14:58MSK аналогичный primary timeout наблюдался на backup. Значит частичная недоступность проверяемого сервиса действительно наблюдалась, но общий отказ всего WARP этим не доказан.
+
+Текущие native HTTPS delay timeout8000: Tunnel1 Google35/Cloudflare35ms, Tunnel2 Google45/Cloudflare36ms; все API HTTP200. Config log=warn, disabled=false; health URL Google generate_204, interval5m, timeout8s. Начало доступного syslog15:09:43MSK, поэтому приведённые ранние события по нему восстановить нельзя; reload15:24 наблюдался, ассистент его не запускал. Позднее появились реальные DNS NXDOMAIN и connection-open Error для Googlevideo hostname — ошибки не заглушены; по NXDOMAIN нельзя диагностировать отказ туннеля. Во время аудита замечен ещё один внешний reload15:28. Профили/настройки не менялись, искусственных отказов/перезапусков не выполнялось.
+
+Дополнительный read-only просмотр helper в Docker не выполнился: Docker Desktop pipe недоступен; повторы race tests не заявляются. Это не блокировало native live snapshot. Происхождение всех timeout и отсутствие исторических Warn в другом хранилище этим аудитом не установлены; возвращать stream wake ради счётчиков не требуется.
+
+2026-11-26. Прямое уточнение пользователя: не запускать проверку туннеля от сбоя передачи уже установленного соединения. Сохранить запуск при ошибке открытия нового соединения; убрать дополнительный общий Warn `request_failed`.
+
+Append-only patch0044 удаляет введённый в0042 `stableFailureConn`, его подключение в DialContext и общий Warn из `recordDialFailure`. Запрос проверки от dial, debounce5s, bounded queue, периодические проверки, учёт полученных данных, подтверждение отказа/восстановления и Warn переключения не изменяются. Не меняются общий классификатор соединений, авторутинг, WAN gate или lifecycle suppression. App остаётся0.2.3, новая версия core r44; установлен на локальный роутер после отдельного прямого запроса. Публикации нет.
+
+Регрессия `TestStableStreamFailureDoesNotWakeHealthAfterSuccessfulDial`: RED на r43 для read/buffered read; GREEN после удаления observer. Дополнены write/buffered write и отдельный `TestStableNewDialFailureStillWakesHealth`. Первичный полный group race run после исправления PASS.
+
+Свежая финальная проверка26ноября: `docker exec` существующего контейнера, `PATH=/usr/local/go/bin:$PATH sh /work/tests/core/run_network_availability.sh /tmp/core /work` — PASS чистое применение44patches,7race packages (`common/autoroute`, `dns`, `dns/transport/fakeip`, `route`, `protocol/group`, `common/wanstate`, `log`), compile-only `cmd/sing-box`. Используются только synthetic/local сети; живые роутеры не подключались. Frontend/backend production не менялись; ARM64 сборка и hardware этой ревизии не выполнялись.
+
+`docker exec kabanmax-autoroute-tests bash /work/tests/run.sh packaging/core_patch_series` — PASS1/1; `python scripts/check-project-docs.py --write-facts`, затем обычный docs gate и `git diff --check` — PASS.
+
+## Сборка и установка26ноября
+
+По прямому запросу пользователя: `docker exec kabanmax-autoroute-tests sh /work/dist/auto-routing-r44/build-core-binaries.sh` — чистый pinned source+44patches, branding, amd64 base/ARM64 base+tiny PASS. Existing offline `kabanmax-preview-build`, `--network none`, `bash /work/dist/auto-routing-r44/package-release.sh`: PASS10APK/IPK, byte-for-byte payload/source/binary checks,13checksum records. Артефакты ignored `dist/auto-routing-r44/release`.
+
+`python3 /work/tests/core/fallback_partial_binary.py /tmp/auto-routing-r44-core-output/build/amd64/base/sing-box` — PASS real TLS/data partial failover/shared outage hold/recovery/Warn. `python3 /work/tests/core/lifecycle_log_binary.py` с тем же executable — PASS старый HUP flow Debug, fresh DNS Error. ARM64 base SHA256 `34d3a003e16367aff90d1ccf3814dff3ea7ee1597fba89cffd8ac3581e59bbf1`; tiny `1c0b9efbc75f758192856c8657a7e765eff680bb680cb6bf98af419a2ad827dc`.
+
+Четыре APK/installer/manifests/checksums переданы через `scp -O` во временный flash-каталог и проверены перед запуском. Неизменённый штатный installer запущен автономно через loopback-only mirror: `KABANMAX_RELEASE=0.2.3 KABANMAX_REINSTALL=1 KABANMAX_DOWNLOAD_URL=http://127.0.0.1:18083 sh install.sh --variant base --lang ru --quiet`. Предупреждение о restart передано заранее; ручного stop/reload не было. `cat /tmp/kabanmax-r44-install.exit` —0; `/etc/init.d/kabanmax status` —running; `sing-box version` —r44; `sha256sum /usr/bin/sing-box` совпал с base выше; `sha256sum -c` UCI before —OK.
+
+Свежие native HTTPS delay gstatic generate_204 timeout8000: Tunnel1=36ms, Tunnel2=46ms, fallback=35ms, HTTP200 API. Backend1source, AutoApply=true, disabled0, registry/diagnostics errors пусты. Собственные временные APK удалены после успеха; flash used34308/free57536KiB,37%. Это краткая приёмка, не длительный soak/видео/reboot. Остальные роутеры не затрагивались; GitHub не публиковался.

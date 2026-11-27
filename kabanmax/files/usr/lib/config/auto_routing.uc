@@ -191,6 +191,7 @@ function sources(config, sections, tag_for_section) {
             probe_zapret: common.bool_option(section, "auto_routing_probe_zapret", true),
             direct: common.bool_option(section, "auto_routing_direct", false), warp,
             auto_apply: common.bool_option(section, "auto_routing_apply", false),
+            ...(common.bool_option(section,"auto_routing_apply",false) && common.bool_option(section,"auto_routing_unconfirmed_protocol",false) ? {allow_unconfirmed_protocol:true} : {}),
             allow_ip_only: common.bool_option(section,"auto_routing_apply",false) && common.bool_option(section,"auto_routing_ip_only",false), protected, suppressed });
     }
     return result;

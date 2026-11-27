@@ -17,5 +17,28 @@
       "8a3e05dcb939dbcedc0ab7a088b39b9f18b50bb398a80184bcc0970a75a1d71c"
     ]
   },
-  "upstream_email_provenance": "Reviewed public upstream license attribution and embedded public CA/WireGuard notices. Keep legal attribution intact; no router credential exemption."
+  "upstream_email_provenance": "Reviewed public upstream license attribution and embedded public CA/WireGuard notices. Keep legal attribution intact; no router credential exemption.",
+  "public_upstream_source_email_sha256": {
+    "common/certificate/chrome.go": [
+      "074684e897dc2c785d579022bdb1a7a9bb7cc11f8c46c56ca6b812c2226e2429"
+    ],
+    "LICENSE": [
+      "8a3e05dcb939dbcedc0ab7a088b39b9f18b50bb398a80184bcc0970a75a1d71c"
+    ],
+    "protocol/tailscale/tailssh/server.go": [
+      "670680e29144a22a2bfd0d11e83dd6ef628b3a5a972c31b9d2447202974ffc76",
+      "ba86acee180dd00bc734110f3c02c7035914a0538291b6e87878fe87d9989d8f",
+      "fd9ab082911372a7319aab149c059fb20f567816e9f68b05782eab822359e5c8"
+    ],
+    "third_party/sing-openvpn/LICENSE": [
+      "8a3e05dcb939dbcedc0ab7a088b39b9f18b50bb398a80184bcc0970a75a1d71c"
+    ],
+    "third_party/sing-vmess/LICENSE": [
+      "8a3e05dcb939dbcedc0ab7a088b39b9f18b50bb398a80184bcc0970a75a1d71c"
+    ],
+    "third_party/wireguard-go/device/noise-protocol.go": [
+      "122a1320bbbd0424ef2273c737cdf8002d19cb60299a9d8895d859b09ffb439f"
+    ]
+  },
+  "upstream_source_email_provenance": "Exact upstream source fingerprints: CA certificate contact, required author/license attribution and the OpenSSH protocol extension identifier. Not project operator contact or router credentials."
 }

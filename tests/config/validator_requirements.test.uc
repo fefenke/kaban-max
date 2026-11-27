@@ -31,14 +31,14 @@ t.test("without an enabled Connection section nothing was meant to be proxied", 
 
 // check_requirements over a core that reports version and tags; a null version is a core that
 // does not answer.
-function requirements(version, tags_line, handlers) {
+function requirements(version, tags_line, handlers, sections) {
     let features = require("singbox.features");
     features.paths.binary = stub.tmpdir() + "/sing-box";
     fs.writefile(features.paths.binary, "#!/bin/sh
 # " + version + " " + tags_line + "
 ");
     let validator = require("config.validator");
-    fixture.seed({ settings: {}, section: [ { ".name": "p", action: "connection", enabled: "1" } ], connection_link: fixture.links("p", [ "socks5://127.0.0.1:1080" ]) });
+    fixture.seed({ settings: {}, section: sections ?? [ { ".name": "p", action: "connection", enabled: "1" } ], connection_link: fixture.links("p", [ "socks5://127.0.0.1:1080" ]) });
     let answer = version == null ? { status: 1, stdout: "" }
         : { status: 0, stdout: "sing-box version " + version + "
 
@@ -126,6 +126,14 @@ t.test("a core with a tunnel but without the gVisor stack it runs on is refused"
 t.test("a core with the Clash API passes the tag check", () => {
     let error = built_with("Tags: with_clash_api").error ?? "";
     t.ok(index(error, "with_clash_api") < 0 && index(error, "tags") < 0, "refused: " + error);
+});
+
+t.test("protocol risk opt-in requires r43 only while enabled", () => {
+    let section={".name":"risk",action:"zapret2",enabled:"1",auto_routing_enabled:"1",auto_routing_apply:"1",auto_routing_unconfirmed_protocol:"1"};
+    t.contains(requirements("1.14.4-r42",null,PRESENT,[section]).error ?? "", "1.14.4-r43");
+    t.ok(index(requirements("1.14.4-r43",null,PRESENT,[section]).error ?? "","1.14.4-r43")<0);
+    section.auto_routing_unconfirmed_protocol="0";
+    t.ok(index(requirements("1.14.4-r42",null,PRESENT,[section]).error ?? "","1.14.4-r43")<0);
 });
 
 t.done();

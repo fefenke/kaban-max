@@ -252,6 +252,7 @@ function addFallbackGroupItemOptions(
   o = itemSection.option(form.Value, 'confirm_url', _('Confirmation URL'),
     _('A different HTTPS target, checked only when the primary check fails'));
   o.default = 'https://cp.cloudflare.com/generate_204';
+  LATENCY_TEST_URL_OPTIONS.forEach((value: string) => o.value(value));
   o.depends('stable', '1');
   o.validate = (_id: string, value: unknown) => validateUrlField(value);
   o = itemSection.option(form.Value, 'confirm_expected_status', _('Confirmation HTTP status'));

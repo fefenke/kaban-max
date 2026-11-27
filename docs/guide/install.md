@@ -1,6 +1,6 @@
 # Установка
 
-**K.A.B.A.N.-MAX 0.1.6 · предварительная версия**
+**K.A.B.A.N.-MAX 0.2.3 · ядро 1.14.4-r46**
 
 | Система | Формат пакетов | Архитектура |
 |---|---|---|
@@ -10,7 +10,7 @@
 ## Через SSH
 
 ```sh
-wget -O /tmp/kabanmax-install.sh https://github.com/fefenke/kaban-max/releases/download/0.1.6/install.sh && KABANMAX_RELEASE=0.1.6 sh /tmp/kabanmax-install.sh --variant base --lang ru
+wget -T 15 -O /tmp/kabanmax-install.sh https://raw.githubusercontent.com/fefenke/kaban-max/main/install.sh && KABANMAX_RELEASE=0.2.3 KABANMAX_REINSTALL=1 sh /tmp/kabanmax-install.sh --lang ru
 ```
 
 Установщик определяет пакетный менеджер и архитектуру, скачивает компоненты, проверяет SHA256 и устанавливает приложение с русским переводом.
@@ -19,12 +19,14 @@ wget -O /tmp/kabanmax-install.sh https://github.com/fefenke/kaban-max/releases/d
 
 ## Варианты ядра
 
-- **base** — VPN-протоколы, WARP, WireGuard и OpenVPN. Выбран в команде выше.
-- **tiny** — компактный набор протоколов. Для установки замените `--variant base` на `--variant tiny`.
+- **base** — VPN-протоколы, WARP, WireGuard и OpenVPN. Для явного выбора добавьте `--variant base`.
+- **tiny** — прокси-протоколы без WARP, WireGuard и OpenVPN. Для установки добавьте `--variant tiny`.
+
+При обновлении установщик сохраняет выбранный вариант. Во время установки служба перезапускается; соединения через неё могут прерваться.
 
 ## Скачать пакеты
 
-В [выпуске 0.1.6](https://github.com/fefenke/kaban-max/releases/tag/0.1.6) находятся пакеты приложения, интерфейса, перевода и ядра. Выберите APK или IPK по пакетному менеджеру роутера. Контрольные суммы находятся в `SHA256SUMS`.
+В [выпуске 0.2.3](https://github.com/fefenke/kaban-max/releases/tag/0.2.3) находятся пакеты приложения, интерфейса, перевода и ядра. Выберите APK или IPK по пакетному менеджеру роутера. Контрольные суммы находятся в `SHA256SUMS`.
 
 Для установки с автоматическим подбором зависимостей используйте команду выше.
 
@@ -32,7 +34,7 @@ wget -O /tmp/kabanmax-install.sh https://github.com/fefenke/kaban-max/releases/d
 
 Откройте **Компоненты → KabanMax → Проверить обновления**. Если доступно обновление, кнопка сменится на **Скачать и установить обновление**. Во время установки отображается состояние операции; подробный журнал можно раскрыть ниже.
 
-Для обновления через SSH запустите установщик повторно с номером нужного выпуска в `KABANMAX_RELEASE`.
+Для обновления через SSH выполните команду выше. `KABANMAX_REINSTALL=1` разрешает установку актуальных компонентов, даже если на роутере уже стоит 0.2.3.
 
 ## Удаление
 

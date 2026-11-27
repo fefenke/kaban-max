@@ -165,16 +165,16 @@ describe('automatic routing lists', () => {
         new_error: true,
         error_port: 5222,
       }),
-    ).toBe('New connection error on port: 5222');
+    ).toBe('Rule applied');
     expect(
       recordStateText({
         ip: '203.0.113.7',
         status: 'applied',
         uncovered_connections: 1,
       }),
-    ).toBe('No new errors');
+    ).toBe('Rule applied');
   });
-  it('uses alternative results for pending records and reports only new applied failures', () => {
+  it('uses pending results and keeps applied status independent of historical failures', () => {
     vi.stubGlobal('_', (text: string) => text);
     for (const status of ['inconclusive', 'unchanged'])
       expect(recordStateText({ ip: '203.0.113.7', status })).toBe(
@@ -195,7 +195,7 @@ describe('automatic routing lists', () => {
       }),
     ).toBe('Working alternative found: Direct');
     expect(recordStateText({ ip: '203.0.113.7', status: 'applied' })).toBe(
-      'No new errors',
+      'Rule applied',
     );
     expect(
       recordStateText({
@@ -203,7 +203,41 @@ describe('automatic routing lists', () => {
         status: 'applied',
         new_error: true,
       }),
-    ).toBe('New connection error detected');
+    ).toBe('Rule applied');
+  });
+  it('distinguishes a healthy original route from a failed alternative search', () => {
+    vi.stubGlobal('_', (text: string) => text);
+    expect(
+      recordStateText({
+        ip: '203.0.113.7',
+        status: 'unchanged',
+        reason: 'zapret_verified',
+      }),
+    ).toBe('Original route works; no change needed');
+    expect(
+      recordStateText({
+        ip: '203.0.113.7',
+        status: 'applied',
+        reason: 'applied_target_failed',
+        new_error: true,
+        error_port: 443,
+        target: 'WARP',
+      }),
+    ).toBe('Rule applied');
+  });
+  it('labels TCP-only risk evidence without claiming protocol verification', () => {
+    vi.stubGlobal('_', (text: string) => text);
+    const row = {
+      ip: '203.0.113.7',
+      evidence: 'unverified_protocol_tcp_reachable',
+      target: 'WARP',
+    };
+    expect(recordStateText({ ...row, status: 'proposed' })).toBe(
+      'TCP reachable; protocol unverified: WARP',
+    );
+    expect(recordStateText({ ...row, status: 'applied' })).toBe(
+      'Rule applied without protocol verification',
+    );
   });
   it('blocks enabling without an API key, honours unsaved key edits and always permits disabling', () => {
     vi.stubGlobal('_', (text: string) => text);
@@ -240,6 +274,13 @@ describe('automatic routing lists', () => {
       },
     };
     attachAutoRouting(section as unknown as CBISection);
+    const risk = options.auto_routing_unconfirmed_protocol;
+    expect(risk).toBeDefined();
+    expect(risk?.default).toBe('0');
+    expect(risk?.description).toContain('TCP');
+    expect(
+      Object.keys(options).indexOf('auto_routing_unconfirmed_protocol'),
+    ).toBe(Object.keys(options).indexOf('auto_routing_ip_only') + 1);
     const enabled = options.auto_routing_enabled;
     expect(typeof enabled.validate).toBe('function');
     expect(enabled.validate('meta', '1')).not.toBe(true);

@@ -1794,6 +1794,9 @@ function check_requirements() {
     for (let section in sections_by_type("section"))
         if (option(section, "action", "") == "zapret2" && bool_option(section, "enabled", true) && bool_option(section, "auto_routing_enabled", false) && !core_version.version_at_least(binary_version, "1.14.4-r24"))
             die("Automatic routing requires sing-box-kabanmax 1.14.4-r24; disabled automation without saved records remains compatible with r10");
+    for (let section in sections_by_type("section"))
+        if (option(section,"action","")=="zapret2" && bool_option(section,"enabled",true) && bool_option(section,"auto_routing_enabled",false) && bool_option(section,"auto_routing_apply",false) && bool_option(section,"auto_routing_unconfirmed_protocol",false) && !core_version.version_at_least(binary_version,"1.14.4-r43"))
+            die("Automatic routing without protocol verification requires sing-box-kabanmax 1.14.4-r43");
     if (!core_version.version_at_least(binary_version,"1.14.4-r24") &&
         (length(require("config.auto_registry").load().entries)>0 ||
          length(core_common.read_json_file(require("diagnostics.auto_routing").paths.pending) ?? [])>0))

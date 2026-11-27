@@ -1,0 +1,417 @@
+diff --git a/common/autoroute/manager.go b/common/autoroute/manager.go
+index ee9272c..d58346e 100644
+--- a/common/autoroute/manager.go
++++ b/common/autoroute/manager.go
+@@ -74,6 +74,7 @@ type Manager struct {
+ 	RegistryOverflow uint64
+ 	LogFailure       func(Event, error) bool
+ 	LogSourceFailure func(Event, error)
++	LogTargetFailure func(Event, error)
+ 	mu               sync.Mutex
+ 	job              sync.Mutex
+ 	sources          map[string]option.KabanmaxAutoSource
+@@ -483,7 +484,9 @@ func (m *Manager) Failed(e *Event, err error) {
+ 		if m.LogFailure != nil {
+ 			actual := *e
+ 			actual.Source = e.routedTarget
+-			m.LogFailure(actual, err)
++			if m.LogFailure(actual, err) && m.LogTargetFailure != nil {
++				m.LogTargetFailure(actual, err)
++			}
+ 		}
+ 		if lease, ok := m.leases[e.routedLease]; ok {
+ 			if lease.PersistentIP {
+@@ -821,7 +824,7 @@ func (m *Manager) Sweep(ctx context.Context) {
+ 	var next *Event
+ 	if previous == nil {
+ 		for _, e := range m.events {
+-			if !m.sources[e.Source].CollectDisabled && (e.Network == "tcp" || (e.Network == "udp" && m.sources[e.Source].Mode == "web")) && e.Failure != nil && !e.attempted && m.successfulCheckLocked(e) == nil && now.Sub(e.lastJob) >= 5*time.Minute && (next == nil || e.lastJob.Before(next.lastJob)) {
++			if !m.sources[e.Source].CollectDisabled && (e.Network == "tcp" || (e.Network == "udp" && m.sources[e.Source].Mode == "web")) && e.Failure != nil && (!e.attempted || m.retryFailedCheckLocked(e)) && m.successfulCheckLocked(e) == nil && now.Sub(e.lastJob) >= 5*time.Minute && (next == nil || e.lastJob.Before(next.lastJob)) {
+ 				copy := *e
+ 				next = &copy
+ 			}
+@@ -994,3 +997,27 @@ func (m *Manager) successfulCheckLocked(e *Event) *Decision {
+ 	}
+ 	return nil
+ }
++
++// Only failed transport checks retry without a new flow failure. Completed
++// successful results, protocol/policy failures and their evidence stay retained.
++func (m *Manager) retryFailedCheckLocked(e *Event) bool {
++	if m.sources[e.Source].Mode != "web" || e.Status != "inconclusive" || e.Reason != "no_working_alternative" {
++		return false
++	}
++	var latest *Decision
++	for _, d := range m.decisions {
++		if d.Failure != nil && d.Failure.ID == e.ID && d.SourceID == e.SourceID && d.IP == e.IP && d.SourceIP == e.SourceIP && d.Inbound == e.Inbound && d.Port == e.Port && (latest == nil || d.Created.After(latest.Created)) {
++			copy := d
++			latest = &copy
++		}
++	}
++	if latest == nil || latest.Status != "inconclusive" || latest.Reason != "no_working_alternative" {
++		return false
++	}
++	for _, a := range latest.Attempts {
++		if a.Status == "transport_failure" {
++			return true
++		}
++	}
++	return false
++}
+diff --git a/dns/client.go b/dns/client.go
+index 589a223..dcf7859 100644
+--- a/dns/client.go
++++ b/dns/client.go
+@@ -268,7 +268,7 @@ func (c *Client) beginExchange(ctx context.Context, transport adapter.DNSTranspo
+ 	}
+ 	if len(message.Question) == 0 {
+ 		if c.logger != nil {
+-			c.logger.DebugContext(ctx, "bad question size: ", len(message.Question))
++			c.logger.WarnContext(ctx, "bad question size: ", len(message.Question))
+ 		}
+ 		return nil, FixedResponseStatus(message, dns.RcodeFormatError), exchangeDone, nil
+ 	}
+diff --git a/dns/router.go b/dns/router.go
+index c0afcda..5b6385f 100644
+--- a/dns/router.go
++++ b/dns/router.go
+@@ -1062,7 +1062,7 @@ func (r *Router) prepareExchange(ctx context.Context, message *mDNS.Msg) (*dnsEx
+ 		}
+ 	}
+ 	if len(message.Question) != 1 {
+-		r.logger.DebugContext(ctx, "bad question size: ", len(message.Question))
++		r.logger.WarnContext(ctx, "bad question size: ", len(message.Question))
+ 		return nil, &mDNS.Msg{
+ 			MsgHdr: mDNS.MsgHdr{
+ 				Id:       message.Id,
+diff --git a/protocol/group/fallback.go b/protocol/group/fallback.go
+index e0a69c3..0c477de 100644
+--- a/protocol/group/fallback.go
++++ b/protocol/group/fallback.go
+@@ -585,6 +585,7 @@ func (s *Fallback) DialContext(ctx context.Context, network string, destination
+ 	}
+ 	if userTarget != nil && len(candidates) > 0 && candidate.outbound == candidates[0].outbound {
+ 		conn = s.observeStableUserConn(conn, candidate, userTarget, createdAt)
++		conn = s.observeStableFailures(ctx, conn, candidate)
+ 	}
+ 	return s.interruptGroup.NewConn(conn, interrupt.IsExternalConnectionFromContext(ctx)), nil
+ }
+@@ -706,7 +707,11 @@ func (s *Fallback) interruptSelection(oldSelected string, newSelected string) {
+ 	if oldSelected == "" || oldSelected == newSelected {
+ 		return
+ 	}
+-	s.logger.Info("fallback switched from ", oldSelected, " to ", newSelected)
++	if s.stable != nil {
++		s.logger.Warn("fallback switched from ", oldSelected, " to ", newSelected)
++	} else {
++		s.logger.Info("fallback switched from ", oldSelected, " to ", newSelected)
++	}
+ 	s.interruptGroup.Interrupt(s.interruptExternalConnections)
+ }
+ 
+@@ -727,7 +732,7 @@ func (s *Fallback) recordDialFailure(candidate fallbackCandidate, err error) {
+ 	}
+ 	s.access.Lock()
+ 	state, loaded := s.health[candidate.tag]
+-	if !loaded || state.outbound != candidate.outbound {
++	if !loaded || state.outbound != candidate.outbound || s.stable != nil && s.selected != candidate.tag {
+ 		s.access.Unlock()
+ 		return
+ 	}
+@@ -748,6 +753,9 @@ func (s *Fallback) recordDialFailure(candidate fallbackCandidate, err error) {
+ 	s.health[candidate.tag] = state
+ 	s.access.Unlock()
+ 	if check {
++		if s.stable != nil {
++			s.logger.Warn("fallback active outbound failure [connection] ", candidate.tag, ": ", stableProbeError(err), "; scheduling health check")
++		}
+ 		s.requestCheck()
+ 	}
+ }
+diff --git a/protocol/group/fallback_stable.go b/protocol/group/fallback_stable.go
+index 0717737..70a4ec4 100644
+--- a/protocol/group/fallback_stable.go
++++ b/protocol/group/fallback_stable.go
+@@ -219,6 +219,11 @@ func (s *Fallback) selectStableLocked() string {
+ 			return c.tag
+ 		}
+ 	}
++	for _, c := range s.candidates {
++		if c.tag == s.selected {
++			return s.selected
++		}
++	}
+ 	if len(s.candidates) > 0 {
+ 		return s.candidates[0].tag
+ 	}
+@@ -318,6 +323,7 @@ func (s *Fallback) checkStableReason(ctx context.Context, maxAge time.Duration,
+ 	// A candidate is committed only while its outbound identity still matches.
+ 	stale := false
+ 	probeTargets := make(map[string]N.Dialer)
++	partialFailures := make(map[string]bool)
+ 	probe := func(c fallbackCandidate, recovering bool) bool {
+ 		probeReason := checkReason
+ 		if recovering {
+@@ -353,8 +359,11 @@ func (s *Fallback) checkStableReason(ctx context.Context, maxAge time.Duration,
+ 			s.requestCheck()
+ 			return false
+ 		}
++		var confirmationError error
+ 		if err != nil && ctx.Err() == nil {
+-			delay, at, err = s.coordinator.Check(ctx, s.stable.confirmURL, s.stable.confirmStatus, targetTag, target, probeTimeout, 0)
++			_, _, confirmationError = s.coordinator.Check(ctx, s.stable.confirmURL, s.stable.confirmStatus, targetTag, target, probeTimeout, 0)
++			// Confirmation is independent evidence, never a replacement for the configured service.
++			partialFailures[c.tag] = confirmationError == nil
+ 		}
+ 		if ctx.Err() != nil {
+ 			return false
+@@ -375,11 +384,11 @@ func (s *Fallback) checkStableReason(ctx context.Context, maxAge time.Duration,
+ 		if err != nil {
+ 			s.stable.recordCount(time.Now(), c.tag, 0, 1, 0)
+ 		}
+-		if c.tag == selected && err != nil && s.freshStableUserDataLocked(c, target, roundStarted) {
+-			detail := "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(err)
++		if c.tag == selected && err != nil && !partialFailures[c.tag] && s.freshStableUserDataLocked(c, target, roundStarted) {
++			detail := "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(confirmationError)
+ 			s.vetoStableProbeFailureLocked(c, at, probeReason, detail)
+ 			s.access.Unlock()
+-			s.logger.Debug("fallback health test probe-only failure [", probeReason, "] ", c.tag, ": ", detail, "; fresh received data on a new user connection, selection unchanged")
++			s.logger.Warn("fallback health test probe-only failure [", probeReason, "] ", c.tag, ": ", detail, "; fresh received data on a new user connection, selection unchanged")
+ 			return true
+ 		}
+ 		if c.tag == selected && err != nil {
+@@ -387,11 +396,11 @@ func (s *Fallback) checkStableReason(ctx context.Context, maxAge time.Duration,
+ 				s.stable.suspect = c.tag
+ 				s.stable.suspectOutbound = c.outbound
+ 				s.stable.confirmAfter = time.Now().Add(s.stable.failureRetryDelay())
+-				h.lastError = "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(err)
++				h.lastError = "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(confirmationError)
+ 				s.health[c.tag] = h
+ 				s.appendStableEventLocked(StableFallbackEvent{At: time.Now(), From: c.tag, To: c.tag, Reason: "Suspected check failure: " + h.lastError, CheckReason: probeReason})
+ 				s.access.Unlock()
+-				s.logger.Debug("fallback health test suspect [", probeReason, "] ", c.tag, ": ", h.lastError, "; repeating in ", s.stable.failureRetryDelay(), ", traffic selection unchanged")
++				s.logger.Warn("fallback health test suspect [", probeReason, "] ", c.tag, ": ", h.lastError, "; repeating in ", s.stable.failureRetryDelay(), ", traffic selection unchanged")
+ 				return false
+ 			}
+ 			s.stable.suspect = ""
+@@ -406,7 +415,7 @@ func (s *Fallback) checkStableReason(ctx context.Context, maxAge time.Duration,
+ 		}
+ 		confirmedSelectedFailure := c.tag == selected && err != nil && previouslySuspect
+ 		if confirmedSelectedFailure {
+-			s.appendStableEventLocked(StableFallbackEvent{At: time.Now(), From: c.tag, To: c.tag, Reason: "Confirmed health test failure: primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(err), CheckReason: probeReason})
++			s.appendStableEventLocked(StableFallbackEvent{At: time.Now(), From: c.tag, To: c.tag, Reason: "Confirmed health test failure: primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(confirmationError), CheckReason: probeReason})
+ 		}
+ 		becameUnhealthy := err != nil && (!h.checked || h.alive)
+ 		h.checked = true
+@@ -424,7 +433,7 @@ func (s *Fallback) checkStableReason(ctx context.Context, maxAge time.Duration,
+ 			result[c.tag] = delay
+ 		} else {
+ 			h.recoverySuccesses = 0
+-			h.lastError = "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(err)
++			h.lastError = "primary=" + stableProbeError(primaryError) + "; confirmation=" + stableProbeError(confirmationError)
+ 			s.history.DeleteURLTestHistory(MemberTag(c.outbound))
+ 		}
+ 		recoveredPriority := err == nil && recovering && (h.recoverySuccesses == 1 || h.recoverySuccesses == s.stable.returnAfter)
+@@ -509,11 +518,11 @@ func (s *Fallback) checkStableReason(ctx context.Context, maxAge time.Duration,
+ 			return result
+ 		}
+ 	}
+-	if !activeHealthy && s.freshStableUserDataLocked(candidates[active], probeTargets[candidates[active].tag], roundStarted) {
++	if !activeHealthy && !partialFailures[selected] && s.freshStableUserDataLocked(candidates[active], probeTargets[candidates[active].tag], roundStarted) {
+ 		detail := s.health[candidates[active].tag].lastError
+ 		s.vetoStableProbeFailureLocked(candidates[active], time.Now(), checkReason, detail)
+ 		s.access.Unlock()
+-		s.logger.Debug("fallback health test probe-only failure [", checkReason, "] ", selected, "; fresh received data during this round, selection unchanged")
++		s.logger.Warn("fallback health test probe-only failure [", checkReason, "] ", selected, "; fresh received data during this round, selection unchanged")
+ 		return result
+ 	}
+ 	old := s.selected
+diff --git a/protocol/group/fallback_stable_observation_test.go b/protocol/group/fallback_stable_observation_test.go
+index 137b584..0c839c9 100644
+--- a/protocol/group/fallback_stable_observation_test.go
++++ b/protocol/group/fallback_stable_observation_test.go
+@@ -124,7 +124,7 @@ func TestStableSuspectHonorsManualPinUntilSecondFailure(t *testing.T) {
+ 		t.Fatal("suspect released manual choice or probed another member")
+ 	}
+ }
+-func TestStableConfirmationSuccessCancelsSuspicion(t *testing.T) {
++func TestStableConfirmationSuccessDoesNotErasePrimaryFailure(t *testing.T) {
+ 	node := &stableTrafficOutbound{fallbackHealthTestOutbound: newFallbackHealthTestOutbound("primary", false)}
+ 	backup := newFallbackHealthTestOutbound("backup", true)
+ 	s := stableCandidateGroup(t, fallbackCandidate{tag: node.Tag(), outbound: node}, fallbackCandidate{tag: backup.Tag(), outbound: backup})
+@@ -137,8 +137,8 @@ func TestStableConfirmationSuccessCancelsSuspicion(t *testing.T) {
+ 		return nil, errors.New("primary target unavailable")
+ 	}
+ 	s.checkOutbounds(context.Background(), 0)
+-	if s.StableStatus().State != "primary" || backup.dialCount != 0 {
+-		t.Fatal("confirmation target success did not cancel suspicion")
++	if selectedTag(s) != "backup" || backup.dialCount == 0 {
++		t.Fatal("confirmation success erased repeated primary failure")
+ 	}
+ }
+ 
+@@ -181,7 +181,7 @@ type stableSwitchCountingLogger struct {
+ 	switches atomic.Uint64
+ }
+ 
+-func (l *stableSwitchCountingLogger) Info(args ...any) {
++func (l *stableSwitchCountingLogger) Warn(args ...any) {
+ 	if len(args) > 0 && args[0] == "fallback switched from " {
+ 		l.switches.Add(1)
+ 	}
+diff --git a/protocol/group/fallback_stream_failure.go b/protocol/group/fallback_stream_failure.go
+new file mode 100755
+index 0000000..ee73378
+--- /dev/null
++++ b/protocol/group/fallback_stream_failure.go
+@@ -0,0 +1,61 @@
++package group
++
++import (
++	"context"
++	"errors"
++	"io"
++	"net"
++	"sync"
++	"syscall"
++
++	"github.com/sagernet/sing/common/buf"
++	"github.com/sagernet/sing/common/bufio"
++	N "github.com/sagernet/sing/common/network"
++)
++
++// A completed TCP dial is not a completed TLS/HTTP exchange. Observe late
++// transport failures without changing deadlines or retrying application data.
++type stableFailureConn struct {
++	N.ExtendedConn
++	ctx       context.Context
++	fallback  *Fallback
++	candidate fallbackCandidate
++	once      sync.Once
++}
++
++func (c *stableFailureConn) failure(err error) {
++	if errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EWOULDBLOCK) {
++		return
++	}
++	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) || c.ctx.Err() != nil || c.fallback.ctx.Err() != nil {
++		return
++	}
++	c.once.Do(func() { c.fallback.recordDialFailure(c.candidate, err) })
++}
++func (c *stableFailureConn) Read(p []byte) (int, error) {
++	n, err := c.ExtendedConn.Read(p)
++	c.failure(err)
++	return n, err
++}
++func (c *stableFailureConn) Write(p []byte) (int, error) {
++	n, err := c.ExtendedConn.Write(p)
++	c.failure(err)
++	return n, err
++}
++func (c *stableFailureConn) ReadBuffer(b *buf.Buffer) error {
++	err := c.ExtendedConn.ReadBuffer(b)
++	c.failure(err)
++	return err
++}
++func (c *stableFailureConn) WriteBuffer(b *buf.Buffer) error {
++	err := c.ExtendedConn.WriteBuffer(b)
++	c.failure(err)
++	return err
++}
++func (c *stableFailureConn) Upstream() any           { return c.ExtendedConn }
++func (c *stableFailureConn) ReaderReplaceable() bool { return false }
++func (c *stableFailureConn) WriterReplaceable() bool { return false }
++
++func (s *Fallback) observeStableFailures(ctx context.Context, conn net.Conn, candidate fallbackCandidate) net.Conn {
++	return &stableFailureConn{ExtendedConn: bufio.NewExtendedConn(conn), ctx: ctx, fallback: s, candidate: candidate}
++}
+diff --git a/route/conn.go b/route/conn.go
+index a89df80..5c2c292 100644
+--- a/route/conn.go
++++ b/route/conn.go
+@@ -323,7 +323,7 @@ func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn,
+ 		if err == nil {
+ 			m.logger.DebugContext(ctx, "connection upload finished")
+ 		} else if !E.IsClosedOrCanceled(err) && !strings.Contains(err.Error(), "NO_ERROR") && !strings.Contains(err.Error(), "CANCEL") && !strings.Contains(err.Error(), "body closed") {
+-			m.logger.DebugContext(ctx, "connection upload closed: ", err)
++			m.logConnectionFailure(ctx, E.Cause(err, "connection upload closed"))
+ 		} else {
+ 			m.logger.TraceContext(ctx, "connection upload closed")
+ 		}
+@@ -331,7 +331,7 @@ func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn,
+ 		if err == nil {
+ 			m.logger.DebugContext(ctx, "connection download finished")
+ 		} else if !E.IsClosedOrCanceled(err) && !strings.Contains(err.Error(), "NO_ERROR") && !strings.Contains(err.Error(), "response body closed") {
+-			m.logger.DebugContext(ctx, "connection download closed: ", err)
++			m.logConnectionFailure(ctx, E.Cause(err, "connection download closed"))
+ 		} else {
+ 			m.logger.TraceContext(ctx, "connection download closed")
+ 		}
+diff --git a/route/kabanmax_auto.go b/route/kabanmax_auto.go
+index d179b33..c85c247 100755
+--- a/route/kabanmax_auto.go
++++ b/route/kabanmax_auto.go
+@@ -32,6 +32,7 @@ func (r *Router) initKabanmaxAuto() {
+ 			return true
+ 		}
+ 		m.LogSourceFailure = r.logAutoSourceFailure
++		m.LogTargetFailure = r.logAutoTargetFailure
+ 		m.Match = func(ctx context.Context, metadata *adapter.InboundContext) (string, error) {
+ 			selected, selectedIndex, buffers, packets, e := r.matchRule(ctx, metadata, nil, nil)
+ 			buf.ReleaseMulti(buffers)
+@@ -248,3 +249,10 @@ func (r *Router) logAutoSourceFailure(event autoroute.Event, err error) {
+ 		r.logger.WarnContext(r.ctx, "auto-routing source failure: ", event.Source, " -> ", event.IP, ":", event.Port, ": ", err)
+ 	}
+ }
++
++// Target failures remain distinct from the source admission and retained diagnosis.
++func (r *Router) logAutoTargetFailure(event autoroute.Event, err error) {
++	if routineConnectionFailure(err) {
++		r.logger.WarnContext(r.ctx, "auto-routing selected route failure: ", event.Source, " -> ", event.IP, ":", event.Port, ": ", err)
++	}
++}
+diff --git a/route/route.go b/route/route.go
+index abbeb9f..c5fb627 100644
+--- a/route/route.go
++++ b/route/route.go
+@@ -630,7 +630,7 @@ var errMissingFakeIPRecord = E.New("missing fakeip record")
+ // came in for.
+ func (r *Router) logRefused(ctx context.Context, destination M.Socksaddr, err error) bool {
+ 	if errors.Is(err, errMissingFakeIPRecord) {
+-		r.logger.DebugContext(ctx, "connection to ", destination, " refused: no fakeip record (the address was given out shortly before a crash, was flushed, or was unused for a long time); the client gets a new one when it resolves the name again")
++		r.logger.WarnContext(ctx, "connection to ", destination, " refused: no fakeip record (the address was given out shortly before a crash, was flushed, or was unused for a long time); the client gets a new one when it resolves the name again")
+ 		return true
+ 	}
+ 	return false
+diff --git a/route/route_log_test.go b/route/route_log_test.go
+index ebb7186..a94cd9e 100644
+--- a/route/route_log_test.go
++++ b/route/route_log_test.go
+@@ -43,7 +43,7 @@ func (b *lockedBuffer) String() string {
+ func (b *lockedBuffer) lines() []string {
+ 	var lines []string
+ 	for _, line := range strings.Split(strings.TrimSpace(b.String()), "\n") {
+-		if line != "" && !strings.HasPrefix(line, "DEBUG") {
++		if line != "" && !strings.HasPrefix(line, "WARN") {
+ 			lines = append(lines, line)
+ 		}
+ 	}
+@@ -111,7 +111,7 @@ func routeRefused(t *testing.T, router *Router, network string, metadata adapter
+ 
+ // A connection to a FakeIP address the store has no record for is refused by design: the
+ // log says so at the debug level, with the address, not as an error of the router.
+-func TestMissingFakeIPRecordIsLoggedAsDebug(t *testing.T) {
++func TestMissingFakeIPRecordIsLoggedAsWarning(t *testing.T) {
+ 	router, output := newLoggedRouter(t)
+ 	router.dnsTransport = fakeDNSTransportManager{fakeIP: fakeFakeIPTransport{store: fakeFakeIPStore{prefix: netip.MustParsePrefix("198.18.0.0/15")}}}
+ 	metadata := adapter.InboundContext{
+@@ -136,7 +136,7 @@ func TestMissingFakeIPRecordIsLoggedAsDebug(t *testing.T) {
+ 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+ 	require.Len(t, lines, 3, output.String())
+ 	for _, line := range lines {
+-		require.True(t, strings.HasPrefix(line, "DEBUG"), line)
++		require.True(t, strings.HasPrefix(line, "WARN"), line)
+ 		require.Contains(t, line, "no fakeip record")
+ 		require.Contains(t, line, "198.18.0.5:22")
+ 	}

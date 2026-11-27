@@ -1,5 +1,13 @@
 # Журнал и мониторинг: ограничение памяти
 
+**Локальный r46:** поздние stream TLS/unknown failures не выводятся в Error. Диагностируемые ошибки открытия/отложенного outbound handshake получают адрес, маршрут, этап и предметную проверку; без этого остаются Debug. Client handshake отдельно Debug. Типизированные DNS REFUSED/SERVFAIL сохраняют полезный Error. Fallback/WAN/lifecycle не менялись. [Точный контракт, границы и проверки](ACTIONABLE_CONNECTION_LOGS.md).
+
+**Локальный r45:** возвращён прежний критерий stable fallback: успешный независимый confirmation означает healthy, без failed-check/suspect/confirmed Warn для этой пары. Общий код WARP/VLESS. Остальные уровни сообщений не менялись. По запросу установлен на локальный роутер. [Контракт](FALLBACK_CONFIRMATION_SUCCESS.md).
+
+**Текущий локальный r44:** ошибки передачи уже установленного соединения не запускают fallback health и не создают дополнительный Warn `fallback active outbound failure [connection]`. Проверку по ошибке открытия нового соединения сохранили. Диагностические Warn подтверждения health и переключения сохранены; WAN/lifecycle/classified connection logging не менялись. Установлен на локальный роутер по запросу пользователя. [Исправление](FALLBACK_DIAL_ONLY.md).
+
+**Локальный r42:** при пороге Warn видны Warn/Error/Fatal/Panic. Возвращены fallback Warn, classified copy errors и Applied target Warn. Lifecycle suppression сохранён; **WAN gate не изменён**, подавление связанных сетевых ошибок при подтверждённом WAN outage соответствует прямому уточнению пользователя. [Точный контракт и свежие проверки](WARP_RUNTIME_FIX.md). На роутер r42 ещё не установлен.
+
 Текущий локальный контракт от 2026-11-23. Версия и публикационный статус — [PROJECT_STATE](PROJECT_STATE.md). Источник ядра — pinned UPSTREAM + patches; память снимков — `0025-bounded-connection-snapshots.patch`, уровни сообщений — `0026-actionable-log-levels.patch`.
 
 2026-11-23 первоначальная logging-only установка заменена полным согласованным preview **0.2.3/r29**, включая новый LuCI bundle, backend и core snapshot. Level Warn сохранён; свежий frontend/backend/core/package scope и текущие ARM64 smoke — [PREVIEW_023](PREVIEW_023.md). Первоначальный старый лимит 2 МиБ/r22 и reboot при первой подготовке описаны в [WARP_RECOVERY](WARP_RECOVERY.md). Подтверждения устранения общего OOM нет.
@@ -57,21 +65,23 @@ Core `/connections` копировал весь набор metadata, созда�
 
 ### Политика уровней после запроса пользователя
 
-Это изменение уровня у источника, не фильтр отображения. При Warn следующие новые записи не генерируются. Уже сохранённые строки не удаляются; для целевой диагностики Debug нужно включить до воспроизведения.
+Таблица описывает локальный r42. При Warn видны Warn/Error/Fatal/Panic; Debug/Trace ниже порога. Уже сохранённые строки не удаляются. Уровень классифицируется у источника, а согласованные lifecycle/WAN исключения применяются отдельно.
 
 | Событие | Уровень / область |
 | --- | --- |
-| Ошибка TCP upload/download copy или half-close существующего соединения | Debug; причина остаётся в тексте и исходном close callback, независимо от длительности сессии |
+| Ошибка TCP upload/download copy или half-close существующего соединения | Classified: routine Debug, TLS/auth/неизвестная protocol error — Error; причина и close callback сохраняются |
 | `EHOSTUNREACH`, `ENETUNREACH`, `ENOTCONN`, `ECONNRESET`, `ECONNABORTED`, `EPIPE`; отмена/EOF/закрытый socket при открытии/подтверждении handshake в ConnectionManager | Debug. Typed unwrap + точные suffix для userspace `no route to host`, `network is unreachable`, `endpoint not connected`, `connection reset by peer`, `broken pipe` |
-| Отсутствующий FakeIP record | Debug; соединение по-прежнему отклоняется, обход проверки не добавлен |
-| DNS `bad question size` | Debug в Client и Router; FORMATERROR сохраняется |
+| Отсутствующий FakeIP record | Warn; соединение по-прежнему отклоняется |
+| DNS `bad question size` | Warn в Client и Router; FORMATERROR сохраняется |
 | REFUSED на CHAOS/TXT для `version.bind.`, `version.maradns.`, `version.pdns.`, `hostname.bind.`, `id.server.` | Debug, без открытия/загрязнения окна отказов обычного DNS; возврат причины и IsLoggedFailure сохраняются |
 | Первый отказ обычного DNS exchange | Warn с сервером/доменом/типом/классом/причиной |
 | Повторные DNS failures того же server+domain+type+class за 10s | Один Warn: число дополнительных отказов и причина именно этого вопроса. Разные домены не смешиваются; окна/причины ограничены по памяти |
-| Fallback probe-only failure с подтверждёнными свежими данными пользователя; промежуточный suspect | Debug; state machine/выбор/проверки не меняются |
+| Fallback probe-only failure с подтверждёнными свежими данными пользователя; промежуточный suspect | Warn. Успех независимого confirmURL больше не стирает primary failure |
 | Fallback confirmed failure | Прежний Warn: именованный выход и причина подтверждённого отказа |
 | `connection refused`, настоящие deadline/timeout при открытии соединения в ConnectionManager | Debug по дополнительному указанию пользователя; причины/close handler сохраняются |
-| TLS/version/certificate/auth/config ошибки | Прежний Error; не входят в blanket downgrade. Это не означает, что любой такой текст доказывает неисправность всего VPN |
+| TLS/version/certificate/auth/config ошибки | Error при открытии и поздней copy; при подтверждённом отсутствии WAN действует прежнее подавление связанных сетевых сообщений |
+| Ошибка выбранного Applied маршрута | Routine причина получает selected-route Warn; не маркируется как исходный отказ. Non-routine Error не дублируется |
+| Поздний сбой stable TCP stream и смена участника | Warn. Late failure запускает внеочередную bounded health check; обычный EOF/close/cancel не запускает |
 | Запуск/apply/проверка конфигурации, отсутствующие зависимости, OOM/crash, ошибки сохранения/отзыва и внутренние ошибки | Прежние уровни сохраняются. Прочие logger sites/зависимости не превращены в глобальный whitelist |
 
 Предварительное предположение «полезность можно определить по возрасту 17–20 минут» не стало правилом: ошибки завершения понижены независимо от возраста. Deadline сначала сохранялся, затем по прямому дополнительному указанию переведён в Debug; тест обновлён под текущий контракт. Авторутинг получает те же ошибки/события, алгоритм fallback и обработка DNS не ослаблены. Не введено обещание автоматически объяснять причину каждого сообщения или доказывать WAN-loss по одному отказу.

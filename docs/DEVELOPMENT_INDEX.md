@@ -1,6 +1,6 @@
 # Навигатор разработчика
 
-Старт: [AGENTS](../AGENTS.md) → [PROJECT_STATE](PROJECT_STATE.md). Текущий hotfix — [0.2.3/r41](AUTO_ROUTING_LATE_DNS.md), прежняя native приёмка — [r40](RELEASE_023.md). Затем выбрать **одну тему**, не читать все ссылки подряд. Формальная карта путей — [PROJECT_MAP.json](PROJECT_MAP.json).
+Старт: [AGENTS](../AGENTS.md) → [PROJECT_STATE](PROJECT_STATE.md). Текущая публикация — [0.2.3/r46](PUBLICATION_023.md), локальная аппаратная приёмка — [r46](LOCAL_R46_INSTALL.md). Затем выбрать **одну тему**, не читать все ссылки подряд. Формальная карта путей — [PROJECT_MAP.json](PROJECT_MAP.json).
 
 | Задача | Сначала читать | Код и проверки |
 | --- | --- | --- |

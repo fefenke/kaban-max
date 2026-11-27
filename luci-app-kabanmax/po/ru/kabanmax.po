@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: KABANMAX\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-24 18:56+0300\n"
-"PO-Revision-Date: 2026-11-24 18:56+0300\n"
+"POT-Creation-Date: 2026-11-26 01:06+0300\n"
+"PO-Revision-Date: 2026-11-26 01:06+0300\n"
 "Last-Translator: K.A.B.A.N.-MAX contributors\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -314,6 +314,9 @@ msgstr "Весь трафик устройства принудительно п
 msgid "All traffic through the server"
 msgstr "Весь трафик через сервер"
 
+msgid "Allow automatic routing without protocol verification (risk)"
+msgstr "Разрешать автоприменение без подтверждения протокола (риск)"
+
 msgid "Allow redirecting IPs without a domain"
 msgstr "Разрешать перенаправление IP без домена"
 
@@ -352,6 +355,9 @@ msgstr "Для AnyTLS требуется TLS"
 
 msgid "Applied records"
 msgstr "Применены"
+
+msgid "Applied rule was bypassed; connection used the original route"
+msgstr "Применённое правило не сработало; соединение использовало исходный маршрут"
 
 msgid "Applies WARP+ to the profile account"
 msgstr "Применяет WARP+ к аккаунту профиля"
@@ -1883,8 +1889,8 @@ msgstr "Сетевой интерфейс: %s"
 msgid "New connection error detected"
 msgstr "Обнаружена новая ошибка соединения"
 
-msgid "New connection error on port"
-msgstr "Новая ошибка соединения на порту"
+msgid "New error on the original route"
+msgstr "Новая ошибка исходного маршрута"
 
 msgid "New error on the selected route"
 msgstr "Новая ошибка выбранного маршрута"
@@ -1957,9 +1963,6 @@ msgstr "Нет логов, соответствующих текущим фил�
 
 msgid "No network"
 msgstr "Нет сети"
-
-msgid "No new errors"
-msgstr "Новых ошибок нет"
 
 msgid "No other devices in the tailnet"
 msgstr "В сети нет других устройств"
@@ -2173,6 +2176,9 @@ msgstr "Сведения об исходной ошибке не сохрани�
 
 msgid "Original route error"
 msgstr "Исходная ошибка маршрута"
+
+msgid "Original route works; no change needed"
+msgstr "Исходный маршрут работает; изменение не требуется"
 
 msgid "Original URI"
 msgstr "Исходная ссылка"
@@ -2536,6 +2542,12 @@ msgstr "Правила маршрутизации проверяются све�
 
 msgid "Routing section"
 msgstr "Секция маршрутизации"
+
+msgid "Rule applied"
+msgstr "Правило применено"
+
+msgid "Rule applied without protocol verification"
+msgstr "Правило применено без подтверждения протокола"
 
 msgid "Rule set auto update"
 msgstr "Автообновление наборов правил"
@@ -2965,6 +2977,9 @@ msgstr "TAP (уровень 2) не поддерживается, только T
 
 msgid "TCP and UDP"
 msgstr "TCP и UDP"
+
+msgid "TCP reachable; protocol unverified"
+msgstr "TCP доступен; протокол не проверен"
 
 msgid "Test all sections"
 msgstr "Тестировать все секции"
@@ -3410,6 +3425,9 @@ msgstr "Использовать выбранную секцию с её нас�
 msgid "Use the tunnel's DNS for the domains its server declares. Add those domains to the section so that devices reach them through the tunnel"
 msgstr "Использовать DNS туннеля для доменов, которые объявляет его сервер. Добавьте эти домены в секцию, чтобы устройства ходили к ним через туннель"
 
+msgid "Use two successful TCP connections when the original protocol cannot be verified. This does not prove the service works. UDP is excluded."
+msgstr "При неподтверждённом исходном протоколе допускает автоприменение после двух успешных TCP-подключений. Работа сервиса не гарантируется. На UDP не распространяется."
+
 msgid "User name"
 msgstr "Имя пользователя"
 
@@ -3556,9 +3574,3 @@ msgstr "Ты кабан"
 
 msgid "Your own certificate"
 msgstr "Свой сертификат"
-
-msgid "Applied rule was bypassed; connection used the original route"
-msgstr "Применённое правило не сработало; соединение использовало исходный маршрут"
-
-msgid "New error on the original route"
-msgstr "Новая ошибка исходного маршрута"

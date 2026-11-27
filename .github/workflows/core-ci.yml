@@ -48,6 +48,10 @@ jobs:
           cp "$GITHUB_WORKSPACE/tests/core/auto_dns_identity_test.go" route/
           cp "$GITHUB_WORKSPACE/tests/core/connections_snapshot_test.go" experimental/clashapi/
           cp "$GITHUB_WORKSPACE/tests/core/connection_log_policy_test.go" route/
+          cp "$GITHUB_WORKSPACE/tests/core/runtime_log_levels_test.go" log/
+          cp "$GITHUB_WORKSPACE/tests/core/fallback_partial_failure_test.go" protocol/group/
+          cp "$GITHUB_WORKSPACE/tests/core/fallback_stream_failure_test.go" protocol/group/
+          cp "$GITHUB_WORKSPACE/tests/core/fallback_probe_budget_test.go" protocol/group/
           cp "$GITHUB_WORKSPACE/tests/core/dns_log_policy_test.go" dns/
           cp "$GITHUB_WORKSPACE/tests/core/fakeip_ipv6_guard_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/fakeip_ipv6_migration_test.go" dns/transport/fakeip/
@@ -58,9 +62,12 @@ jobs:
           cp "$GITHUB_WORKSPACE/tests/core/auto_source_failure_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/auto_section_ip_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/auto_applied_diagnostics_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_failed_retry_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_probe_timeout_test.go" common/autoroute/
+          cp "$GITHUB_WORKSPACE/tests/core/auto_protocol_risk_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/auto_late_dns_test.go" common/autoroute/
           cp "$GITHUB_WORKSPACE/tests/core/auto_all_ports_test.go" common/autoroute/
-          go test -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./common/autoroute ./route ./dns ./dns/transport/fakeip ./common/wanstate ./log ./experimental/clashapi ./experimental/cachefile
+          go test -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./common/autoroute ./route ./dns ./dns/transport/fakeip ./common/wanstate ./log ./experimental/clashapi ./experimental/cachefile ./protocol/group
       - name: Test WARP profiles and network reset forwarding
         working-directory: /tmp/kaban-core
         run: |
@@ -79,3 +86,5 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn -o /tmp/auto-core ./cmd/sing-box
           sudo unshare --net sh -c 'ip link set lo up; sysctl -w net.ipv4.tcp_syn_retries=1 >/dev/null; export KERNEL_TIMEOUT=1; exec python3 "$1" /tmp/auto-core /tmp/auto-fixtures system' sh "$GITHUB_WORKSPACE/tests/core/auto_error_binary.py"
           python3 "$GITHUB_WORKSPACE/tests/core/lifecycle_log_binary.py" /tmp/auto-core
+          python3 "$GITHUB_WORKSPACE/tests/core/connection_actionable_binary.py" /tmp/auto-core
+          python3 "$GITHUB_WORKSPACE/tests/core/fallback_partial_binary.py" /tmp/auto-core

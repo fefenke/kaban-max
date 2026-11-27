@@ -4,6 +4,16 @@ let model = require("config.auto_routing");
 let fixture = require("fixture");
 let generator = require("singbox.generator");
 let registry = require("config.auto_registry");
+
+t.test("unconfirmed protocol risk is explicit, independent of IP-only and disabled with auto apply", () => {
+    for (let apply in ["0", "1"]) {
+        fixture.seed({settings:{yacd_secret_key:"synthetic"},section:[{".name":"zap",enabled:"1",action:"zapret2",destinations:"one.test",auto_routing_enabled:"1",auto_routing_direct:"1",auto_routing_apply:apply,auto_routing_ip_only:"0",auto_routing_unconfirmed_protocol:"1"}]});
+        let source=generator.build({service_address:"192.168.1.1"}).route.kabanmax_auto[0];
+        t.eq(source.allow_unconfirmed_protocol ?? false,apply=="1");
+        t.eq(source.allow_ip_only,false);
+        if(apply=="0")t.eq(source.allow_unconfirmed_protocol,null);
+    }
+});
 registry.paths.budget = require("stub").tmpdir() + "/auto-routing-write-budget.json";
 registry.paths.applied = require("stub").tmpdir() + "/auto-routing-applied.json";
 registry.paths.pending = null;

@@ -82,8 +82,9 @@ def main(binary):
                 wait_for(seen.is_set, "pending DNS request", process)
                 os.kill(process.pid, signal.SIGHUP)
                 wait_for(lambda: logs().count("sing-box started") >= 2, "new generation", process)
-                wait_for(lambda: any("connection: open connection to pending.example.test" in line for line in logs().splitlines()), "old flow closure", process)
-                closing = [line for line in logs().splitlines() if "connection: open connection to pending.example.test" in line]
+                wait_for(lambda: any("connection:" in line and "open connection to pending.example.test" in line for line in logs().splitlines()), "old flow closure", process)
+                closing = [line for line in logs().splitlines() if "connection:" in line and "open connection to pending.example.test" in line]
+                assert closing, "old flow failure was not logged"
                 assert all("DEBUG" in line for line in closing), closing
                 refuse.set()
                 connect("fresh.example.test")

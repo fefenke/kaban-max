@@ -19,6 +19,19 @@ func TestAppliedRouteKeepsOriginalFailureAfterTargetError(t *testing.T) {
  if current.OriginalFailure==nil || *current.OriginalFailure!=original || current.Failure.Message==original.Message{t.Fatal("original failure overwritten")}
 }
 
+func TestAppliedTargetFailureIsVisibleWithoutSourceMislabel(t *testing.T) {
+ m,q,_,_:=webManager(t,200,normalPage)
+ answer,err:=manualAPI(m,"s1",manualEvent(m).ID,"direct-out");if err!=nil{t.Fatal(err)}
+ grant:=answer.(Decision).Lease
+ targets,sources:=0,0
+ m.LogTargetFailure=func(e Event,err error){targets++;if e.Source!="direct-out"{t.Fatalf("wrong failure route: %s",e.Source)}}
+ m.LogSourceFailure=func(Event,error){sources++}
+ meta:=metadata(q);event:=m.Observe(&meta,q.Source)
+ if m.SelectForEvent(context.Background(),q.Source,&meta,event)!="direct-out"{t.Fatal("grant not selected")}
+ m.Failed(event,errors.New("later alternative timeout"))
+ if targets!=1 || sources!=0 || !m.leases[grant.ID].NewError {t.Fatalf("target/source warning counts %d/%d",targets,sources)}
+}
+
 func TestReappliedIPKeepsObservedLabelsFromPreviousApproval(t *testing.T) {
  m,q,_,_:=webManager(t,200,normalPage)
  answer,err:=manualAPI(m,"s1",manualEvent(m).ID,"direct-out");if err!=nil{t.Fatal(err)}

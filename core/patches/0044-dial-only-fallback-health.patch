@@ -1,0 +1,84 @@
+--- a/protocol/group/fallback.go
++++ b/protocol/group/fallback.go
+@@ -585,7 +585,6 @@
+ 	}
+ 	if userTarget != nil && len(candidates) > 0 && candidate.outbound == candidates[0].outbound {
+ 		conn = s.observeStableUserConn(conn, candidate, userTarget, createdAt)
+-		conn = s.observeStableFailures(ctx, conn, candidate)
+ 	}
+ 	return s.interruptGroup.NewConn(conn, interrupt.IsExternalConnectionFromContext(ctx)), nil
+ }
+@@ -753,9 +752,6 @@
+ 	s.health[candidate.tag] = state
+ 	s.access.Unlock()
+ 	if check {
+-		if s.stable != nil {
+-			s.logger.Warn("fallback active outbound failure [connection] ", candidate.tag, ": ", stableProbeError(err), "; scheduling health check")
+-		}
+ 		s.requestCheck()
+ 	}
+ }
+--- a/protocol/group/fallback_stream_failure.go
++++ /dev/null
+@@ -1,61 +0,0 @@
+-package group
+-
+-import (
+-	"context"
+-	"errors"
+-	"io"
+-	"net"
+-	"sync"
+-	"syscall"
+-
+-	"github.com/sagernet/sing/common/buf"
+-	"github.com/sagernet/sing/common/bufio"
+-	N "github.com/sagernet/sing/common/network"
+-)
+-
+-// A completed TCP dial is not a completed TLS/HTTP exchange. Observe late
+-// transport failures without changing deadlines or retrying application data.
+-type stableFailureConn struct {
+-	N.ExtendedConn
+-	ctx       context.Context
+-	fallback  *Fallback
+-	candidate fallbackCandidate
+-	once      sync.Once
+-}
+-
+-func (c *stableFailureConn) failure(err error) {
+-	if errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EWOULDBLOCK) {
+-		return
+-	}
+-	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) || c.ctx.Err() != nil || c.fallback.ctx.Err() != nil {
+-		return
+-	}
+-	c.once.Do(func() { c.fallback.recordDialFailure(c.candidate, err) })
+-}
+-func (c *stableFailureConn) Read(p []byte) (int, error) {
+-	n, err := c.ExtendedConn.Read(p)
+-	c.failure(err)
+-	return n, err
+-}
+-func (c *stableFailureConn) Write(p []byte) (int, error) {
+-	n, err := c.ExtendedConn.Write(p)
+-	c.failure(err)
+-	return n, err
+-}
+-func (c *stableFailureConn) ReadBuffer(b *buf.Buffer) error {
+-	err := c.ExtendedConn.ReadBuffer(b)
+-	c.failure(err)
+-	return err
+-}
+-func (c *stableFailureConn) WriteBuffer(b *buf.Buffer) error {
+-	err := c.ExtendedConn.WriteBuffer(b)
+-	c.failure(err)
+-	return err
+-}
+-func (c *stableFailureConn) Upstream() any           { return c.ExtendedConn }
+-func (c *stableFailureConn) ReaderReplaceable() bool { return false }
+-func (c *stableFailureConn) WriterReplaceable() bool { return false }
+-
+-func (s *Fallback) observeStableFailures(ctx context.Context, conn net.Conn, candidate fallbackCandidate) net.Conn {
+-	return &stableFailureConn{ExtendedConn: bufio.NewExtendedConn(conn), ctx: ctx, fallback: s, candidate: candidate}
+-}

@@ -1,5 +1,17 @@
 # Известные проблемы и границы доказательств
 
+## Save & Apply и клиентское DNS-состояние
+
+Найден DNS bypass в старой HUP pause; новый backend закрывает его filter guard до DNAT.101backend и nft dry-run PASS, guard установлен. Это согласуется с восстановлением после переключения VPN на компьютере, но конкретный сбой региона не перехвачен; повторные Save с клиентским capture после установки ещё не проверены. [Диагностика/границы](RELOAD_DNS_PAUSE.md).
+
+**Web probe deadline,2026-11-26:** исправлен локально в r43: configured TCP budget +5s TLS/HTTP, bounded выбранная цепочка групп, прежний60s parent limit. Добавлены явный TCP-risk opt-in и честный Applied status с сохранением ошибок. Affected race/backend/frontend PASS; final artifacts и hardware status — [r43](AUTO_ROUTING_R43.md).
+
+**Локальный r42:** исправлены global copy downgrade, видимость fallback/Applied failures, потеря partial primary failure и отсутствие late-stream wake. WAN gate оставлен прежним по прямому уточнению пользователя. Тесты и binaries готовы; hardware acceptance/внешняя причина частичного Google outage ещё не установлены. [Evidence](WARP_RUNTIME_FIX.md).
+
+**WARP partial failure на r41,2026-11-25:** первый не проходил Google при доступном Cloudflare; второй проходил Google. Потеря primary failure исправлена локально в r42, на устройстве исправление не проверено. [Исходная матрица](WARP_PARTIAL_FAILURE.md).
+
+**Auto Apply/r41,2026-11-25:** auto включён; после mixed WARP проверки и5мин cooldown новая проверка автоматически применила IP к WARP, all_devices/all_ports=true. Обнаружено5сек web probe против8сек fallback attempt; mixed evidence показывается общим no_working_alternative. Runtime fix не выполнялся. [Точные наблюдения и ограничения](AUTO_ROUTING_AUTO_APPLY_DELAY.md).
+
 **2026-11-25: Applied late-DNS bypass r40 исправлен и опубликован в r41/0.2.3.** RED→GREEN,14Go race packages, local executable, все6GitHub jobs PASS. Hardware/установка не проводились по запрету пользователя. Исправлена подпись обхода/атрибуция старых ошибок. [Доказательства и границы](AUTO_ROUTING_LATE_DNS.md). Предыдущий r40 restart дал WARP HTTPS65/65ms; задержка WARP остаётся отдельной открытой проблемой.
 
 WARP: после штатной установки API quota hotfix 0.2.3/r40 первый профиль прошёл HTTPS за 35ms, второй дважды вернул HTTP504 без дополнительных restart. Startup/recovery второго профиля снова открыт; причина не установлена, ядро в hotfix не менялось. [Текущая приёмка](RELEASE_023.md). Прежний r37 проходил 5/5 restart/HTTPS с cache hints — это исторический результат, не доказательство текущей устойчивости.
@@ -29,4 +41,4 @@ WARP: исходный отказ r31 подтверждён; в r32 испра�
 
 Удаление исключений: подтверждённый случай `source_or_scope_not_found` при существующем source вызван посимвольным сравнением spaced ucode JSON с compact Go JSON. Исправлено r31 + backend 0.2.4; real API synthetic reset PASS, все 14 пользовательских записей сохранены. Реальную кнопку Delete пользователь ещё не подтвердил. Это не доказательство обработки любого отсутствующего/выключенного source. [Scope regression](PREVIEW_024.md).
 
-META visibility: genuine source failure может попасть в Pending, но быть скрытым при Warn, потому что normal connection timeout понижен до Debug, а autoroute callback с r15 не дублирует log. Исправление first-source Warn ещё не реализовано. Общие refused/no-route и VLESS protocol/TLS/auth — разные классы; пользователь просил не смешивать их при изменении уровней. [Текущая граница](LOGGING.md).
+META visibility: принятые source failures получают отдельный Warn с0033; общий refused/no-route остаётся Debug. Локальный0046 уточняет полезность connection Error по контексту/этапу/подсказке, а не одному слову TLS. [Текущий контракт](LOGGING.md).

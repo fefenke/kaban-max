@@ -1,0 +1,241 @@
+diff --git a/common/autoroute/checkpoint.go b/common/autoroute/checkpoint.go
+index 944df76..a6fbfe9 100644
+--- a/common/autoroute/checkpoint.go
++++ b/common/autoroute/checkpoint.go
+@@ -75,6 +75,10 @@ func (m *Manager) loadPending(source option.KabanmaxAutoSource) {
+ 		if validResult {
+ 			checked.Generation = m.generation
+ 			e.Status, e.Reason, e.attempted = checked.Status, checked.Reason, true
++			// Applying new protocol consent must reconsider already retained unknown TCP records.
++			if source.Mode == "web" && source.AutoApply && source.AllowUnconfirmedProtocol && e.Network == "tcp" && checked.Status == "inconclusive" && checked.Reason == "protocol_unconfirmed" {
++				e.attempted = false
++			}
+ 			m.decisions[checked.ID] = *checked
+ 		}
+ 		m.events[e.ID] = &e
+diff --git a/common/autoroute/probe.go b/common/autoroute/probe.go
+index 9ce24b8..719a3b3 100644
+--- a/common/autoroute/probe.go
++++ b/common/autoroute/probe.go
+@@ -359,7 +359,7 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 			}
+ 			originalFailed = true
+ 			d.Evidence = "suspected_failure"
+-		} else if first.Status == "verified" && second.Status == "verified" {
++		} else if first.Status == "verified" && second.Status == "verified" || s.Mode == "web" && s.AllowUnconfirmedProtocol && first.Status == "transport_reachable" && second.Status == "transport_reachable" {
+ 			d.Target = tag
+ 			if tag == "direct-out" {
+ 				d.TargetSection = s.DirectSection
+@@ -374,6 +374,10 @@ func (m *Manager) probeSingle(ctx context.Context, q Query) (any, error) {
+ 			if s.Mode == "web" {
+ 				d.Evidence = "alternative_reachable"
+ 				d.Reason = "repeated_transport_failure_alternative_reachable"
++				if first.Status == "transport_reachable" {
++					d.Evidence = "unverified_protocol_tcp_reachable"
++					d.Reason = "protocol_unconfirmed_risk_opt_in"
++				}
+ 			}
+ 			break
+ 		}
+@@ -459,6 +463,9 @@ func (m *Manager) Apply(ctx context.Context, decisionID string) (any, error) {
+ 	if e != nil {
+ 		return nil, e
+ 	}
++	if d.Evidence == "unverified_protocol_tcp_reachable" && !s.AllowUnconfirmedProtocol {
++		return nil, errors.New("protocol_risk_opt_in_required")
++	}
+ 	if _, e = m.target(s, d.Target); e != nil {
+ 		return nil, e
+ 	}
+diff --git a/common/autoroute/protocol_risk.go b/common/autoroute/protocol_risk.go
+new file mode 100755
+index 0000000..b8109ef
+--- /dev/null
++++ b/common/autoroute/protocol_risk.go
+@@ -0,0 +1,38 @@
++package autoroute
++
++import (
++	"context"
++	"github.com/sagernet/sing-box/option"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	"net/netip"
++)
++
++// Explicit TCP-only risk opt-in. This sends no application bytes and must
++// never be labelled verified TLS, HTTP, DPI evidence or UDP reachability.
++func (m *Manager) unconfirmedTCPAttempt(ctx context.Context, q Query, s option.KabanmaxAutoSource, tag string, a Attempt) Attempt {
++	a.Method = "TCP"
++	outbound, err := m.target(s, tag)
++	if err != nil {
++		a.Status = "blocked_by_policy"
++		a.Reason = err.Error()
++		return a
++	}
++	ctx, cancel := context.WithTimeout(ctx, webAttemptTimeout(outbound))
++	defer cancel()
++	conn, err := outbound.DialContext(ctx, "tcp", M.Socksaddr{Addr: netip.MustParseAddr(q.IP), Port: q.Port})
++	if err != nil {
++		a.Status = "transport_failure"
++		a.Reason = "tcp_transport_failed"
++		return a
++	}
++	defer conn.Close()
++	if N.NeedHandshakeForWrite(conn) {
++		a.Reason = "tcp_connection_unconfirmed"
++		return a
++	}
++	a.Reachable = true
++	a.Status = "transport_reachable"
++	a.Reason = "protocol_unconfirmed_risk_opt_in"
++	return a
++}
+diff --git a/common/autoroute/web.go b/common/autoroute/web.go
+index fa1ec47..a683758 100644
+--- a/common/autoroute/web.go
++++ b/common/autoroute/web.go
+@@ -33,6 +33,7 @@ func (m *Manager) webAttempt(ctx context.Context, q Query, s option.KabanmaxAuto
+   original := m.originalForQuery(q)
+   if frozen, ok := ctx.Value(manualChoiceKey{}).(*Event); ok && frozen.Query==q { original=frozen.originalMetadata }
+   if original==nil || (original.Protocol!="tls" && original.Protocol!="quic") {
++   if original!=nil && original.Network=="tcp" && s.AllowUnconfirmedProtocol && tag!=s.Outbound { return m.unconfirmedTCPAttempt(ctx,q,s,tag,a) }
+    a.Reason="protocol_unconfirmed";a.Method="";return a
+   }
+  }
+@@ -45,10 +46,11 @@ func (m *Manager) webAttempt(ctx context.Context, q Query, s option.KabanmaxAuto
+ 	if marked, ok := outbound.(interface{ KabanmaxRoutingMark() uint32 }); ok {
+ 		a.RoutingMark = marked.KabanmaxRoutingMark()
+ 	}
+-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
++	ctx, cancel := context.WithTimeout(ctx, webAttemptTimeout(outbound))
+ 	defer cancel()
+ 	dial := func(c context.Context, network, address string) (net.Conn, error) {
+-		conn, err := outbound.DialContext(c, "tcp", M.Socksaddr{Addr: netip.MustParseAddr(q.IP), Port: q.Port})
++		// net/http can detach its dial context; this isolated probe must obey the job deadline.
++		conn, err := outbound.DialContext(ctx, "tcp", M.Socksaddr{Addr: netip.MustParseAddr(q.IP), Port: q.Port})
+ 		if err == nil {
+ 			a.Reachable = true
+ 			a.Peer = conn.RemoteAddr().String()
+diff --git a/common/autoroute/web_timeout.go b/common/autoroute/web_timeout.go
+new file mode 100755
+index 0000000..3ff2bf1
+--- /dev/null
++++ b/common/autoroute/web_timeout.go
+@@ -0,0 +1,28 @@
++package autoroute
++
++import (
++	"github.com/sagernet/sing-box/adapter"
++	N "github.com/sagernet/sing/common/network"
++	"time"
++)
++
++// Keep the ordinary allowance for TLS/HTTP after a declared dial budget. A
++// WithTimeout child still obeys the parent job's unchanged sixty-second limit.
++func webAttemptTimeout(outbound adapter.Outbound) time.Duration {
++	const responseBudget = 5 * time.Second
++	for depth := 0; depth < 8 && outbound != nil; depth++ {
++		if limited, ok := outbound.(interface{ KabanmaxProbeDialTimeout() time.Duration }); ok {
++			budget := limited.KabanmaxProbeDialTimeout()
++			if budget >= time.Minute-responseBudget {
++				return time.Minute
++			}
++			return responseBudget + max(0, budget)
++		}
++		group, ok := outbound.(adapter.OutboundGroup)
++		if !ok {
++			break
++		}
++		outbound = group.Selected(N.NetworkTCP)
++	}
++	return responseBudget
++}
+diff --git a/option/kabanmax_auto.go b/option/kabanmax_auto.go
+index 32a492a..3f219be 100755
+--- a/option/kabanmax_auto.go
++++ b/option/kabanmax_auto.go
+@@ -4,32 +4,33 @@ import "encoding/json"
+ 
+ // Explicitly opted-in control resource; no wildcard status or arbitrary proxy.
+ type KabanmaxAutoSource struct {
+-	MemoryBytes     int               `json:"memory_bytes,omitempty"`
+-	CleanupSeconds  int               `json:"cleanup_seconds,omitempty"`
+-	CollectDisabled bool              `json:"collect_disabled,omitempty"`
+-	Pending         []json.RawMessage `json:"pending,omitempty"`
+-	RegistryScopes  []string          `json:"registry_scopes,omitempty"`
+-	Saved           []json.RawMessage `json:"saved,omitempty"`
+-	Mode            string            `json:"mode,omitempty"`
+-	ID              string            `json:"id"`
+-	Outbound        string            `json:"outbound"`
+-	Mark            uint32            `json:"mark"`
+-	ProbeZapret     bool              `json:"probe_zapret"`
+-	Direct          bool              `json:"direct"`
+-	WARP            string            `json:"warp,omitempty"`
+-	AllowIPOnly     bool              `json:"allow_ip_only"`
+-	AutoApply       bool              `json:"auto_apply"`
+-	Domain          string            `json:"domain"`
+-	Path            string            `json:"path"`
+-	Port            uint16            `json:"port"`
+-	Status          int               `json:"status"`
+-	Prefix          string            `json:"prefix"`
+-	FailureStatus   int               `json:"failure_status,omitempty"`
+-	FailurePrefix   string            `json:"failure_prefix,omitempty"`
+-	Suppressed      []string          `json:"suppressed,omitempty"`
+-	Protected       []string          `json:"protected,omitempty"`
+-	DirectSection   string            `json:"direct_section,omitempty"`
+-	WARPSection     string            `json:"warp_section,omitempty"`
+-	ExcludedSources []string          `json:"excluded_sources,omitempty"`
+-	ExcludedSystem  bool              `json:"excluded_system,omitempty"`
++	MemoryBytes              int               `json:"memory_bytes,omitempty"`
++	CleanupSeconds           int               `json:"cleanup_seconds,omitempty"`
++	CollectDisabled          bool              `json:"collect_disabled,omitempty"`
++	Pending                  []json.RawMessage `json:"pending,omitempty"`
++	RegistryScopes           []string          `json:"registry_scopes,omitempty"`
++	Saved                    []json.RawMessage `json:"saved,omitempty"`
++	Mode                     string            `json:"mode,omitempty"`
++	ID                       string            `json:"id"`
++	Outbound                 string            `json:"outbound"`
++	Mark                     uint32            `json:"mark"`
++	ProbeZapret              bool              `json:"probe_zapret"`
++	Direct                   bool              `json:"direct"`
++	WARP                     string            `json:"warp,omitempty"`
++	AllowUnconfirmedProtocol bool              `json:"allow_unconfirmed_protocol,omitempty"`
++	AllowIPOnly              bool              `json:"allow_ip_only"`
++	AutoApply                bool              `json:"auto_apply"`
++	Domain                   string            `json:"domain"`
++	Path                     string            `json:"path"`
++	Port                     uint16            `json:"port"`
++	Status                   int               `json:"status"`
++	Prefix                   string            `json:"prefix"`
++	FailureStatus            int               `json:"failure_status,omitempty"`
++	FailurePrefix            string            `json:"failure_prefix,omitempty"`
++	Suppressed               []string          `json:"suppressed,omitempty"`
++	Protected                []string          `json:"protected,omitempty"`
++	DirectSection            string            `json:"direct_section,omitempty"`
++	WARPSection              string            `json:"warp_section,omitempty"`
++	ExcludedSources          []string          `json:"excluded_sources,omitempty"`
++	ExcludedSystem           bool              `json:"excluded_system,omitempty"`
+ }
+diff --git a/protocol/group/fallback.go b/protocol/group/fallback.go
+index 0c477de..94b1f9d 100644
+--- a/protocol/group/fallback.go
++++ b/protocol/group/fallback.go
+@@ -1007,3 +1007,17 @@ func (c *fallbackEarlyConn) Upstream() any {
+ 	defer c.access.Unlock()
+ 	return c.Conn
+ }
++
++// KabanmaxProbeDialTimeout describes bounded TCP candidate attempts, separately
++// from the health-check timeout. It never raises the automatic job's 60s cap.
++func (s *Fallback) KabanmaxProbeDialTimeout() time.Duration {
++	timeout := s.attemptTimeout
++	if timeout <= 0 {
++		timeout = defaultFallbackAttemptTimeout
++	}
++	count := max(1, len(s.candidatesForNetwork(N.NetworkTCP)))
++	if timeout >= time.Minute || time.Duration(count) > time.Minute/timeout {
++		return time.Minute
++	}
++	return timeout * time.Duration(count)
++}

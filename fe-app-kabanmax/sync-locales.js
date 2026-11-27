@@ -19,7 +19,7 @@ const DEFAULT_PLURAL_FORMS = 'nplurals=2; plural=(n != 1);';
 // Catalog metadata is public: never derive it from local Git or old headers.
 const PROJECT_IDENTITY = {
   name: 'K.A.B.A.N.-MAX contributors',
-  email: 'contributors@example.invalid',
+  email: '341400787+fefenke@users.noreply.github.com',
 };
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
@@ -127,7 +127,7 @@ function renderPot(entries, { name, email }, now) {
     `"POT-Creation-Date: ${stamp}\\n"`,
     `"PO-Revision-Date: ${stamp}\\n"`,
     `"Last-Translator: ${name} <${email}>\\n"`,
-    '"Language-Team: K.A.B.A.N.-MAX contributors <contributors@example.invalid>\\n"',
+    '"Language-Team: K.A.B.A.N.-MAX contributors <noreply@github.com>\\n"',
     '"Language: \\n"',
     '"MIME-Version: 1.0\\n"',
     '"Content-Type: text/plain; charset=UTF-8\\n"',

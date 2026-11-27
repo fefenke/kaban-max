@@ -87,11 +87,24 @@ t.test("a flow handed to sing-box stays captured whatever the sets hold, and a p
             T + "proxy iifname lo meta mark & 0x10000000 == 0x10000000 meta l4proto tcp tproxy ip to :1604 counter accept",
             "the flow is marked before any TProxy rule accepts its packet");
 
-    t.eq(nft.capture_command(true), [ "nft", "flush chain inet KabanMaxTable capture_pause" ]);
-    t.eq(nft.capture_command(false), [ "nft", "flush chain inet KabanMaxTable capture_pause; " +
+    let dns = "add chain inet KabanMaxTable dns_capture_pause; flush chain inet KabanMaxTable dns_capture_pause; ";
+    t.eq(nft.capture_command(true), [ "nft", dns + "flush chain inet KabanMaxTable capture_pause" ]);
+    t.eq(nft.capture_command(false), [ "nft", dns + "flush chain inet KabanMaxTable capture_pause; " +
+        "add rule inet KabanMaxTable dns_capture_pause counter drop; " +
         "add rule inet KabanMaxTable capture_pause meta mark & 0x04000000 == 0x04000000 counter drop; " +
         "add rule inet KabanMaxTable capture_pause meta mark & 0x10000000 == 0x10000000 counter drop; " +
-        "add rule inet KabanMaxTable capture_pause counter accept" ], "paused: traffic for sing-box waits, lookups go to their resolver");
+        "add rule inet KabanMaxTable capture_pause counter accept" ], "paused: protected client DNS cannot fall through to the ordinary resolver");
+});
+
+t.test("reload guards original client DNS before existing DNAT can bypass the pause", () => {
+    let lines = script_lines({settings:{source_network_interfaces:"br-lan tun0",routing_excluded_ips:"192.168.1.50 2001:db8::50"}});
+    has(lines,"add chain inet KabanMaxTable dns_capture_pause { }");
+    let guard=T+"mangle ct direction original iifname @kabanmax_interfaces meta l4proto { tcp, udp } th dport 53 jump dns_capture_pause";
+    before(lines,T+"mangle ip saddr @kabanmax_excluded counter return",guard,"excluded IPv4 clients keep their resolver");
+    before(lines,T+"mangle ip6 saddr @kabanmax_excluded6 counter return",guard,"excluded IPv6 clients keep their resolver");
+    before(lines,guard,T+"mangle ct status dnat return","already redirected DNS waits too");
+    before(lines,guard,T+"mangle iifname @kabanmax_interfaces meta l4proto { tcp, udp } th dport 53 return","new DNS cannot escape interception during reload");
+    lacks(lines,"mangle_output jump dns_capture_pause","core bootstrap DNS remains available");
 });
 
 t.test("excluded devices leave every capture before anything matches them", () => {
