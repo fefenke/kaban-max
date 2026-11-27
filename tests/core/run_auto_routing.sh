@@ -6,6 +6,8 @@ taskCommit=$(sed -n 's/^commit=//p' /core/UPSTREAM | tr -d '\r')
 git -c safe.directory=/source -C /source archive "$taskCommit" | tar -x -C "$taskTmp"
 cd "$taskTmp"
 for p in /core/patches/*.patch; do git apply --check "$p"; git apply "$p"; done
+git apply --check /extra-tests/ruleprovider_synchronization.patch
+git apply /extra-tests/ruleprovider_synchronization.patch
 mkdir -p common/autoroute
 cp /extra-tests/auto_routing_test.go common/autoroute/
 cp /extra-tests/auto_web_test.go common/autoroute/

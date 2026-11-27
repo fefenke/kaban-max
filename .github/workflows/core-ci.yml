@@ -27,6 +27,8 @@ jobs:
             git -C /tmp/kaban-core apply "$patch"
           done
           python3 scripts/brand-core.py /tmp/kaban-core
+          git -C /tmp/kaban-core apply --check "$PWD/tests/core/ruleprovider_synchronization.patch"
+          git -C /tmp/kaban-core apply "$PWD/tests/core/ruleprovider_synchronization.patch"
       - name: Test TLS fingerprints, parsers and fallback including concurrent checks
         working-directory: /tmp/kaban-core
         run: go test -race -p=2 -tags=badlinkname,tfogo_checklinkname0,with_clash_api,with_utls,with_quic,with_wireguard,with_openvpn ./cmd/sing-box ./parser/... ./protocol/parser ./protocol/group ./common/tls ./common/tlsfragment

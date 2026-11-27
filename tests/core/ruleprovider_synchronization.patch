@@ -1,0 +1,51 @@
+diff --git a/experimental/clashapi/ruleprovider_test.go b/experimental/clashapi/ruleprovider_test.go
+--- a/experimental/clashapi/ruleprovider_test.go
++++ b/experimental/clashapi/ruleprovider_test.go
+@@ -19,11 +19,12 @@
+ 
+ type testRuleProvider struct {
+ 	adapter.RuleSet
+-	name       string
+-	snapshot   adapter.RuleSetProviderSnapshot
+-	callbacks  list.List[adapter.RuleSetUpdateCallback]
+-	registered chan struct{}
+-	access     sync.Mutex
++	name         string
++	snapshot     adapter.RuleSetProviderSnapshot
++	callbacks    list.List[adapter.RuleSetUpdateCallback]
++	registered   chan struct{}
++	snapshotRead chan struct{}
++	access       sync.Mutex
+ }
+ 
+ func (p *testRuleProvider) Name() string {
+@@ -33,7 +34,14 @@
+ func (p *testRuleProvider) ProviderSnapshot() adapter.RuleSetProviderSnapshot {
+ 	p.access.Lock()
+ 	defer p.access.Unlock()
+-	return p.snapshot
++	snapshot := p.snapshot
++	if p.snapshotRead != nil {
++		select {
++		case p.snapshotRead <- struct{}{}:
++		default:
++		}
++	}
++	return snapshot
+ }
+ 
+ func (p *testRuleProvider) RegisterCallback(callback adapter.RuleSetUpdateCallback) *list.Element[adapter.RuleSetUpdateCallback] {
+@@ -139,11 +147,13 @@
+ 
+ 	response = httptest.NewRecorder()
+ 	done := make(chan struct{})
++	provider.snapshotRead = make(chan struct{}, 1)
+ 	go func() {
+ 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/events?once=1&since=6", nil))
+ 		close(done)
+ 	}()
+ 	<-provider.registered
++	<-provider.snapshotRead
+ 	require.NoError(t, provider.Update())
+ 	select {
+ 	case <-done:

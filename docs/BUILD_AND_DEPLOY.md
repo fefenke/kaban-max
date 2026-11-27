@@ -51,6 +51,8 @@ Bootstrap старых установок: прежний UI при API403 мо�
 
 ## Core
 
+`tests/core/ruleprovider_synchronization.patch` — отдельная синхронизация upstream-теста long-poll API списков. CI и runners, запускающие clashapi, применяют её только к тестовому дереву: ожидание чтения снимка предшествует Update, исходные проверки имени и revision сохранены. Это не production patch и не изменение версии/бинарников r46.
+
 Уровни сетевого шума меняет patch `0026-actionable-log-levels.patch` у источника. Для этой политики нужен core с данным patch; одного обновления LuCI недостаточно. Regression runner — `sh tests/core/run_log_policy.sh SOURCE_GIT PROJECT`, без сети при заполненном Go module cache.
 
 WAN two-event gate/per-question DNS/IPv6 FakeIP требуют текущей серии до `0028-wan-outage-log-gate.patch` и согласованного backend с новым диапазоном. Частичная установка только core или только generator не обеспечивает новый контракт. Проверка — `tests/core/run_network_availability.sh`. Новых packages/установки в этой задаче не было; source compatibility floors не означают наличие этих исправлений в старом core.

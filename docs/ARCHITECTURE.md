@@ -2,7 +2,9 @@
 
 R43: optional `allow_unconfirmed_protocol` в source options, gated backend по AutoApply и core capability; отсутствие опции сохраняет прежнее поведение. Fallback сообщает bounded TCP dial budget, autoroute не увеличивает parent60s deadline. [Контракт](AUTO_ROUTING_R43.md).
 
-Локальный patch0042 добавляет отдельный autoroute target-failure callback и bounded stream-failure observer stable fallback; новые демоны/хранилища отсутствуют. WAN gate и lifecycle scope прежние. [Контракт и приёмка](WARP_RUNTIME_FIX.md).
+Текущий r46 содержит отдельный autoroute target-failure callback. Fallback реагирует на новые dial/handshake failures; закрытие установленного потока не запускает health check. WAN gate и lifecycle scope сохранены; новых демонов/хранилищ нет. [Контракт](FALLBACK_DIAL_ONLY.md).
+
+Тестовое дерево дополнительно получает `tests/core/ruleprovider_synchronization.patch`: барьер чтения snapshot в upstream fixture long-poll API. Он не входит в 46 production patches и не меняет бинарники. CI и runners clashapi применяют его до Go-тестов. [Проверки](TESTING.md).
 
 Текущий инженерный обзор; версия и приёмка — [PROJECT_STATE](PROJECT_STATE.md). Источник истины поведения — код и относящиеся к нему проверки, а не исторические планы.
 

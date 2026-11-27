@@ -9,6 +9,8 @@ taskCommit=$(sed -n 's/^commit=//p' "$project/core/UPSTREAM" | tr -d '\r')
 git -c safe.directory="$sourceRepo" -C "$sourceRepo" archive "$taskCommit" | tar -x -C "$taskTmp"
 cd "$taskTmp"
 for patch in "$project"/core/patches/*.patch; do git apply --check "$patch"; git apply "$patch"; done
+git apply --check "$project/tests/core/ruleprovider_synchronization.patch"
+git apply "$project/tests/core/ruleprovider_synchronization.patch"
 cp "$project/tests/core/warp_stability_test.go" protocol/warp/
 cp "$project/tests/core/warp_port_hint_test.go" protocol/warp/
 cp "$project/tests/core/warp_paths_api_test.go" experimental/clashapi/
